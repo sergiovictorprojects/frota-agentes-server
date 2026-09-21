@@ -7,13 +7,13 @@ import { criarApp } from './http/app.ts';
 import { AnthropicLlm } from './llm/llm.ts';
 import { modeloConhecido } from './llm/models.ts';
 import { LlmComOrcamento } from './llm/orcamento.ts';
-import { NotificadorConsole } from './notify/notificador.ts';
+import { criarNotificador } from './notify/fabrica.ts';
 import { processarFila, type DependenciasFila } from './orchestrator/processar-fila.ts';
 import { iniciarScheduler, type Scheduler } from './scheduler/scheduler.ts';
 import { log, mensagemDeErro } from './util/log.ts';
 
 function montarDependenciasDaFila(config: Config, pool: pg.Pool): DependenciasFila {
-  const notificador = new NotificadorConsole();
+  const notificador = criarNotificador(config);
   const llm = new LlmComOrcamento({
     llm: new AnthropicLlm(new Anthropic({ apiKey: config.ANTHROPIC_API_KEY })),
     pool,

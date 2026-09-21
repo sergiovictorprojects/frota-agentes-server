@@ -54,6 +54,49 @@ describe('loadConfig', () => {
     expect(mensagem).not.toContain('hunter2');
   });
 
+  it('usa o console como canal de aviso por padrao, sem exigir nada de e-mail', () => {
+    const cfg = loadConfig(valido);
+    expect(cfg.NOTIFY_CHANNEL).toBe('console');
+    expect(cfg.RESEND_API_KEY).toBeUndefined();
+    expect(cfg.NOTIFY_EMAIL_FROM).toBe('Frota <onboarding@resend.dev>');
+  });
+
+  it('com o canal email, exige a chave do provedor e o destinatario, citando so os nomes', () => {
+    let mensagem = '';
+    try {
+      loadConfig({ ...valido, NOTIFY_CHANNEL: 'email' });
+    } catch (e) {
+      mensagem = (e as Error).message;
+    }
+    expect(mensagem).toMatch(/RESEND_API_KEY.*obrigatória quando NOTIFY_CHANNEL=email/);
+    expect(mensagem).toMatch(/NOTIFY_EMAIL_TO.*obrigatória quando NOTIFY_CHANNEL=email/);
+  });
+
+  it('aceita o canal email completo', () => {
+    const cfg = loadConfig({
+      ...valido,
+      NOTIFY_CHANNEL: 'email',
+      RESEND_API_KEY: 're_chave_de_teste_1234567890',
+      NOTIFY_EMAIL_TO: 'dono@exemplo.com',
+    });
+    expect(cfg).toMatchObject({ NOTIFY_CHANNEL: 'email', NOTIFY_EMAIL_TO: 'dono@exemplo.com' });
+  });
+
+  it('trata variaveis de e-mail vazias como ausentes e rejeita destinatario invalido', () => {
+    expect(loadConfig({ ...valido, RESEND_API_KEY: '', NOTIFY_EMAIL_TO: '' }).RESEND_API_KEY).toBeUndefined();
+    expect(() => loadConfig({ ...valido, NOTIFY_EMAIL_TO: 'isto-nao-e-um-email' })).toThrowError(/NOTIFY_EMAIL_TO/);
+  });
+
+  it('nao vaza a chave do provedor na mensagem de erro', () => {
+    let mensagem = '';
+    try {
+      loadConfig({ ...valido, NOTIFY_CHANNEL: 'email', RESEND_API_KEY: 're_segredo_do_provedor_123', NOTIFY_EMAIL_TO: 'invalido' });
+    } catch (e) {
+      mensagem = (e as Error).message;
+    }
+    expect(mensagem).not.toContain('re_segredo_do_provedor_123');
+  });
+
   it('exige senha da interface com pelo menos 16 caracteres', () => {
     expect(() => loadConfig({ ...valido, UI_PASSWORD: 'quinze-caracter' })).toThrowError(/UI_PASSWORD/);
     expect(loadConfig({ ...valido, UI_PASSWORD: 'dezesseis-caract1' }).UI_PASSWORD).toHaveLength(17);

@@ -52,6 +52,10 @@ npm run typecheck
 | `MODEL_WORK` / `MODEL_AUDIT` | não | `claude-sonnet-5` | Modelos de execução e de auditoria |
 | `STALE_CLAIM_MINUTES` | não | `90` | Quando uma demanda presa volta para a fila (maior que o prazo de 60 min do job) |
 | `PORT` | não | `3000` | Porta HTTP |
+| `NOTIFY_CHANNEL` | não | `console` | `email` para receber os avisos por e-mail (além do log) |
+| `RESEND_API_KEY` | se `email` | — | Chave do Resend, dedicada a este serviço |
+| `NOTIFY_EMAIL_TO` | se `email` | — | Seu e-mail, o destinatário dos avisos |
+| `NOTIFY_EMAIL_FROM` | não | `Frota <onboarding@resend.dev>` | Remetente; o de teste só entrega para o e-mail da conta no Resend |
 
 O serviço **não sobe** se faltar uma variável obrigatória ou se o modelo não tiver preço cadastrado em `src/llm/models.ts`.
 
@@ -66,6 +70,17 @@ O serviço **não sobe** se faltar uma variável obrigatória ou se o modelo nã
 7. **Vigiar.** Coloque um monitor de uptime gratuito em `/health` e, se puder, um alerta para "nenhuma execução nas últimas 90 minutos" (`ultimaRun.iniciadoEm` no `/health`). Sem isso, o serviço pode cair em silêncio.
 
 Nunca coloque segredos no repositório: `.env` está no `.gitignore` e o `.env.example` só traz nomes.
+
+## Avisos por e-mail (passo a passo, feito por você)
+
+O e-mail vai por uma API HTTPS porque o Railway bloqueia SMTP nos planos Free, Trial e Hobby. O canal usa o Resend.
+
+1. Crie uma conta no [Resend](https://resend.com) **com o e-mail que vai receber os avisos**. Sem domínio verificado, o remetente `onboarding@resend.dev` só entrega para esse e-mail, o que basta para um único destinatário. O plano gratuito permite 100 e-mails por dia.
+2. Crie uma chave de API só para este serviço.
+3. No Railway, defina `NOTIFY_CHANNEL=email`, `RESEND_API_KEY` e `NOTIFY_EMAIL_TO`, e faça um novo deploy.
+4. Se faltar `RESEND_API_KEY` ou `NOTIFY_EMAIL_TO`, o serviço se recusa a subir e diz quais faltam, em vez de descobrir isso só na hora de avisar.
+
+Chegam por e-mail: o resumo de cada execução que processou ou falhou alguma demanda, os avisos de orçamento em 50% e 80% e o aviso crítico de pausa em 100%. Execuções com fila vazia não enviam nada. O log continua registrando todos os avisos, mesmo que o envio de e-mail falhe.
 
 ## Migrando os dados do sistema antigo (artifacts)
 
