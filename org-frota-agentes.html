@@ -1,0 +1,907 @@
+<title>Organograma</title>
+<style>
+  :root{
+    --bg:#F5F6F8; --surface:#FFFFFF; --surface-2:#ECEFF3; --border:#DBE0E7;
+    --text:#161B22; --text-dim:#5B6472; --text-faint:#8891A0;
+    --accent:#0F6E64; --accent-ink:#0B4F48; --accent-soft:#DFF1EE;
+    --gestor:#A8640C; --gestor-soft:#F8E9D3;
+    --coord:#0F6E64; --coord-soft:#DFF1EE;
+    --native:#3B4656; --native-soft:#E7EAEF;
+    --ecc:#0F6E64; --ecc-soft:#DFF1EE;
+    --ruflo:#6650C4; --ruflo-soft:#EAE5FA;
+    --od:#A8640C; --od-soft:#F8E9D3;
+    --frota:#C2255C; --frota-soft:#FBE0EA;
+    --danger:#B3261E; --danger-soft:#F8E1DF;
+    --code-bg:#101820; --code-ink:#DCE6EE;
+    --opmode:#8B5CF6; --opmode-soft:#EFE7FE;
+  }
+  @media (prefers-color-scheme: dark){
+    :root:not([data-theme="light"]){
+      --bg:#0C1116; --surface:#131A22; --surface-2:#1A2129;
+      --border:#2A3542; --text:#E8ECF1; --text-dim:#9AA6B4; --text-faint:#6C7784;
+      --accent:#4FBDB0; --accent-ink:#BFEAE3; --accent-soft:#14332F;
+      --gestor:#E3A857; --gestor-soft:#3A2A12;
+      --coord:#4FBDB0; --coord-soft:#14332F;
+      --native:#AEB8C4; --native-soft:#1E252D;
+      --ecc:#4FBDB0; --ecc-soft:#14332F;
+      --ruflo:#B3A2F2; --ruflo-soft:#241C40;
+      --od:#E3A857; --od-soft:#3A2A12;
+      --frota:#F472A6; --frota-soft:#3A1826;
+      --danger:#E4877E; --danger-soft:#3A1F1D;
+      --code-bg:#0A0F14; --code-ink:#CBD6E0;
+      --opmode:#A78BFA; --opmode-soft:#2B1B45;
+    }
+  }
+  :root[data-theme="dark"]{
+    --bg:#0C1116; --surface:#131A22; --surface-2:#1A2129;
+    --border:#2A3542; --text:#E8ECF1; --text-dim:#9AA6B4; --text-faint:#6C7784;
+    --accent:#4FBDB0; --accent-ink:#BFEAE3; --accent-soft:#14332F;
+    --gestor:#E3A857; --gestor-soft:#3A2A12;
+    --coord:#4FBDB0; --coord-soft:#14332F;
+    --native:#AEB8C4; --native-soft:#1E252D;
+    --ecc:#4FBDB0; --ecc-soft:#14332F;
+    --ruflo:#B3A2F2; --ruflo-soft:#241C40;
+    --od:#E3A857; --od-soft:#3A2A12;
+    --frota:#F472A6; --frota-soft:#3A1826;
+    --danger:#E4877E; --danger-soft:#3A1F1D;
+    --code-bg:#0A0F14; --code-ink:#CBD6E0;
+    --opmode:#A78BFA; --opmode-soft:#2B1B45;
+  }
+
+  *{box-sizing:border-box}
+  html,body{margin:0;padding:0}
+  body{
+    background:var(--bg); color:var(--text);
+    font-family:"Public Sans", "Segoe UI", system-ui, sans-serif;
+    font-size:14px; line-height:1.55;
+    padding-inline:0;
+  }
+  a{color:var(--accent)}
+  code, .mono{font-family:"IBM Plex Mono", ui-monospace, monospace; font-size:0.85em}
+
+  .wrap{max-width:1180px; margin:0 auto; padding-inline:20px}
+
+  h1,h2,h3{font-family:"Space Grotesk", sans-serif; font-weight:700; text-wrap:balance; margin:0 0 8px}
+  h1{font-size:clamp(28px,5vw,42px); letter-spacing:-0.01em}
+  h2{font-size:clamp(20px,3vw,26px); margin-top:0}
+  h3{font-size:18px; margin-bottom:2px}
+  p{margin:0 0 10px; max-width:70ch}
+
+  /* HERO */
+  .hero{
+    background:
+      radial-gradient(1100px 420px at 85% -10%, var(--accent-soft), transparent 60%),
+      var(--surface);
+    border-bottom:1px solid var(--border);
+    padding-block:44px 30px;
+  }
+  .eyebrow{
+    font-family:"IBM Plex Mono", monospace; text-transform:uppercase; letter-spacing:0.12em;
+    font-size:11px; color:var(--accent); margin:0 0 10px; font-weight:600;
+  }
+  .lede{color:var(--text-dim); font-size:15.5px; max-width:66ch}
+  .stats{display:flex; flex-wrap:wrap; gap:10px; margin-top:22px}
+  .stat{
+    background:var(--surface-2); border:1px solid var(--border); border-radius:10px;
+    padding:12px 16px; min-width:150px; flex:1 1 150px;
+  }
+  .stat .num{display:block; font-family:"Space Grotesk",sans-serif; font-size:26px; font-weight:700; font-variant-numeric:tabular-nums}
+  .stat .lbl{display:block; font-size:12px; color:var(--text-dim); margin-top:2px}
+
+  /* NAV */
+  .pillnav{
+    position:sticky; top:0; z-index:20; background:var(--bg);
+    border-bottom:1px solid var(--border);
+    padding:10px 0; overflow-x:auto; white-space:nowrap;
+  }
+  .pillnav .wrap{display:flex; gap:8px}
+  .artrail{
+    position:fixed; top:50%; right:0; transform:translateY(-50%);
+    display:flex; flex-direction:column; gap:1px;
+    background:var(--surface); border:1px solid var(--border); border-right:none;
+    border-radius:14px 0 0 14px; padding:8px 0; box-shadow:-4px 0 16px rgba(0,0,0,0.10);
+    z-index:400; overflow:hidden; width:46px;
+    transition:width .3s cubic-bezier(.22,.8,.32,1);
+  }
+  .artrail:hover, .artrail:focus-within{ width:min(236px,84vw); }
+  .artrail-item{
+    display:flex; align-items:center; gap:12px; padding:9px 13px; text-decoration:none;
+    white-space:nowrap; color:var(--text-dim);
+  }
+  .artrail-item:hover{background:var(--surface-2); color:var(--accent)}
+  .artrail-icon{
+    flex:none; width:26px; height:26px; border-radius:7px; background:var(--surface-2);
+    display:flex; align-items:center; justify-content:center; color:var(--text-dim);
+    transition:background .2s ease, color .2s ease;
+  }
+  .artrail-icon svg{width:15px; height:15px; display:block}
+  .artrail-item:hover .artrail-icon{background:var(--accent); color:#fff}
+  .artrail-item.hub .artrail-icon{background:var(--gestor-soft,#F8E9D3); color:var(--gestor,#A8640C)}
+  .artrail-item.hub:hover .artrail-icon{background:var(--gestor,#A8640C); color:#fff}
+  .artrail-item.current{background:var(--surface-2); pointer-events:none}
+  .artrail-item.current .artrail-icon{background:var(--accent); color:#fff}
+  .artrail-item.current .artrail-label{color:var(--text); font-weight:700}
+  .artrail-label{
+    font-size:12.8px; font-weight:600; opacity:0; transform:translateX(-6px);
+    transition:opacity .2s ease .06s, transform .2s ease .06s;
+  }
+  .artrail:hover .artrail-label, .artrail:focus-within .artrail-label{opacity:1; transform:translateX(0)}
+
+  .theme-toggle{
+    position:fixed; top:16px; right:16px; z-index:410; width:36px; height:36px; border-radius:50%;
+    background:var(--surface); border:1px solid var(--border); display:flex; align-items:center; justify-content:center;
+    cursor:pointer; color:var(--text-dim); padding:0;
+  }
+  .theme-toggle:hover{border-color:var(--accent); color:var(--accent)}
+  .theme-toggle svg{width:17px; height:17px; display:block}
+  .theme-toggle .tt-moon{display:block}
+  .theme-toggle .tt-sun{display:none}
+  :root[data-theme="dark"] .theme-toggle .tt-moon{display:none}
+  :root[data-theme="dark"] .theme-toggle .tt-sun{display:block}
+  @media (prefers-color-scheme: dark){
+    :root:not([data-theme="light"]) .theme-toggle .tt-moon{display:none}
+    :root:not([data-theme="light"]) .theme-toggle .tt-sun{display:block}
+  }
+  #opBanner{
+    display:none; align-items:center; gap:8px; background:var(--surface); border:1px solid var(--opmode);
+    border-radius:999px; padding:6px 14px; font-size:11px; font-family:"IBM Plex Mono",monospace; font-weight:700;
+    color:var(--opmode); margin-top:14px; position:relative;
+  }
+  #opBanner.active{display:inline-flex}
+  #opBanner .op-dot{width:7px; height:7px; border-radius:50%; background:var(--opmode); animation:opPulse2 1.8s ease-in-out infinite}
+  @keyframes opPulse2{0%,100%{opacity:1} 50%{opacity:.3}}
+  .op-tooltip{
+    display:none; position:absolute; top:calc(100% + 6px); left:0; z-index:50; text-align:left;
+    background:var(--surface); border:1px solid var(--opmode); border-radius:10px; padding:10px 12px;
+    min-width:220px; max-width:320px; box-shadow:0 10px 28px rgba(0,0,0,.22);
+    font-family:"Public Sans",sans-serif; text-transform:none; letter-spacing:normal; font-weight:400;
+  }
+  #opBanner:hover .op-tooltip, #opBanner:focus-within .op-tooltip{display:block}
+  .op-tooltip .ot-row{padding:6px 0; border-top:1px dashed var(--border); font-size:11.5px; color:var(--text-dim)}
+  .op-tooltip .ot-row:first-child{border-top:none; padding-top:0}
+  .op-tooltip .ot-setor{font-family:"IBM Plex Mono",monospace; font-size:10px; font-weight:700; color:var(--opmode); text-transform:uppercase; display:block; margin-bottom:2px}
+  .pillnav a{
+    flex:none; text-decoration:none; color:var(--text);
+    background:var(--surface); border:1px solid var(--border);
+    padding:6px 12px; border-radius:999px; font-size:12.5px; font-weight:600;
+  }
+  .pillnav a:hover{border-color:var(--accent); color:var(--accent)}
+
+  section{padding-block:34px; border-bottom:1px solid var(--border)}
+  section:last-of-type{border-bottom:none}
+
+  /* BADGES */
+  .badge{
+    display:inline-flex; align-items:center; gap:4px;
+    font-family:"IBM Plex Mono", monospace; font-size:10.5px; font-weight:600;
+    padding:2px 7px; border-radius:5px; letter-spacing:0.02em; line-height:1.6;
+    white-space:nowrap;
+  }
+  .b-native{background:var(--native-soft); color:var(--native)}
+  .b-ecc{background:var(--ecc-soft); color:var(--ecc)}
+  .b-ruflo{background:var(--ruflo-soft); color:var(--ruflo)}
+  .b-od{background:var(--od-soft); color:var(--od)}
+  .b-frota{background:var(--frota-soft); color:var(--frota)}
+  .tier{
+    display:inline-flex; font-size:10px; font-weight:700; text-transform:uppercase;
+    letter-spacing:0.06em; padding:2px 6px; border-radius:4px; border:1px solid currentColor;
+  }
+  .t-gestor{color:var(--gestor)}
+  .t-coord{color:var(--coord)}
+  .t-colab{color:var(--text-dim)}
+  .t-ext{color:var(--text-faint); border-style:dashed}
+
+  /* CARDS / GRID */
+  .idx-grid{display:grid; grid-template-columns:repeat(auto-fill, minmax(230px,1fr)); gap:10px; margin-top:16px}
+  .idx-card{
+    background:var(--surface); border:1px solid var(--border); border-radius:10px;
+    padding:12px 14px; text-decoration:none; color:var(--text); display:block;
+  }
+  .idx-card:hover{border-color:var(--accent)}
+  .idx-card .idn{font-family:"IBM Plex Mono",monospace; font-size:11px; color:var(--accent); font-weight:700}
+  .idx-card .nm{font-weight:700; margin-top:2px; font-size:14px}
+  .idx-card .cd{font-size:12px; color:var(--text-dim); margin-top:4px}
+  .idx-card .ct{font-size:11px; color:var(--text-faint); margin-top:6px; font-variant-numeric:tabular-nums}
+
+  /* DIAGRAM */
+  .diagram-box{
+    background:var(--surface); border:1px solid var(--border); border-radius:12px;
+    padding:16px; overflow-x:auto; margin-top:16px;
+  }
+  .legend{display:flex; flex-wrap:wrap; gap:14px; margin-top:14px; font-size:12.5px; color:var(--text-dim)}
+  .legend span{display:inline-flex; align-items:center; gap:6px}
+  .dot{width:9px; height:9px; border-radius:50%; display:inline-block}
+
+  /* DOMAIN BLOCKS */
+  .domain{
+    background:var(--surface); border:1px solid var(--border); border-radius:14px;
+    padding:20px 22px; margin-top:18px;
+  }
+  .domain-head{display:flex; flex-wrap:wrap; align-items:baseline; gap:10px; margin-bottom:4px}
+  .domain-head h3{margin:0}
+  .domain-coord{
+    font-size:12.5px; color:var(--text-dim); margin-bottom:12px;
+  }
+  .connect{
+    margin-top:12px; padding:10px 12px; background:var(--surface-2); border-radius:8px;
+    font-size:12.5px; color:var(--text-dim); border-left:3px solid var(--accent);
+  }
+  .connect b{color:var(--text)}
+  .exclude{
+    margin-top:14px; padding:12px 14px; background:var(--danger-soft); border-radius:8px;
+    font-size:12.5px; color:var(--text-dim); border-left:3px solid var(--danger);
+  }
+  .exclude b{color:var(--text)}
+  .src-grid{display:grid; grid-template-columns:repeat(auto-fit, minmax(260px,1fr)); gap:12px; margin-top:16px}
+  .src-card{
+    background:var(--surface); border:1px solid var(--border); border-radius:12px; padding:16px 18px;
+  }
+  .src-card .kind{
+    font-family:"IBM Plex Mono",monospace; font-size:10.5px; text-transform:uppercase; letter-spacing:0.05em;
+    color:var(--accent); font-weight:700; margin-bottom:6px; display:block;
+  }
+  .src-card h4{font-family:"Space Grotesk",sans-serif; font-size:16px; margin:0 0 6px; font-weight:700}
+  .src-card p{font-size:12.8px; color:var(--text-dim); margin:0 0 8px}
+  .src-card .feeds{font-size:11.5px; color:var(--text-faint)}
+  .src-card .feeds b{color:var(--text-dim)}
+
+  .table-wrap{overflow-x:auto; border:1px solid var(--border); border-radius:10px}
+  table.roster{width:100%; border-collapse:collapse; font-size:12.8px; min-width:560px}
+  table.roster th{
+    text-align:left; background:var(--surface-2); color:var(--text-dim);
+    font-weight:600; text-transform:uppercase; font-size:10.5px; letter-spacing:0.05em;
+    padding:8px 10px; border-bottom:1px solid var(--border); white-space:nowrap;
+  }
+  table.roster td{padding:8px 10px; border-bottom:1px solid var(--border); vertical-align:top}
+  table.roster tr:last-child td{border-bottom:none}
+  table.roster tr.coord-row{background:var(--coord-soft)}
+  table.roster tr.coord-row td:first-child{font-weight:700}
+  table.roster td.act{color:var(--text-dim); max-width:340px}
+
+  .note{font-size:12.5px; color:var(--text-faint); margin-top:10px}
+
+  /* MERMAID container theming */
+  pre.mermaid{background:transparent}
+
+  footer{padding-block:30px 60px}
+  footer p{color:var(--text-faint); font-size:12px}
+
+  @media (max-width:640px){
+    table.roster{font-size:12px}
+    .domain{padding:16px}
+  }
+</style>
+
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=Public+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@500;600&display=swap" rel="stylesheet">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/mermaid/10.9.1/mermaid.min.js"></script>
+<script>
+  mermaid.initialize({
+    startOnLoad:true,
+    theme:'base',
+    themeVariables:{
+      background:'transparent',
+      primaryColor:'#DFF1EE',
+      primaryTextColor:'#161B22',
+      primaryBorderColor:'#0F6E64',
+      lineColor:'#8891A0',
+      secondaryColor:'#F8E9D3',
+      tertiaryColor:'#EAE5FA',
+      fontFamily:'Public Sans, sans-serif',
+      fontSize:'13px'
+    }
+  });
+</script>
+
+<script>
+(async function initOpBanner(){
+  var claudeApi = window.claude;
+  if(!claudeApi) return;
+  var db = await claudeApi.use('db');
+  if(!db) return;
+  db.doc('estado/operacao').onSnapshot(function(snap){
+    var st = snap.exists ? snap.data() : null;
+    var el = document.getElementById('opBanner');
+    if(!el) return;
+    if(st && st.ativo){
+      el.classList.add('active');
+      var count = 0;
+      if(st.porSetor){ Object.keys(st.porSetor).forEach(function(k){ count += (st.porSetor[k].emAndamento || 0); }); }
+      document.getElementById('opBannerText').textContent =
+        count>0 ? (count + (count===1 ? ' demanda em andamento' : ' demandas em andamento')) : 'Modo Operação ativo';
+      var tip = document.getElementById('opTooltip');
+      if(tip){
+        var esc = function(s){ return String(s==null?'':s).replace(/[&<>"']/g, function(c){ return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]; }); };
+        var rows = [];
+        if(st.porSetor){
+          Object.keys(st.porSetor).forEach(function(k){
+            var s = st.porSetor[k];
+            if(s.emAndamento > 0){
+              var etapa = (s.atual && s.atual.etapa) ? s.atual.etapa : 'Em andamento';
+              var quem = (s.atual && s.atual.agente) ? s.atual.agente : k;
+              var tit = (s.atual && s.atual.titulo) ? esc(s.atual.titulo) + ' — ' : '';
+              rows.push('<div class="ot-row"><span class="ot-setor">' + esc(quem) + '</span>' + tit + esc(etapa) + '</div>');
+            }
+          });
+        }
+        tip.innerHTML = rows.length ? rows.join('') : '<div class="ot-row">Sem detalhes de etapa no momento.</div>';
+      }
+    }else{
+      el.classList.remove('active');
+    }
+  }, function(){});
+})();
+</script>
+
+<header class="hero">
+  <div class="wrap">
+    <p class="eyebrow">Manual Operacional · Agentes</p>
+    <h1>Organograma</h1>
+    <p class="lede">Como os agentes nativos do Claude Code, do plugin <strong>ECC</strong>, do projeto <strong>Ruflo</strong> (agentic-flow) e do conector <strong>OpenDesign</strong> se organizam em gestores, coordenadores e colaboradores — e como cada um entrega trabalho para o próximo na esteira de um projeto.</p>
+    <div id="opBanner"><span class="op-dot"></span><span id="opBannerText">Modo Operação ativo</span><div class="op-tooltip" id="opTooltip"></div></div>
+    <div class="stats">
+      <div class="stat"><span class="num">95</span><span class="lbl">agentes ativos nesta máquina</span></div>
+      <div class="stat"><span class="num">8</span><span class="lbl">gestores (direção executiva)</span></div>
+      <div class="stat"><span class="num">18</span><span class="lbl">áreas coordenadas</span></div>
+      <div class="stat"><span class="num">25</span><span class="lbl">CLIs externas de reserva (OpenDesign)</span></div>
+    </div>
+  </div>
+</header>
+
+<nav class="pillnav">
+  <div class="wrap">
+    <a href="#mapa">Mapa geral</a>
+    <a href="#indice">Índice de áreas</a>
+    <a href="#gestores">Gestores</a>
+    <a href="#dominios">Áreas &amp; equipes</a>
+    <a href="#fluxo">Fluxo do projeto</a>
+    <a href="#reserva">Reserva externa</a>
+    <a href="#biblioteca">Biblioteca OpenDesign</a>
+    <a href="#fontes">Fontes de Conhecimento</a>
+  </div>
+</nav>
+<button type="button" class="theme-toggle" id="themeToggle" aria-label="Alternar tema claro/escuro" title="Alternar tema">
+  <svg class="tt-sun" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6"><circle cx="10" cy="10" r="3.4"/><path d="M10 2v2M10 16v2M18 10h-2M4 10H2M15.5 4.5l-1.4 1.4M5.9 14.1l-1.4 1.4M15.5 15.5l-1.4-1.4M5.9 5.9 4.5 4.5" stroke-linecap="round"/></svg>
+  <svg class="tt-moon" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M16.5 12.3A7 7 0 1 1 7.7 3.5a5.6 5.6 0 0 0 8.8 8.8z" stroke-linejoin="round"/></svg>
+</button>
+<script>
+(function(){
+  var root = document.documentElement, btn = document.getElementById('themeToggle'), KEY = 'artifact-theme-pref';
+  var stored = null;
+  try{ stored = localStorage.getItem(KEY); }catch(e){}
+  if(stored === 'light' || stored === 'dark') root.setAttribute('data-theme', stored);
+  btn.addEventListener('click', function(){
+    var current = root.getAttribute('data-theme');
+    var isDark = current === 'dark' || (!current && window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches);
+    var next = isDark ? 'light' : 'dark';
+    root.setAttribute('data-theme', next);
+    try{ localStorage.setItem(KEY, next); }catch(e){}
+  });
+})();
+</script>
+<nav class="artrail" aria-label="Artefatos">
+  <a class="artrail-item hub" href="https://claude.ai/artifact/1jJhYzXznLSE3rSThzoSsR">
+    <span class="artrail-icon"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6"><rect x="2.5" y="2.5" width="6" height="6" rx="1"/><rect x="11.5" y="2.5" width="6" height="6" rx="1"/><rect x="2.5" y="11.5" width="6" height="6" rx="1"/><rect x="11.5" y="11.5" width="6" height="6" rx="1"/></svg></span>
+    <span class="artrail-label">Painel Geral</span>
+  </a>
+  <a class="artrail-item" href="https://claude.ai/artifact/TvUcpQ6be7wj88STgYmTcq">
+    <span class="artrail-icon"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M3 5h14M3 10h14M3 15h9" stroke-linecap="round"/></svg></span>
+    <span class="artrail-label">Fila de Demandas</span>
+  </a>
+  <a class="artrail-item" href="https://claude.ai/artifact/8rdeRj8exFa6pUYZ6nJYMe">
+    <span class="artrail-icon"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6"><circle cx="4" cy="15" r="2"/><circle cx="16" cy="15" r="2"/><circle cx="10" cy="4" r="2"/><path d="M10 6v4M8.3 9.3 5.5 13.2M11.7 9.3l2.8 3.9" stroke-linecap="round"/></svg></span>
+    <span class="artrail-label">Conector de Inteligência</span>
+  </a>
+  <a class="artrail-item current" href="#">
+    <span class="artrail-icon"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6"><rect x="7" y="2.5" width="6" height="4" rx="1"/><rect x="2" y="13.5" width="6" height="4" rx="1"/><rect x="12" y="13.5" width="6" height="4" rx="1"/><path d="M10 6.5v3M5 13.5v-3h10v3" stroke-linecap="round" stroke-linejoin="round"/></svg></span>
+    <span class="artrail-label">Organograma</span>
+  </a>
+  <a class="artrail-item" href="https://claude.ai/artifact/4cCPGEFezkxGC8SpfR5qGy">
+    <span class="artrail-icon"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M10 2.5 16.5 5v5c0 4-2.8 6.6-6.5 7.5C6.3 16.6 3.5 14 3.5 10V5L10 2.5z" stroke-linejoin="round"/><path d="M7.3 10 9 11.7l3.7-3.9" stroke-linecap="round" stroke-linejoin="round"/></svg></span>
+    <span class="artrail-label">Código de Conduta</span>
+  </a>
+  <a class="artrail-item" href="https://claude.ai/artifact/6qy1GomQLhaESVdnfazNqj">
+    <span class="artrail-icon"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6"><circle cx="10" cy="10" r="2.6"/><path d="M10 3v2M10 15v2M17 10h-2M5 10H3M14.9 5.1l-1.4 1.4M6.5 13.5l-1.4 1.4M14.9 14.9l-1.4-1.4M6.5 6.5 5.1 5.1" stroke-linecap="round"/></svg></span>
+    <span class="artrail-label">Configurações</span>
+  </a>
+  <a class="artrail-item" href="https://claude.ai/artifact/TvUcpQ6be7wj88STgYmTcq">
+    <span class="artrail-icon"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M4 16V9M10 16V4M16 16v-6" stroke-linecap="round"/><path d="M2.5 16.5h15" stroke-linecap="round"/></svg></span>
+    <span class="artrail-label">Análises</span>
+  </a>
+</nav>
+
+<div class="wrap">
+
+<section id="mapa">
+  <h2>Mapa geral</h2>
+  <p>Um único nível de <strong>gestores</strong> decide direção e roteia trabalho para 18 <strong>coordenadores de área</strong>; cada coordenador supervisiona seus <strong>colaboradores especialistas</strong>. Times com dupla função (ex.: um revisor de segurança que também atua no consenso distribuído) aparecem marcados como <em>dual-hat</em> nas tabelas abaixo.</p>
+  <div class="diagram-box">
+    <pre class="mermaid">
+graph TD
+  G(("Gestores<br/>Direção Executiva")):::g
+  G --> D1["D1 · Arquitetura &amp; Sistema"]:::c
+  G --> D2["D2 · Pesquisa &amp; Descoberta"]:::c
+  G --> D3["D3 · Qualidade &amp; Revisão"]:::c
+  G --> D4["D4 · Segurança"]:::c
+  G --> D5["D5 · Build &amp; CI/CD"]:::c
+  G --> D6["D6 · Testes &amp; Validação"]:::c
+  G --> D7["D7 · Infra Distribuída / Swarm"]:::c
+  G --> D8["D8 · Documentação"]:::c
+  G --> D9["D9 · Limpeza &amp; Manutenção"]:::c
+  G --> D10["D10 · Performance"]:::c
+  G --> D11["D11 · Design &amp; Produto"]:::c
+  G --> D12["D12 · Release Open Source"]:::c
+  G --> D13["D13 · Loop Generativo (GAN)"]:::c
+  G --> D14["D14 · Automação Web"]:::c
+  G --> D15["D15 · Rede &amp; Infra"]:::c
+  G --> D16["D16 · Growth &amp; Marketing"]:::c
+  G --> D17["D17 · Meta / Processo"]:::c
+  G --> D18["D18 · Comunicação &amp; Triagem"]:::c
+  classDef g fill:#F8E9D3,stroke:#A8640C,color:#161B22,font-weight:bold;
+  classDef c fill:#DFF1EE,stroke:#0F6E64,color:#161B22;
+    </pre>
+    <div class="legend">
+      <span><span class="dot" style="background:var(--native)"></span> Nativo Claude Code</span>
+      <span><span class="dot" style="background:var(--ecc)"></span> ECC</span>
+      <span><span class="dot" style="background:var(--ruflo)"></span> Ruflo (agentic-flow)</span>
+      <span><span class="dot" style="background:var(--od)"></span> OpenDesign</span>
+      <span><span class="dot" style="background:var(--frota)"></span> Frota (agente próprio, definido no Código de Conduta)</span>
+    </div>
+  </div>
+</section>
+
+<section id="indice">
+  <h2>Índice das 18 áreas</h2>
+  <p>Clique para ir direto à equipe completa de cada área.</p>
+  <div class="idx-grid">
+    <a class="idx-card" href="#d1"><span class="idn">D1</span><div class="nm">Arquitetura &amp; Sistema</div><div class="cd">coord. ecc:architect</div><div class="ct">6 agentes</div></a>
+    <a class="idx-card" href="#d2"><span class="idn">D2</span><div class="nm">Pesquisa &amp; Descoberta</div><div class="cd">coord. ecc:code-explorer</div><div class="ct">2 agentes</div></a>
+    <a class="idx-card" href="#d3"><span class="idn">D3</span><div class="nm">Qualidade &amp; Revisão</div><div class="cd">coord. ecc:code-reviewer</div><div class="ct">21 agentes</div></a>
+    <a class="idx-card" href="#d4"><span class="idn">D4</span><div class="nm">Segurança</div><div class="cd">coord. ecc:security-reviewer</div><div class="ct">1 agente + 3 dual-hat</div></a>
+    <a class="idx-card" href="#d5"><span class="idn">D5</span><div class="nm">Build &amp; CI/CD</div><div class="cd">coord. ecc:build-error-resolver</div><div class="ct">12 agentes</div></a>
+    <a class="idx-card" href="#d6"><span class="idn">D6</span><div class="nm">Testes &amp; Validação</div><div class="cd">coord. ecc:tdd-guide</div><div class="ct">5 agentes</div></a>
+    <a class="idx-card" href="#d7"><span class="idn">D7</span><div class="nm">Infra Distribuída / Swarm</div><div class="cd">coord. ruflo:hierarchical-coordinator</div><div class="ct">10 agentes</div></a>
+    <a class="idx-card" href="#d8"><span class="idn">D8</span><div class="nm">Documentação</div><div class="cd">coord. ecc:doc-updater</div><div class="ct">4 agentes</div></a>
+    <a class="idx-card" href="#d9"><span class="idn">D9</span><div class="nm">Limpeza &amp; Manutenção</div><div class="cd">coord. ecc:refactor-cleaner</div><div class="ct">4 agentes</div></a>
+    <a class="idx-card" href="#d10"><span class="idn">D10</span><div class="nm">Performance</div><div class="cd">coord. ecc:performance-optimizer</div><div class="ct">2 agentes + 1 dual-hat</div></a>
+    <a class="idx-card" href="#d11"><span class="idn">D11</span><div class="nm">Design &amp; Produto</div><div class="cd">coord. AMR (OpenDesign)</div><div class="ct">1 agente + biblioteca</div></a>
+    <a class="idx-card" href="#d12"><span class="idn">D12</span><div class="nm">Release Open Source</div><div class="cd">coord. ecc:opensource-sanitizer</div><div class="ct">3 agentes</div></a>
+    <a class="idx-card" href="#d13"><span class="idn">D13</span><div class="nm">Loop Generativo (GAN)</div><div class="cd">coord. ecc:gan-planner</div><div class="ct">3 agentes</div></a>
+    <a class="idx-card" href="#d14"><span class="idn">D14</span><div class="nm">Automação Web</div><div class="cd">coord. ruflo:browser-agent</div><div class="ct">1 agente</div></a>
+    <a class="idx-card" href="#d15"><span class="idn">D15</span><div class="nm">Rede &amp; Infra</div><div class="cd">coord. ecc:network-architect</div><div class="ct">4 agentes</div></a>
+    <a class="idx-card" href="#d16"><span class="idn">D16</span><div class="nm">Growth &amp; Marketing</div><div class="cd">coord. ecc:marketing-agent</div><div class="ct">3 agentes</div></a>
+    <a class="idx-card" href="#d17"><span class="idn">D17</span><div class="nm">Meta / Processo</div><div class="cd">coord. ecc:agent-evaluator</div><div class="ct">4 agentes + 1 dual-hat</div></a>
+    <a class="idx-card" href="#d18"><span class="idn">D18</span><div class="nm">Comunicação &amp; Triagem</div><div class="cd">coord. ecc:chief-of-staff</div><div class="ct">1 agente</div></a>
+  </div>
+</section>
+
+<section id="gestores">
+  <h2>Gestores — Direção Executiva</h2>
+  <p>Não recebem ordens de ninguém dentro da frota: decidem estratégia, decompõem o pedido do usuário e roteiam para os coordenadores certos. Fecham o ciclo recebendo aprendizado de volta do Meta/Processo (D17).</p>
+  <div class="table-wrap">
+    <table class="roster">
+      <thead><tr><th>Agente</th><th>Fonte</th><th>Papel</th></tr></thead>
+      <tbody>
+        <tr><td><code>claude</code></td><td><span class="badge b-native">nativo</span></td><td class="act">Generalista de fallback — assume qualquer pedido sem agente específico e decide se delega.</td></tr>
+        <tr><td><code>Plan</code></td><td><span class="badge b-native">nativo</span></td><td class="act">Arquiteto de planos — desenha a estratégia de implementação antes de qualquer código ser tocado.</td></tr>
+        <tr><td><code>general-purpose</code></td><td><span class="badge b-native">nativo</span></td><td class="act">Executor multi-etapa — pesquisa ampla e tarefas que não cabem em um único especialista.</td></tr>
+        <tr><td><code>ecc:planner</code></td><td><span class="badge b-ecc">ecc</span></td><td class="act">Decompõe tarefas complexas, mapeia dependências e aloca qual agente cuida de cada fase.</td></tr>
+        <tr><td><code>ruflo:planner</code></td><td><span class="badge b-ruflo">ruflo</span></td><td class="act">Planejamento com autoaprendizado (ReasoningBank/HNSW) — reaproveita padrões de planos anteriores.</td></tr>
+        <tr><td><code>od:amr</code></td><td><span class="badge b-od">opendesign</span></td><td class="act">Roteador de modelos — escolhe qual dos 25 modelos/CLIs conectados atende cada tarefa.</td></tr>
+        <tr><td><code>claude-code-guide</code></td><td><span class="badge b-native">nativo</span></td><td class="act">Suporte interno — dúvidas sobre o próprio Claude Code, Agent SDK e API.</td></tr>
+        <tr><td><code>statusline-setup</code></td><td><span class="badge b-native">nativo</span></td><td class="act">Configuração da status line do Claude Code.</td></tr>
+      </tbody>
+    </table>
+  </div>
+</section>
+
+<section id="dominios">
+  <h2>Áreas &amp; equipes</h2>
+  <p>Cada área tem um coordenador (fundo destacado na tabela) e seus colaboradores. A caixa "conecta com" mostra de onde a área recebe trabalho e para onde entrega — é isso que mantém a frota conectada de ponta a ponta.</p>
+  <div class="connect" style="border-left-color:var(--gestor); margin-top:14px; margin-bottom:4px">
+    <b>Regra de processo (todas as 18 áreas):</b> ao concluir uma demanda, o Coordenador de cada área — o gerente daquele setor específico — tem três obrigações: executar/delegar, comunicar aos Gestores, e produzir um <b>Relatório de Operação</b> (ações realizadas, métricas coletadas, antipadrões observados, regras aplicadas). Ao final de cada demanda, o <b>Agente Auditor da Frota</b> (<code>ecc:agent-evaluator</code>, sede em D17) audita o processo completo de todos os agentes envolvidos e comunica o veredito ao Coordenador responsável. Detalhamento completo no <a href="https://claude.ai/artifact/4cCPGEFezkxGC8SpfR5qGy">Código de Conduta</a>.
+  </div>
+
+  <div class="domain" id="d1">
+    <div class="domain-head"><span class="idn tier t-coord">D1</span><h3>Arquitetura &amp; Sistema</h3></div>
+    <div class="domain-coord">Pipeline SPARC de design de sistema — da especificação ao esqueleto de refinamento.</div>
+    <div class="table-wrap"><table class="roster">
+      <thead><tr><th>Agente</th><th>Fonte</th><th>Tier</th><th>Atividade</th></tr></thead>
+      <tbody>
+        <tr class="coord-row"><td><code>ecc:architect</code></td><td><span class="badge b-ecc">ecc</span></td><td><span class="tier t-coord">coord</span></td><td class="act">Decisões de arquitetura de sistema, escalabilidade e stack técnico.</td></tr>
+        <tr><td><code>ecc:code-architect</code></td><td><span class="badge b-ecc">ecc</span></td><td><span class="tier t-colab">colab</span></td><td class="act">Blueprint de implementação a partir de padrões já existentes no código.</td></tr>
+        <tr><td><code>ruflo:specification</code></td><td><span class="badge b-ruflo">ruflo</span></td><td><span class="tier t-colab">colab</span></td><td class="act">Fase SPARC-S: requisitos, critérios de aceite, escopo.</td></tr>
+        <tr><td><code>ruflo:pseudocode</code></td><td><span class="badge b-ruflo">ruflo</span></td><td><span class="tier t-colab">colab</span></td><td class="act">Fase SPARC-P: design de algoritmos e estruturas de dados.</td></tr>
+        <tr><td><code>ruflo:architecture</code></td><td><span class="badge b-ruflo">ruflo</span></td><td><span class="tier t-colab">colab</span></td><td class="act">Fase SPARC-A: componentes, APIs, dados, infraestrutura.</td></tr>
+        <tr><td><code>ruflo:refinement</code></td><td><span class="badge b-ruflo">ruflo</span></td><td><span class="tier t-colab">colab</span></td><td class="act">Fase SPARC-R: TDD e otimização — <em>dual-hat com D6 Testes</em>.</td></tr>
+      </tbody>
+    </table></div>
+    <div class="connect"><b>Conecta com:</b> recebe o pedido dos Gestores → entrega especificação/arquitetura para D3 (Qualidade), D5 (Build) e D11 (Design, quando há UI).</div>
+  </div>
+
+  <div class="domain" id="d2">
+    <div class="domain-head"><span class="idn tier t-coord">D2</span><h3>Pesquisa &amp; Descoberta</h3></div>
+    <div class="domain-coord">Mapeia o terreno antes de qualquer mudança — evita retrabalho e decisões às cegas.</div>
+    <div class="table-wrap"><table class="roster">
+      <thead><tr><th>Agente</th><th>Fonte</th><th>Tier</th><th>Atividade</th></tr></thead>
+      <tbody>
+        <tr class="coord-row"><td><code>ecc:code-explorer</code></td><td><span class="badge b-ecc">ecc</span></td><td><span class="tier t-coord">coord</span></td><td class="act">Traça caminhos de execução e mapeia dependências de uma feature existente.</td></tr>
+        <tr><td><code>Explore</code></td><td><span class="badge b-native">nativo</span></td><td><span class="tier t-colab">colab</span></td><td class="act">Busca rápida read-only por arquivo, símbolo ou palavra-chave no código.</td></tr>
+      </tbody>
+    </table></div>
+    <div class="note">Apoio cruzado: <code>ecc:docs-lookup</code> (sede em D8) também atua aqui buscando documentação de bibliotecas.</div>
+    <div class="connect"><b>Conecta com:</b> recebe direção dos Gestores → entrega contexto para D1 (Arquitetura) e D3 (Qualidade).</div>
+  </div>
+
+  <div class="domain" id="d3">
+    <div class="domain-head"><span class="idn tier t-coord">D3</span><h3>Qualidade &amp; Revisão de Código</h3></div>
+    <div class="domain-coord">O maior time — um revisor dedicado por linguagem/stack, mais os revisores de domínio (saúde, ML, RAG).</div>
+    <div class="table-wrap"><table class="roster">
+      <thead><tr><th>Agente</th><th>Fonte</th><th>Tier</th><th>Atividade</th></tr></thead>
+      <tbody>
+        <tr class="coord-row"><td><code>ecc:code-reviewer</code></td><td><span class="badge b-ecc">ecc</span></td><td><span class="tier t-coord">coord</span></td><td class="act">Consolida o veredito geral de qualidade antes do merge.</td></tr>
+        <tr><td><code>ecc:typescript-reviewer</code></td><td><span class="badge b-ecc">ecc</span></td><td><span class="tier t-colab">colab</span></td><td class="act">TypeScript/JavaScript — tipos, async, segurança web/Node.</td></tr>
+        <tr><td><code>ecc:python-reviewer</code></td><td><span class="badge b-ecc">ecc</span></td><td><span class="tier t-colab">colab</span></td><td class="act">Python — PEP 8, type hints, idiomas pythônicos.</td></tr>
+        <tr><td><code>ecc:go-reviewer</code></td><td><span class="badge b-ecc">ecc</span></td><td><span class="tier t-colab">colab</span></td><td class="act">Go — concorrência e tratamento de erro idiomático.</td></tr>
+        <tr><td><code>ecc:rust-reviewer</code></td><td><span class="badge b-ecc">ecc</span></td><td><span class="tier t-colab">colab</span></td><td class="act">Rust — ownership, lifetimes, uso de <code>unsafe</code>.</td></tr>
+        <tr><td><code>ecc:java-reviewer</code></td><td><span class="badge b-ecc">ecc</span></td><td><span class="tier t-colab">colab</span></td><td class="act">Java (Spring/Quarkus) — camadas, JPA, concorrência.</td></tr>
+        <tr><td><code>ecc:csharp-reviewer</code></td><td><span class="badge b-ecc">ecc</span></td><td><span class="tier t-colab">colab</span></td><td class="act">C#/.NET — async, nullable types, segurança.</td></tr>
+        <tr><td><code>ecc:cpp-reviewer</code></td><td><span class="badge b-ecc">ecc</span></td><td><span class="tier t-colab">colab</span></td><td class="act">C++ — segurança de memória, idiomas modernos.</td></tr>
+        <tr><td><code>ecc:php-reviewer</code></td><td><span class="badge b-ecc">ecc</span></td><td><span class="tier t-colab">colab</span></td><td class="act">PHP — PSR-12, Eloquent, tipagem.</td></tr>
+        <tr><td><code>ecc:swift-reviewer</code></td><td><span class="badge b-ecc">ecc</span></td><td><span class="tier t-colab">colab</span></td><td class="act">Swift — ARC, concorrência estruturada, protocolos.</td></tr>
+        <tr><td><code>ecc:kotlin-reviewer</code></td><td><span class="badge b-ecc">ecc</span></td><td><span class="tier t-colab">colab</span></td><td class="act">Kotlin/Android/KMP — coroutines, Compose, null-safety.</td></tr>
+        <tr><td><code>ecc:flutter-reviewer</code></td><td><span class="badge b-ecc">ecc</span></td><td><span class="tier t-colab">colab</span></td><td class="act">Flutter/Dart — widgets, estado, performance.</td></tr>
+        <tr><td><code>ecc:fsharp-reviewer</code></td><td><span class="badge b-ecc">ecc</span></td><td><span class="tier t-colab">colab</span></td><td class="act">F# — idiomas funcionais, pattern matching.</td></tr>
+        <tr><td><code>ecc:react-reviewer</code></td><td><span class="badge b-ecc">ecc</span></td><td><span class="tier t-colab">colab</span></td><td class="act">React/JSX — hooks, performance de render, a11y.</td></tr>
+        <tr><td><code>ecc:vue-reviewer</code></td><td><span class="badge b-ecc">ecc</span></td><td><span class="tier t-colab">colab</span></td><td class="act">Vue — Composition API, reatividade, Pinia/Router.</td></tr>
+        <tr><td><code>ecc:django-reviewer</code></td><td><span class="badge b-ecc">ecc</span></td><td><span class="tier t-colab">colab</span></td><td class="act">Django — ORM, migrations, segurança DRF.</td></tr>
+        <tr><td><code>ecc:fastapi-reviewer</code></td><td><span class="badge b-ecc">ecc</span></td><td><span class="tier t-colab">colab</span></td><td class="act">FastAPI — async, Pydantic, OpenAPI.</td></tr>
+        <tr><td><code>ecc:database-reviewer</code></td><td><span class="badge b-ecc">ecc</span></td><td><span class="tier t-colab">colab</span></td><td class="act">PostgreSQL — queries, schema, performance.</td></tr>
+        <tr><td><code>ecc:healthcare-reviewer</code></td><td><span class="badge b-ecc">ecc</span></td><td><span class="tier t-colab">colab</span></td><td class="act">Dados clínicos/PHI — segurança e compliance. <em>dual-hat com D4</em>.</td></tr>
+        <tr><td><code>ecc:mle-reviewer</code></td><td><span class="badge b-ecc">ecc</span></td><td><span class="tier t-colab">colab</span></td><td class="act">Pipelines de ML — dados, treino, serving, monitoramento.</td></tr>
+        <tr><td><code>ecc:rag-pipeline-reviewer</code></td><td><span class="badge b-ecc">ecc</span></td><td><span class="tier t-colab">colab</span></td><td class="act">RAG — retrieval, chunking, embeddings.</td></tr>
+      </tbody>
+    </table></div>
+    <div class="note">Apoio cruzado: <code>ecc:pr-test-analyzer</code> e <code>ruflo:tdd-london-swarm</code> (sede em D6) também revisam qualidade de teste nos PRs.</div>
+    <div class="connect"><b>Conecta com:</b> recebe código de D1/implementação → aciona D5 (Build) se achar erro de compilação, D4 (Segurança) se achar risco → entrega veredito para D9 (Limpeza) e D6 (Testes).</div>
+  </div>
+
+  <div class="domain" id="d4">
+    <div class="domain-head"><span class="idn tier t-coord">D4</span><h3>Segurança</h3></div>
+    <div class="domain-coord">Portão de bloqueio (CRITICAL) — nada crítico passa sem aprovação daqui.</div>
+    <div class="table-wrap"><table class="roster">
+      <thead><tr><th>Agente</th><th>Fonte</th><th>Tier</th><th>Atividade</th></tr></thead>
+      <tbody>
+        <tr class="coord-row"><td><code>ecc:security-reviewer</code></td><td><span class="badge b-ecc">ecc</span></td><td><span class="tier t-coord">coord</span></td><td class="act">Vulnerabilidades OWASP Top 10, segredos expostos, injeção, SSRF.</td></tr>
+      </tbody>
+    </table></div>
+    <div class="note">Dual-hat de apoio (sede em outra área): <code>ecc:healthcare-reviewer</code> (D3, compliance PHI) · <code>ruflo:security-manager</code> (D7, criptografia de consenso) · <code>ruflo:byzantine-coordinator</code> (D7, detecção de nós maliciosos).</div>
+    <div class="connect"><b>Conecta com:</b> é acionado por D3 (Qualidade) e D5 (Build) sempre que um risco aparece → pode bloquear D12 (Release) até resolver.</div>
+  </div>
+
+  <div class="domain" id="d5">
+    <div class="domain-head"><span class="idn tier t-coord">D5</span><h3>Build &amp; CI/CD</h3></div>
+    <div class="domain-coord">Um bombeiro por stack — corrige erro de build com o mínimo de mudança possível.</div>
+    <div class="table-wrap"><table class="roster">
+      <thead><tr><th>Agente</th><th>Fonte</th><th>Tier</th><th>Atividade</th></tr></thead>
+      <tbody>
+        <tr class="coord-row"><td><code>ecc:build-error-resolver</code></td><td><span class="badge b-ecc">ecc</span></td><td><span class="tier t-coord">coord</span></td><td class="act">Erros genéricos de build/TypeScript, primeira linha de triagem.</td></tr>
+        <tr><td><code>ecc:cpp-build-resolver</code></td><td><span class="badge b-ecc">ecc</span></td><td><span class="tier t-colab">colab</span></td><td class="act">CMake, linker, template errors.</td></tr>
+        <tr><td><code>ecc:dart-build-resolver</code></td><td><span class="badge b-ecc">ecc</span></td><td><span class="tier t-colab">colab</span></td><td class="act"><code>dart analyze</code>, Flutter build, pub conflicts.</td></tr>
+        <tr><td><code>ecc:django-build-resolver</code></td><td><span class="badge b-ecc">ecc</span></td><td><span class="tier t-colab">colab</span></td><td class="act">pip/Poetry, migrations, config Django.</td></tr>
+        <tr><td><code>ecc:go-build-resolver</code></td><td><span class="badge b-ecc">ecc</span></td><td><span class="tier t-colab">colab</span></td><td class="act"><code>go vet</code>, erros de compilação, linter.</td></tr>
+        <tr><td><code>ecc:java-build-resolver</code></td><td><span class="badge b-ecc">ecc</span></td><td><span class="tier t-colab">colab</span></td><td class="act">Maven/Gradle, detecta Spring Boot/Quarkus.</td></tr>
+        <tr><td><code>ecc:kotlin-build-resolver</code></td><td><span class="badge b-ecc">ecc</span></td><td><span class="tier t-colab">colab</span></td><td class="act">Gradle/Kotlin compiler.</td></tr>
+        <tr><td><code>ecc:pytorch-build-resolver</code></td><td><span class="badge b-ecc">ecc</span></td><td><span class="tier t-colab">colab</span></td><td class="act">Shape mismatch, CUDA, gradientes, DataLoader.</td></tr>
+        <tr><td><code>ecc:react-build-resolver</code></td><td><span class="badge b-ecc">ecc</span></td><td><span class="tier t-colab">colab</span></td><td class="act">Vite/webpack/Next.js, JSX/TSX, hydration.</td></tr>
+        <tr><td><code>ecc:rust-build-resolver</code></td><td><span class="badge b-ecc">ecc</span></td><td><span class="tier t-colab">colab</span></td><td class="act">Cargo, borrow checker, <code>Cargo.toml</code>.</td></tr>
+        <tr><td><code>ecc:swift-build-resolver</code></td><td><span class="badge b-ecc">ecc</span></td><td><span class="tier t-colab">colab</span></td><td class="act">Xcode, SPM, code signing.</td></tr>
+        <tr><td><code>ecc:harmonyos-app-resolver</code></td><td><span class="badge b-ecc">ecc</span></td><td><span class="tier t-colab">colab</span></td><td class="act">ArkTS/ArkUI — build e conformidade V2.</td></tr>
+      </tbody>
+    </table></div>
+    <div class="connect"><b>Conecta com:</b> acionado por D1 (Implementação) e D3 (Qualidade) a cada erro de compilação → devolve build verde para D6 (Testes).</div>
+  </div>
+
+  <div class="domain" id="d6">
+    <div class="domain-head"><span class="idn tier t-coord">D6</span><h3>Testes &amp; Validação</h3></div>
+    <div class="domain-coord">Garante cobertura, comportamento e prontidão real (nada de mock em produção).</div>
+    <div class="table-wrap"><table class="roster">
+      <thead><tr><th>Agente</th><th>Fonte</th><th>Tier</th><th>Atividade</th></tr></thead>
+      <tbody>
+        <tr class="coord-row"><td><code>ecc:tdd-guide</code></td><td><span class="badge b-ecc">ecc</span></td><td><span class="tier t-coord">coord</span></td><td class="act">Impõe RED→GREEN→REFACTOR e cobertura mínima de 80%.</td></tr>
+        <tr><td><code>ecc:e2e-runner</code></td><td><span class="badge b-ecc">ecc</span></td><td><span class="tier t-colab">colab</span></td><td class="act">Testes E2E de fluxos críticos de usuário.</td></tr>
+        <tr><td><code>ecc:pr-test-analyzer</code></td><td><span class="badge b-ecc">ecc</span></td><td><span class="tier t-colab">colab</span></td><td class="act">Qualidade e cobertura comportamental de testes em PRs.</td></tr>
+        <tr><td><code>ruflo:production-validator</code></td><td><span class="badge b-ruflo">ruflo</span></td><td><span class="tier t-colab">colab</span></td><td class="act">Confirma ausência de mocks/stubs, valida contra sistemas reais.</td></tr>
+        <tr><td><code>ruflo:tdd-london-swarm</code></td><td><span class="badge b-ruflo">ruflo</span></td><td><span class="tier t-colab">colab</span></td><td class="act">TDD "London School" — mock-driven, outside-in, verificação de comportamento.</td></tr>
+      </tbody>
+    </table></div>
+    <div class="note">Apoio cruzado: <code>ruflo:refinement</code> (sede em D1) executa o ciclo TDD dentro do pipeline SPARC.</div>
+    <div class="connect"><b>Conecta com:</b> recebe build verde de D5 → aciona D4 (Segurança) para gate final → entrega para D10 (Performance) e D8 (Documentação).</div>
+  </div>
+
+  <div class="domain" id="d7">
+    <div class="domain-head"><span class="idn tier t-coord">D7</span><h3>Infraestrutura Distribuída / Swarm</h3></div>
+    <div class="domain-coord">Só entra em campo quando o projeto é, ele mesmo, um sistema distribuído/multi-agente.</div>
+    <div class="table-wrap"><table class="roster">
+      <thead><tr><th>Agente</th><th>Fonte</th><th>Tier</th><th>Atividade</th></tr></thead>
+      <tbody>
+        <tr class="coord-row"><td><code>ruflo:hierarchical-coordinator</code></td><td><span class="badge b-ruflo">ruflo</span></td><td><span class="tier t-coord">coord</span></td><td class="act">"Queen" — decompõe objetivo e delega a workers especializados.</td></tr>
+        <tr><td><code>ruflo:mesh-coordinator</code></td><td><span class="badge b-ruflo">ruflo</span></td><td><span class="tier t-colab">colab</span></td><td class="act">Coordenação peer-to-peer tolerante a falhas.</td></tr>
+        <tr><td><code>ruflo:adaptive-coordinator</code></td><td><span class="badge b-ruflo">ruflo</span></td><td><span class="tier t-colab">colab</span></td><td class="act">Troca de topologia em tempo real conforme carga.</td></tr>
+        <tr><td><code>ruflo:raft-manager</code></td><td><span class="badge b-ruflo">ruflo</span></td><td><span class="tier t-colab">colab</span></td><td class="act">Eleição de líder e replicação de log (Raft).</td></tr>
+        <tr><td><code>ruflo:quorum-manager</code></td><td><span class="badge b-ruflo">ruflo</span></td><td><span class="tier t-colab">colab</span></td><td class="act">Ajuste dinâmico de quorum e membership.</td></tr>
+        <tr><td><code>ruflo:gossip-coordinator</code></td><td><span class="badge b-ruflo">ruflo</span></td><td><span class="tier t-colab">colab</span></td><td class="act">Disseminação epidêmica de estado entre nós.</td></tr>
+        <tr><td><code>ruflo:crdt-synchronizer</code></td><td><span class="badge b-ruflo">ruflo</span></td><td><span class="tier t-colab">colab</span></td><td class="act">Consistência eventual via CRDTs (G-Counter, OR-Set, LWW, RGA).</td></tr>
+        <tr><td><code>ruflo:performance-benchmarker</code></td><td><span class="badge b-ruflo">ruflo</span></td><td><span class="tier t-colab">colab</span></td><td class="act">Benchmark de throughput/latência entre protocolos. <em>dual-hat com D10</em>.</td></tr>
+        <tr><td><code>ruflo:byzantine-coordinator</code></td><td><span class="badge b-ruflo">ruflo</span></td><td><span class="tier t-colab">colab</span></td><td class="act">Consenso Byzantine, detecção de nós maliciosos. <em>dual-hat com D4</em>.</td></tr>
+        <tr><td><code>ruflo:security-manager</code></td><td><span class="badge b-ruflo">ruflo</span></td><td><span class="tier t-colab">colab</span></td><td class="act">Criptografia e defesa do consenso. <em>dual-hat com D4</em>.</td></tr>
+      </tbody>
+    </table></div>
+    <div class="connect"><b>Conecta com:</b> ativado por D1 (Arquitetura) quando o design exige múltiplos nós → reporta risco para D4 (Segurança) e métricas para D10 (Performance).</div>
+  </div>
+
+  <div class="domain" id="d8">
+    <div class="domain-head"><span class="idn tier t-coord">D8</span><h3>Documentação &amp; Conhecimento</h3></div>
+    <div class="domain-coord">Mantém codemaps, READMEs e comentários alinhados com o que o código realmente faz.</div>
+    <div class="table-wrap"><table class="roster">
+      <thead><tr><th>Agente</th><th>Fonte</th><th>Tier</th><th>Atividade</th></tr></thead>
+      <tbody>
+        <tr class="coord-row"><td><code>ecc:doc-updater</code></td><td><span class="badge b-ecc">ecc</span></td><td><span class="tier t-coord">coord</span></td><td class="act">Atualiza codemaps, READMEs e guias após mudanças.</td></tr>
+        <tr><td><code>ecc:docs-lookup</code></td><td><span class="badge b-ecc">ecc</span></td><td><span class="tier t-colab">colab</span></td><td class="act">Busca docs atualizadas de bibliotecas via Context7. <em>dual-hat com D2</em>.</td></tr>
+        <tr><td><code>ecc:comment-analyzer</code></td><td><span class="badge b-ecc">ecc</span></td><td><span class="tier t-colab">colab</span></td><td class="act">Precisão, completude e risco de obsolescência de comentários.</td></tr>
+        <tr><td><code>ecc:spec-miner</code></td><td><span class="badge b-ecc">ecc</span></td><td><span class="tier t-colab">colab</span></td><td class="act">Extrai specs comportamentais de código legado (OpenSpec).</td></tr>
+      </tbody>
+    </table></div>
+    <div class="connect"><b>Conecta com:</b> recebe veredito final de D6 (Testes) → entrega documentação para D12 (Release) e D16 (Growth).</div>
+  </div>
+
+  <div class="domain" id="d9">
+    <div class="domain-head"><span class="idn tier t-coord">D9</span><h3>Limpeza &amp; Manutenção</h3></div>
+    <div class="domain-coord">Remove o que sobrou — código morto, duplicação, falhas silenciosas.</div>
+    <div class="table-wrap"><table class="roster">
+      <thead><tr><th>Agente</th><th>Fonte</th><th>Tier</th><th>Atividade</th></tr></thead>
+      <tbody>
+        <tr class="coord-row"><td><code>ecc:refactor-cleaner</code></td><td><span class="badge b-ecc">ecc</span></td><td><span class="tier t-coord">coord</span></td><td class="act">Roda knip/depcheck/ts-prune e remove código morto com segurança.</td></tr>
+        <tr><td><code>ecc:code-simplifier</code></td><td><span class="badge b-ecc">ecc</span></td><td><span class="tier t-colab">colab</span></td><td class="act">Simplifica mantendo comportamento idêntico.</td></tr>
+        <tr><td><code>ecc:type-design-analyzer</code></td><td><span class="badge b-ecc">ecc</span></td><td><span class="tier t-colab">colab</span></td><td class="act">Encapsulamento e invariantes de tipos.</td></tr>
+        <tr><td><code>ecc:silent-failure-hunter</code></td><td><span class="badge b-ecc">ecc</span></td><td><span class="tier t-colab">colab</span></td><td class="act">Erros engolidos, fallbacks ruins, propagação ausente.</td></tr>
+      </tbody>
+    </table></div>
+    <div class="connect"><b>Conecta com:</b> recebe veredito de D3 (Qualidade) → entrega código final para D8 (Documentação) e D10 (Performance).</div>
+  </div>
+
+  <div class="domain" id="d10">
+    <div class="domain-head"><span class="idn tier t-coord">D10</span><h3>Performance &amp; Otimização</h3></div>
+    <div class="domain-coord">Bottlenecks, bundle size, memory leaks, custo do próprio harness de agentes.</div>
+    <div class="table-wrap"><table class="roster">
+      <thead><tr><th>Agente</th><th>Fonte</th><th>Tier</th><th>Atividade</th></tr></thead>
+      <tbody>
+        <tr class="coord-row"><td><code>ecc:performance-optimizer</code></td><td><span class="badge b-ecc">ecc</span></td><td><span class="tier t-coord">coord</span></td><td class="act">Profiling, otimização de runtime, redução de bundle.</td></tr>
+        <tr><td><code>ecc:harness-optimizer</code></td><td><span class="badge b-ecc">ecc</span></td><td><span class="tier t-colab">colab</span></td><td class="act">Confiabilidade e custo do próprio harness de agentes (pass@k). <em>dual-hat com D17</em>.</td></tr>
+      </tbody>
+    </table></div>
+    <div class="note">Apoio cruzado: <code>ruflo:performance-benchmarker</code> (sede em D7) traz métricas de throughput/latência de protocolos distribuídos.</div>
+    <div class="connect"><b>Conecta com:</b> recebe código limpo de D9 → entrega relatório final para D8 (Documentação) e D17 (Meta).</div>
+  </div>
+
+  <div class="domain" id="d11">
+    <div class="domain-head"><span class="idn tier t-coord">D11</span><h3>Design &amp; Produto</h3></div>
+    <div class="domain-coord">Único domínio operado pelo conector OpenDesign — quando o projeto tem interface, marca ou material visual.</div>
+    <div class="table-wrap"><table class="roster">
+      <thead><tr><th>Agente</th><th>Fonte</th><th>Tier</th><th>Atividade</th></tr></thead>
+      <tbody>
+        <tr class="coord-row"><td><code>od:amr</code></td><td><span class="badge b-od">opendesign</span></td><td><span class="tier t-coord">coord</span></td><td class="act">Atua diretamente aqui (também é Gestor) roteando para o modelo/skill certo.</td></tr>
+        <tr><td><code>od:byok-opencode</code></td><td><span class="badge b-od">opendesign</span></td><td><span class="tier t-colab">colab</span></td><td class="act">Executa geração de código a partir do design (chave própria do usuário).</td></tr>
+      </tbody>
+    </table></div>
+    <div class="note">Apoiado por uma biblioteca de <strong>163 skills</strong> e <strong>460 templates/design systems</strong> — ver seção <a href="#biblioteca">Biblioteca OpenDesign</a> abaixo.</div>
+    <div class="connect"><b>Conecta com:</b> recebe arquitetura de D1 quando há UI → entrega handoff visual para D3 (Qualidade, revisão de front-end) e D16 (Growth).</div>
+  </div>
+
+  <div class="domain" id="d12">
+    <div class="domain-head"><span class="idn tier t-coord">D12</span><h3>Release Open Source</h3></div>
+    <div class="domain-coord">Pipeline linear: fork → sanitiza → empacota. O sanitizador é o portão de bloqueio.</div>
+    <div class="table-wrap"><table class="roster">
+      <thead><tr><th>Agente</th><th>Fonte</th><th>Tier</th><th>Atividade</th></tr></thead>
+      <tbody>
+        <tr class="coord-row"><td><code>ecc:opensource-sanitizer</code></td><td><span class="badge b-ecc">ecc</span></td><td><span class="tier t-coord">coord</span></td><td class="act">Verifica PASS/FAIL de segredos, PII e referências internas antes do release.</td></tr>
+        <tr><td><code>ecc:opensource-forker</code></td><td><span class="badge b-ecc">ecc</span></td><td><span class="tier t-colab">colab</span></td><td class="act">Copia arquivos e remove credenciais/segredos (20+ padrões).</td></tr>
+        <tr><td><code>ecc:opensource-packager</code></td><td><span class="badge b-ecc">ecc</span></td><td><span class="tier t-colab">colab</span></td><td class="act">Gera CLAUDE.md, README, LICENSE, CONTRIBUTING.</td></tr>
+      </tbody>
+    </table></div>
+    <div class="connect"><b>Conecta com:</b> só recebe do fluxo depois de D4 (Segurança) aprovar → entrega para D16 (Growth) divulgar.</div>
+  </div>
+
+  <div class="domain" id="d13">
+    <div class="domain-head"><span class="idn tier t-coord">D13</span><h3>Loop Generativo (GAN Harness)</h3></div>
+    <div class="domain-coord">Ciclo gerador/avaliador com iterações limitadas e pontuação — útil para MVPs e telas visuais.</div>
+    <div class="table-wrap"><table class="roster">
+      <thead><tr><th>Agente</th><th>Fonte</th><th>Tier</th><th>Atividade</th></tr></thead>
+      <tbody>
+        <tr class="coord-row"><td><code>ecc:gan-planner</code></td><td><span class="badge b-ecc">ecc</span></td><td><span class="tier t-coord">coord</span></td><td class="act">Expande um prompt em spec de produto com sprints e critérios.</td></tr>
+        <tr><td><code>ecc:gan-generator</code></td><td><span class="badge b-ecc">ecc</span></td><td><span class="tier t-colab">colab</span></td><td class="act">Implementa conforme a spec, itera sobre feedback.</td></tr>
+        <tr><td><code>ecc:gan-evaluator</code></td><td><span class="badge b-ecc">ecc</span></td><td><span class="tier t-colab">colab</span></td><td class="act">Testa o app rodando via Playwright e pontua contra rubrica.</td></tr>
+      </tbody>
+    </table></div>
+    <div class="connect"><b>Conecta com:</b> loop fechado interno; entrega resultado final para D6 (Testes) e D3 (Qualidade) quando converge.</div>
+  </div>
+
+  <div class="domain" id="d14">
+    <div class="domain-head"><span class="idn tier t-coord">D14</span><h3>Automação Web / Browser</h3></div>
+    <div class="domain-coord">Domínio de um único agente — navegação, scraping e preenchimento de formulários.</div>
+    <div class="table-wrap"><table class="roster">
+      <thead><tr><th>Agente</th><th>Fonte</th><th>Tier</th><th>Atividade</th></tr></thead>
+      <tbody>
+        <tr class="coord-row"><td><code>ruflo:browser-agent</code></td><td><span class="badge b-ruflo">ruflo</span></td><td><span class="tier t-coord">coord</span></td><td class="act">Navegação, login, scraping e submissão de formulários via snapshots de IA.</td></tr>
+      </tbody>
+    </table></div>
+    <div class="connect"><b>Conecta com:</b> acionado sob demanda por D2 (Pesquisa) ou D16 (Growth) para coletar dados externos.</div>
+  </div>
+
+  <div class="domain" id="d15">
+    <div class="domain-head"><span class="idn tier t-coord">D15</span><h3>Rede &amp; Infraestrutura</h3></div>
+    <div class="domain-coord">Projetos de homelab a rede corporativa — design, config e troubleshooting.</div>
+    <div class="table-wrap"><table class="roster">
+      <thead><tr><th>Agente</th><th>Fonte</th><th>Tier</th><th>Atividade</th></tr></thead>
+      <tbody>
+        <tr class="coord-row"><td><code>ecc:network-architect</code></td><td><span class="badge b-ecc">ecc</span></td><td><span class="tier t-coord">coord</span></td><td class="act">Arquitetura de rede multi-site a partir de requisitos.</td></tr>
+        <tr><td><code>ecc:network-config-reviewer</code></td><td><span class="badge b-ecc">ecc</span></td><td><span class="tier t-colab">colab</span></td><td class="act">Revisa configs de router/switch — segurança e comandos arriscados.</td></tr>
+        <tr><td><code>ecc:network-troubleshooter</code></td><td><span class="badge b-ecc">ecc</span></td><td><span class="tier t-colab">colab</span></td><td class="act">Diagnóstico read-only por camada OSI.</td></tr>
+        <tr><td><code>ecc:homelab-architect</code></td><td><span class="badge b-ecc">ecc</span></td><td><span class="tier t-colab">colab</span></td><td class="act">Planos de rede doméstica com rollback seguro.</td></tr>
+      </tbody>
+    </table></div>
+    <div class="connect"><b>Conecta com:</b> ativado sob demanda por D7 (Swarm) quando a topologia toca infraestrutura física/rede real.</div>
+  </div>
+
+  <div class="domain" id="d16">
+    <div class="domain-head"><span class="idn tier t-coord">D16</span><h3>Growth, Marketing &amp; SEO</h3></div>
+    <div class="domain-coord">Leva o que foi construído até o público — com acessibilidade incluída.</div>
+    <div class="table-wrap"><table class="roster">
+      <thead><tr><th>Agente</th><th>Fonte</th><th>Tier</th><th>Atividade</th></tr></thead>
+      <tbody>
+        <tr class="coord-row"><td><code>ecc:marketing-agent</code></td><td><span class="badge b-ecc">ecc</span></td><td><span class="tier t-coord">coord</span></td><td class="act">Posicionamento, copy e planejamento de campanha/lançamento.</td></tr>
+        <tr><td><code>ecc:seo-specialist</code></td><td><span class="badge b-ecc">ecc</span></td><td><span class="tier t-colab">colab</span></td><td class="act">Auditoria técnica de SEO, schema markup, Core Web Vitals.</td></tr>
+        <tr><td><code>ecc:a11y-architect</code></td><td><span class="badge b-ecc">ecc</span></td><td><span class="tier t-colab">colab</span></td><td class="act">Conformidade WCAG 2.2 em componentes e design systems.</td></tr>
+      </tbody>
+    </table></div>
+    <div class="connect"><b>Conecta com:</b> recebe documentação de D8 e material visual de D11 → é o último passo antes do usuário final ver o resultado.</div>
+  </div>
+
+  <div class="domain" id="d17">
+    <div class="domain-head"><span class="idn tier t-coord">D17</span><h3>Meta / Processo</h3></div>
+    <div class="domain-coord">Avalia a própria frota — fecha o ciclo de aprendizado de volta para os Gestores. Sede do <b>Agente Auditor da Frota</b>: audita o processo completo de qualquer demanda finalizada e comunica o Coordenador responsável.</div>
+    <div class="table-wrap"><table class="roster">
+      <thead><tr><th>Agente</th><th>Fonte</th><th>Tier</th><th>Atividade</th></tr></thead>
+      <tbody>
+        <tr class="coord-row"><td><code>ecc:agent-evaluator</code></td><td><span class="badge b-ecc">ecc</span></td><td><span class="tier t-coord">coord</span></td><td class="act">Avalia output de outro agente em 5 eixos (precisão, clareza, ação...).</td></tr>
+        <tr><td><code>ecc:conversation-analyzer</code></td><td><span class="badge b-ecc">ecc</span></td><td><span class="tier t-colab">colab</span></td><td class="act">Analisa transcripts para encontrar comportamentos a evitar via hooks.</td></tr>
+        <tr><td><code>ecc:loop-operator</code></td><td><span class="badge b-ecc">ecc</span></td><td><span class="tier t-colab">colab</span></td><td class="act">Opera e intervém em loops autônomos travados.</td></tr>
+        <tr><td><code>frota:metricas</code></td><td><span class="badge b-frota">frota</span></td><td><span class="tier t-colab">colab</span></td><td class="act"><b>Novo.</b> Diagnosticador de Métricas — sempre que o Auditor confirma sucesso, transforma o Relatório de Operação num placar quantitativo (taxas, tempos, contagens, índices).</td></tr>
+      </tbody>
+    </table></div>
+    <div class="note">Apoio cruzado: <code>ecc:harness-optimizer</code> (sede em D10) traz dados de custo/confiabilidade para esta avaliação. <code>frota:metricas</code> é um agente próprio da frota — nenhum agente instalado (ECC/Ruflo/OpenDesign/nativo) cobria essa função de quantificação pós-sucesso, então foi criado sob a mesma governança do <a href="https://claude.ai/artifact/4cCPGEFezkxGC8SpfR5qGy">Código de Conduta</a>.</div>
+    <div class="connect"><b>Conecta com:</b> recebe resultado de toda a esteira → devolve aprendizado para os Gestores (<code>ecc:planner</code> / <code>ruflo:planner</code>), fechando o ciclo.</div>
+  </div>
+
+  <div class="domain" id="d18">
+    <div class="domain-head"><span class="idn tier t-coord">D18</span><h3>Comunicação &amp; Triagem</h3></div>
+    <div class="domain-coord">Domínio de um único agente — a interface com caixas de entrada externas.</div>
+    <div class="table-wrap"><table class="roster">
+      <thead><tr><th>Agente</th><th>Fonte</th><th>Tier</th><th>Atividade</th></tr></thead>
+      <tbody>
+        <tr class="coord-row"><td><code>ecc:chief-of-staff</code></td><td><span class="badge b-ecc">ecc</span></td><td><span class="tier t-coord">coord</span></td><td class="act">Triagem de e-mail/Slack/LINE/Messenger em 4 níveis, gera rascunhos de resposta.</td></tr>
+      </tbody>
+    </table></div>
+    <div class="connect"><b>Conecta com:</b> alimenta os Gestores com pedidos externos que viram novos projetos.</div>
+  </div>
+
+</section>
+
+<section id="fluxo">
+  <h2>Fluxo de um projeto típico</h2>
+  <p>A esteira abaixo mostra como um pedido atravessa a frota do início ao fim — e como o aprendizado volta para o começo, fechando o ciclo.</p>
+  <div class="diagram-box">
+    <pre class="mermaid">
+flowchart LR
+  A[Descoberta &amp; Triagem<br/><small>Gestores · D18 · D2</small>] --> B[Planejamento<br/><small>Gestores</small>]
+  B --> C[Especificação &amp; Arquitetura<br/><small>D1</small>]
+  C --> D[Implementação<br/><small>D1 · D11</small>]
+  D --> E[Build / CI<br/><small>D5</small>]
+  E --> F[Revisão de Qualidade<br/><small>D3</small>]
+  F --> G[Testes<br/><small>D6</small>]
+  G --> H[Segurança<br/><small>D4</small>]
+  H --> I[Limpeza &amp; Performance<br/><small>D9 · D10</small>]
+  I --> J[Documentação<br/><small>D8</small>]
+  J --> K[Release<br/><small>D12</small>]
+  K --> L[Growth / Deploy<br/><small>D16</small>]
+  L --> M[Retrospectiva<br/><small>D17</small>]
+  M -. aprendizado .-> B
+  classDef p fill:#DFF1EE,stroke:#0F6E64,color:#161B22;
+  class A,B,C,D,E,F,G,H,I,J,K,L,M p;
+    </pre>
+  </div>
+  <p class="note">Domínios situacionais (D7 Swarm, D13 GAN, D14 Browser, D15 Rede) entram fora dessa linha principal, sob demanda, sempre que a natureza do projeto pedir.</p>
+</section>
+
+<section id="reserva">
+  <h2>Reserva externa — CLIs do OpenDesign</h2>
+  <p>O OpenDesign conhece <strong>27 adapters de CLI de agentes</strong>; apenas <strong>2 estão instalados</strong> nesta máquina (<code>od:amr</code> e <code>od:byok-opencode</code>, já listados em Gestores/D11). Os outros 25 ficam de reserva — instaláveis sob demanda quando uma tarefa pedir especificamente aquele modelo.</p>
+  <div class="table-wrap"><table class="roster">
+    <thead><tr><th>Família</th><th>CLIs de reserva</th></tr></thead>
+    <tbody>
+      <tr><td><span class="tier t-ext">Anthropic</span></td><td class="act">Claude Code CLI</td></tr>
+      <tr><td><span class="tier t-ext">OpenAI</span></td><td class="act">Codex CLI · GitHub Copilot CLI</td></tr>
+      <tr><td><span class="tier t-ext">xAI</span></td><td class="act">Grok Build · Hermes</td></tr>
+      <tr><td><span class="tier t-ext">Google</span></td><td class="act">Antigravity</td></tr>
+      <tr><td><span class="tier t-ext">Provedores chineses</span></td><td class="act">Qwen Code · Kimi CLI · DeepSeek TUI · DeepSeek Harness · DeepSeek Reasonix · MiMo Code · Codebuddy Code · AtomCode CLI · Trae CLI · Qoder CLI</td></tr>
+      <tr><td><span class="tier t-ext">Multi-modelo / agnósticos</span></td><td class="act">OpenCode · Cursor Agent · Pi · Amp · Aider · Devin for Terminal · Kiro CLI · Kilo · Mistral Vibe CLI</td></tr>
+    </tbody>
+  </table></div>
+  <p class="note">Cada um tem <code>installUrl</code> próprio — instalar localmente e o adapter passa de reserva para disponível.</p>
+</section>
+
+<section id="biblioteca">
+  <h2>Biblioteca de conteúdo do OpenDesign</h2>
+  <p>Não são agentes — é o acervo que D11 (Design &amp; Produto) usa como matéria-prima. Consultar sob demanda em vez de listar linha a linha.</p>
+  <div class="idx-grid">
+    <div class="idx-card"><div class="nm">460 "plugins"</div><div class="cd">design systems prontos (Apple, Airbnb, BMW, Claude, Cursor, Binance...), templates de vídeo, imagem e exemplos de deck/doc.</div></div>
+    <div class="idx-card"><div class="nm">163 skills</div><div class="cd">brandkit, copywriting, design-review, apple-hig, d3-visualization, canvas-design, docx, deck-swiss-international e outras.</div></div>
+  </div>
+</section>
+
+<section id="fontes">
+  <h2>Fontes de Conhecimento</h2>
+  <p>Para agir, os agentes precisam de conteúdo, não só de regras. Esta é a camada de contexto que alimenta principalmente D2 (Pesquisa &amp; Descoberta) e D8 (Documentação &amp; Conhecimento) — e, por tabela, os Gestores na hora de planejar.</p>
+
+  <div class="src-grid">
+    <div class="src-card">
+      <span class="kind">Pipeline local</span>
+      <h4>book-to-skill</h4>
+      <p>Converte livros e documentos próprios (PDF, EPUB, DOCX, HTML, Markdown) em skills estruturadas — frameworks, técnicas, modelos mentais — gravadas permanentemente em <code>~/.claude/skills</code>.</p>
+      <div class="feeds"><b>Alimenta:</b> todos os agentes via Skill tool, sob demanda</div>
+    </div>
+    <div class="src-card">
+      <span class="kind">Biblioteca local · ~20 skills</span>
+      <h4>Skills de conhecimento já geradas</h4>
+      <p>Resultado do book-to-skill: biografias, ciência-filosofia-da-ciência, psicologia-desenvolvimento-pessoal, história-sociedade, negócios-estratégia-inovação, estratégia-poder-clássicos e outras.</p>
+      <div class="feeds"><b>Alimenta:</b> Gestores (contexto de decisão) · D8 (documentação/redação)</div>
+    </div>
+    <div class="src-card">
+      <span class="kind">Consulta ao vivo</span>
+      <h4>Context7 <span style="font-weight:400;color:var(--text-faint)">(via ecc:docs-lookup)</span></h4>
+      <p>Documentação oficial e atualizada de bibliotecas, frameworks e APIs — evita implementar contra uma versão desatualizada.</p>
+      <div class="feeds"><b>Alimenta:</b> D1 (Arquitetura) · D2 (Pesquisa) · D5 (Build)</div>
+    </div>
+    <div class="src-card">
+      <span class="kind">Consulta ao vivo</span>
+      <h4>WebSearch / WebFetch</h4>
+      <p>Pesquisa e leitura de páginas na web aberta — ferramentas nativas do Claude Code, usadas quando a resposta não está no código nem na skill local.</p>
+      <div class="feeds"><b>Alimenta:</b> D2 (Pesquisa) · D16 (Growth/SEO)</div>
+    </div>
+    <div class="src-card">
+      <span class="kind">Consulta ao vivo · manual</span>
+      <h4>arXiv · PubMed · Google Scholar</h4>
+      <p>Literatura acadêmica — abstracts, metadados e papers com licença aberta, para embasar decisões técnicas em ML/dados.</p>
+      <div class="feeds"><b>Alimenta:</b> D3 (mle-reviewer, rag-pipeline-reviewer) · D2</div>
+    </div>
+    <div class="src-card">
+      <span class="kind">Consulta ao vivo · manual</span>
+      <h4>Project Gutenberg · Internet Archive</h4>
+      <p>Texto integral de obras em domínio público e empréstimo digital controlado e legal — não confundir com agregadores piratas.</p>
+      <div class="feeds"><b>Alimenta:</b> D8 (documentação) · Gestores</div>
+    </div>
+  </div>
+
+  <div class="exclude">
+    <b>Fora da frota, por decisão:</b> repositórios do tipo "shadow library" (agregadores que espelham Library Genesis, Sci-Hub, Z-Library etc.) foram avaliados e <b>não</b> entraram como fonte — hospedam e redistribuem material protegido por direitos autorais sem autorização. Nenhum agente está configurado para consultá-los.
+  </div>
+</section>
+
+</div>
+
+<footer>
+  <div class="wrap">
+    <p>Levantamento feito consultando ao vivo os plugins do Claude Code (<code>ListPlugins</code>, <code>installed_plugins.json</code>), o projeto <code>ruflo/.claude/agents</code> e o daemon do OpenDesign (<code>list_agents</code>). Reflete o estado desta máquina em 17/09/2026 — reexecute a consulta quando novos agentes forem instalados.</p>
+  </div>
+</footer>

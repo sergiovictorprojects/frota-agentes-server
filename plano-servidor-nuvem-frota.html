@@ -1,0 +1,358 @@
+<title>Frota na Nuvem</title>
+<style>
+:root{
+  --bg:#faf9f7; --surface:#ffffff; --surface-2:#f2eff9; --border:#e4e0ee;
+  --text:#1c1a24; --text-dim:#5b5668; --accent:#6D4BC4; --accent-2:#9B7FE0;
+  --accent-soft:#efe9fb; --good:#1f8a5f; --warn:#b8790f; --bad:#c0392b;
+  --mono-bg:#1c1a24; --mono-text:#e9e5f5;
+  --shadow: 0 1px 2px rgba(28,26,36,.06), 0 8px 24px -12px rgba(28,26,36,.12);
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    --bg:#141219; --surface:#1c1a24; --surface-2:#242030; --border:#332e42;
+    --text:#f1eef8; --text-dim:#a79fc2; --accent:#B49AEE; --accent-2:#8567D6;
+    --accent-soft:#2a2440; --good:#4fd399; --warn:#f0b73b; --bad:#f0685f;
+    --mono-bg:#0e0c14; --mono-text:#e9e5f5;
+    --shadow: 0 1px 2px rgba(0,0,0,.3), 0 8px 24px -12px rgba(0,0,0,.5);
+  }
+}
+:root[data-theme="dark"]{
+  --bg:#141219; --surface:#1c1a24; --surface-2:#242030; --border:#332e42;
+  --text:#f1eef8; --text-dim:#a79fc2; --accent:#B49AEE; --accent-2:#8567D6;
+  --accent-soft:#2a2440; --good:#4fd399; --warn:#f0b73b; --bad:#f0685f;
+  --mono-bg:#0e0c14; --mono-text:#e9e5f5;
+  --shadow: 0 1px 2px rgba(0,0,0,.3), 0 8px 24px -12px rgba(0,0,0,.5);
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--text);font-family:'Public Sans',system-ui,sans-serif;line-height:1.6;padding-inline:16px}
+.wrap{max-width:840px;margin:0 auto;padding-block:48px 96px}
+h1,h2,h3{font-family:'Space Grotesk',system-ui,sans-serif;font-weight:700;letter-spacing:-.01em;text-wrap:balance}
+.kicker{font-family:'IBM Plex Mono',monospace;font-size:12px;letter-spacing:.14em;text-transform:uppercase;color:var(--accent);margin:0 0 10px}
+h1{font-size:clamp(28px,5vw,40px);margin:0 0 8px}
+.subtitle{color:var(--text-dim);font-size:17px;max-width:60ch;margin:0 0 32px}
+h2{font-size:22px;margin:56px 0 16px;padding-top:8px;border-top:1px solid var(--border)}
+h2:first-of-type{border-top:none;padding-top:0;margin-top:40px}
+h3{font-size:16px;margin:24px 0 10px}
+p{margin:0 0 14px;color:var(--text)}
+.muted{color:var(--text-dim)}
+a{color:var(--accent)}
+.hero{background:linear-gradient(160deg,var(--accent-soft),transparent 60%);border:1px solid var(--border);border-radius:16px;padding:24px;margin-bottom:8px}
+.pillrow{display:flex;gap:8px;flex-wrap:wrap;margin:16px 0}
+.pill{font-family:'IBM Plex Mono',monospace;font-size:12px;padding:5px 10px;border-radius:999px;background:var(--surface-2);border:1px solid var(--border);color:var(--text-dim)}
+.callout{background:var(--surface);border:1px solid var(--border);border-left:4px solid var(--accent);border-radius:10px;padding:16px 18px;margin:18px 0;box-shadow:var(--shadow)}
+.callout.crit{border-left-color:var(--bad)}
+.callout p:last-child{margin-bottom:0}
+.flow{background:var(--mono-bg);color:var(--mono-text);border-radius:12px;padding:20px;overflow-x:auto;box-shadow:var(--shadow)}
+.flow pre{margin:0;font-family:'IBM Plex Mono',monospace;font-size:11.5px;line-height:1.55;white-space:pre}
+table{width:100%;border-collapse:collapse;margin:12px 0 20px;font-size:14px}
+th,td{text-align:left;padding:9px 10px;border-bottom:1px solid var(--border);vertical-align:top}
+th{font-family:'IBM Plex Mono',monospace;font-size:11px;text-transform:uppercase;letter-spacing:.06em;color:var(--text-dim);font-weight:600}
+tr:last-child td{border-bottom:none}
+td.num{font-family:'IBM Plex Mono',monospace;white-space:nowrap}
+.tblwrap{overflow-x:auto}
+.sev{display:inline-block;font-family:'IBM Plex Mono',monospace;font-size:11px;font-weight:700;padding:2px 8px;border-radius:6px}
+.sev.crit{background:rgba(192,57,43,.15);color:var(--bad)}
+.sev.alto{background:rgba(184,121,15,.15);color:var(--warn)}
+.sev.medio{background:var(--accent-soft);color:var(--accent)}
+.sev.baixo{background:rgba(31,138,95,.15);color:var(--good)}
+.dcard{background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:16px 18px;margin:14px 0;box-shadow:var(--shadow)}
+.dcard .dtag{font-family:'IBM Plex Mono',monospace;font-size:12px;font-weight:700;color:var(--accent);margin-bottom:6px}
+.dcard .drec{font-size:13px;color:var(--good);margin-top:8px;font-weight:600}
+.phase{background:var(--surface);border:1px solid var(--border);border-radius:12px;margin:14px 0;box-shadow:var(--shadow);overflow:hidden}
+.phase>summary{cursor:pointer;padding:14px 18px;font-family:'Space Grotesk',sans-serif;font-weight:700;font-size:15px;list-style:none;display:flex;align-items:center;justify-content:space-between;gap:10px}
+.phase>summary::-webkit-details-marker{display:none}
+.phase>summary::after{content:'+';font-family:'IBM Plex Mono',monospace;color:var(--accent);font-size:18px}
+.phase[open]>summary::after{content:'–'}
+.phase .body{padding:0 18px 18px;border-top:1px solid var(--border)}
+.phase .body ol{margin:12px 0 0;padding-left:20px}
+.phase .body li{margin-bottom:8px;font-size:14px}
+.crit-badge{font-family:'IBM Plex Mono',monospace;font-size:10px;padding:2px 6px;border-radius:5px;background:rgba(192,57,43,.15);color:var(--bad);margin-left:6px}
+.checklist{list-style:none;padding:0;margin:0}
+.checklist li{display:flex;gap:10px;padding:7px 0;border-bottom:1px dashed var(--border);font-size:14px}
+.checklist li:last-child{border-bottom:none}
+.checklist li::before{content:'☐';color:var(--accent);flex-shrink:0}
+.foot{margin-top:56px;padding-top:20px;border-top:1px solid var(--border);font-size:13px;color:var(--text-dim)}
+.foot code{font-family:'IBM Plex Mono',monospace;background:var(--surface-2);padding:1px 5px;border-radius:4px}
+code{font-family:'IBM Plex Mono',monospace;background:var(--surface-2);padding:1px 5px;border-radius:4px;font-size:.92em}
+</style>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;700&family=Public+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;600&display=swap">
+
+<div class="wrap">
+  <div class="hero">
+    <p class="kicker">Plano de arquitetura · Frota de Agentes</p>
+    <h1>Automação independente na nuvem</h1>
+    <p class="subtitle">Como sair de "roda no computador do usuário via tarefa agendada" para "roda 24/7 num servidor próprio, com agentes reais e camadas de segurança" — sem quebrar os 6 artifacts já publicados.</p>
+    <div class="pillrow">
+      <span class="pill">Railway (recomendado)</span>
+      <span class="pill">Postgres como fonte da verdade</span>
+      <span class="pill">Claude Agent SDK</span>
+      <span class="pill">MCP + OAuth</span>
+      <span class="pill">US$ 25–55/mês</span>
+    </div>
+  </div>
+
+  <h2>Resumo executivo</h2>
+  <p>Três constatações reorganizam o desenho inteiro:</p>
+  <div class="callout">
+    <p><strong>(a) O agendador resolve o problema — o connector MCP não.</strong> Um MCP server só executa quando alguém chama uma tool; ele não "roda sozinho". A independência vem de um processo com relógio próprio, de pé 24/7. O connector é só a janela pela qual os artifacts voltam a ver o estado.</p>
+  </div>
+  <div class="callout">
+    <p><strong>(b) O banco dos artifacts deixa de ser fonte da verdade.</strong> <code>ArtifactData</code> só existe dentro de uma sessão Claude Code; um servidor na nuvem não alcança aquele banco, e a CSP do artifact bloqueia o caminho inverso. O servidor precisa do próprio Postgres — não é preferência, é consequência da plataforma.</p>
+  </div>
+  <div class="callout crit">
+    <p><strong>(c) Existe uma lacuna que nenhuma arquitetura resolve sozinha: publicar Claude Artifacts.</strong> Hoje a automação publica um artifact novo como entrega. Não há API pública para um servidor terceiro criar um Claude Artifact. Essa é a decisão de produto mais importante do plano — ver <a href="#d4">decisão D4</a>.</p>
+  </div>
+  <p>Recomendação em uma linha: <strong>um container único em Railway (ou Fly.io em São Paulo), Node/TypeScript, Postgres como fonte da verdade, agendamento interno via pg-boss, loop agentico via Claude Agent SDK com papéis próprios (<code>frota:*</code>), e um MCP server Streamable HTTP com OAuth restrito a uma única conta.</strong> Custo típico: US$ 25–55/mês.</p>
+
+  <h2>Fluxo de dados</h2>
+  <div class="flow"><pre>                 ┌──────────────────────────────────────────┐
+                 │  CONTAINER ÚNICO (Railway / Fly.io)       │
+  relógio ──────►│  [1] SCHEDULER (pg-boss, cron interno)    │
+  interno        │       │ enfileira "processar-fila"        │
+                 │       ▼                                    │
+                 │  [2] ORCHESTRATOR                          │
+                 │       ├─ claim demandas (SKIP LOCKED, 3)  │
+                 │       ├─ fila vazia → encerra, custo ≈ 0  │
+                 │       ├─ decompõe em papéis sequenciais    │
+                 │       │   frota:architect → frota:reviewer │
+                 │       ├─ checkpoints + handoffs → DB       │
+                 │       └─ auditoria + relatório → DB        │
+                 │       │                                    │
+                 │       ├──────► api.anthropic.com           │
+                 │       └──────► notificação (Telegram/mail) │
+                 │                                             │
+                 │  [3] HTTP (Fastify)                        │
+                 │       ├─ /mcp   (Streamable HTTP + OAuth)  │
+                 │       ├─ /app   (UI própria)               │
+                 │       └─ /health                           │
+                 └───────────────┬─────────────────────────────┘
+                                 │ rede privada
+                        ┌────────▼─────────┐
+                        │  POSTGRES        │ ← FONTE DA VERDADE
+                        │  demandas, msgs, │
+                        │  relatorios, runs│
+                        └──────────────────┘
+
+  ── lado claude.ai (só lê/escreve via connector, sob demanda) ──
+
+   [Operação] [Conector 3D] [Painel] [Organograma] [Conduta] [Sist.Org]
+        └──────────┴──────────┬─────┴──────────┴──────────┘
+                    MCP connector pessoal
+                    (roda na conta de quem ESTÁ VENDO a página;
+                     dispara ao abrir / intervalo / botão —
+                     nunca em segundo plano)
+                              ▼
+                   https://‹domínio›/mcp  ◄──── Chat do Claude também</pre></div>
+  <p class="muted">A seta do relógio interno para o orchestrator não passa por claude.ai nem pelo computador do usuário — é isso, e só isso, que resolve o problema original.</p>
+
+  <h2>Decisão de dados</h2>
+  <p><strong>Postgres próprio como fonte da verdade; os artifacts viram clientes de leitura</strong> via tools MCP, com o <code>db</code> de cada artifact rebaixado a cache local da última leitura (degradação graciosa quando o connector não está presente). O schema lógico não muda — <code>titulo</code>, <code>categoria</code>, <code>entregaUrl</code>, <code>metricas.indiceGeral</code> etc. continuam idênticos na fronteira da API, então o JS dos artifacts troca a origem dos dados, não o formato.</p>
+  <p>A alternativa — manter o banco dos artifacts como fonte da verdade — foi descartada: não há API pública para um servidor terceiro escrever nesse banco, e a CSP bloqueia o caminho inverso.</p>
+
+  <h2>Reproduzindo os agentes reais fora do Claude Code</h2>
+  <p>Os <code>subagent_type</code> de hoje (<code>ecc:architect</code>, <code>ecc:code-reviewer</code>...) só existem dentro do Claude Code do usuário. O servidor usa o <strong>Claude Agent SDK</strong> com um registry próprio de 19 papéis (<code>frota:architect</code>, <code>frota:code-reviewer</code>...), cada um com prompt de sistema, a regra de conduta copiada literalmente do SKILL.md atual, e as tools que aquele papel pode usar — inclusive como controle real: d2 (Pesquisa) não recebe nenhuma tool de escrita porque é read-only por regra, e "gestores" nunca recebe tools de produção de entrega porque "nunca implementa direto".</p>
+  <p>O campo <code>agente</code> nos checkpoints passa a ser preenchido pelo <em>código</em> do orquestrador (que sabe qual papel realmente rodou), nunca pelo texto do modelo — honra a regra do SKILL.md de nunca atribuir trabalho a um agente que não foi de fato invocado.</p>
+
+  <h2>Hospedagem</h2>
+  <div class="tblwrap"><table>
+    <tr><th>Opção</th><th>Prós</th><th>Contras</th><th>Custo/mês</th></tr>
+    <tr><td><strong>Railway</strong> ★</td><td>DX mais simples; Postgres 1 clique; deploy por git push</td><td>menos controle fino; regiões limitadas</td><td class="num">US$ 10–20</td></tr>
+    <tr><td>Fly.io</td><td>Região GRU (São Paulo) — latência e dados no Brasil</td><td>CLI-cêntrico, mais conceitos</td><td class="num">US$ 8–18</td></tr>
+    <tr><td>Render</td><td>Preço previsível; cron nativo</td><td>free tier hiberna; Postgres free expira em 30d</td><td class="num">US$ 14–21</td></tr>
+    <tr><td>Cloud Run + Scheduler</td><td>Escala a zero</td><td>mais peças; cold start atrapalha o MCP</td><td class="num">US$ 3–12</td></tr>
+    <tr><td>Lambda + EventBridge</td><td>—</td><td><strong>descartada:</strong> timeout de 15min mata execuções longas</td><td class="num">—</td></tr>
+  </table></div>
+  <p class="muted">Agendamento fica <strong>dentro da aplicação</strong> (pg-boss sobre o próprio Postgres), não no provedor — portável entre Railway/Fly/Render sem reescrita, e traz fila durável + retries sem precisar de Redis.</p>
+
+  <h2>Segurança</h2>
+  <ul>
+    <li><strong>OAuth 2.1</strong> via provedor que o usuário já tem (Google/GitHub) + <strong>allowlist de uma única conta</strong> — qualquer outra identidade recebe 403 antes de qualquer tool.</li>
+    <li><strong>Validação de audience</strong> obrigatória no token (defesa contra confused deputy); nunca repassar o token recebido adiante.</li>
+    <li><strong>Segredos só no cofre do provedor</strong>; boot falha rápido se faltar algum; API key da Anthropic dedicada com <strong>teto de gasto no console</strong>.</li>
+    <li><strong>Rate limit em dois níveis</strong>: por token/IP nas tools MCP, e internamente — máx. 3 demandas/run, teto de gasto mensal com <strong>kill-switch automático</strong> que pausa a frota e notifica.</li>
+    <li><strong>Contenção de prompt injection</strong>: conteúdo de demandas nunca entra em system prompt, cada papel só tem as tools do seu escopo, egress de rede restrito a <code>api.anthropic.com</code>, saídas de controle (status, contagem de violações) são structured output validado por schema — nunca texto livre interpretado.</li>
+    <li><strong>Auditoria</strong> append-only de toda chamada MCP e ação do scheduler; Postgres sem porta pública; backup com restauração testada ao menos uma vez.</li>
+  </ul>
+
+  <h2>Custo estimado</h2>
+  <div class="tblwrap"><table>
+    <tr><th>Cenário</th><th>Composição</th><th>Custo</th></tr>
+    <tr><td>Fila vazia</td><td>só consulta SQL, zero chamadas ao modelo</td><td class="num">~US$ 0,00</td></tr>
+    <tr><td>Demanda simples</td><td>~40k in / 6k out, Sonnet</td><td class="num">US$ 0,10–0,25</td></tr>
+    <tr><td>Demanda média (2–3 papéis)</td><td>~150k in / 25k out</td><td class="num">US$ 0,60–1,20</td></tr>
+    <tr><td>Demanda complexa + entrega</td><td>~250k in / 40k out</td><td class="num">US$ 1,50–3,50</td></tr>
+  </table></div>
+  <p><strong>Total típico com 20–40 demandas/mês: US$ 25–55/mês</strong> (hospedagem + API). Fila vazia deve custar zero — hoje cada disparo sobe uma sessão inteira mesmo sem trabalho; cache de prompt para a tabela de 18 setores é obrigatório no MVP, não otimização futura. Pior caso sem controle (fila sempre cheia, 48 runs/dia): centenas de dólares/dia — por isso o teto de gasto é requisito de MVP.</p>
+
+  <h2 id="decisoes">Decisões que só você pode tomar</h2>
+  <p class="muted">Nada disso deveria começar a virar código antes de D1–D4 estarem fechadas.</p>
+
+  <div class="dcard">
+    <div class="dtag">D1 · Provedor de nuvem</div>
+    <p>Railway (mais simples) ou Fly.io em GRU/São Paulo (mais controle, dados no Brasil)?</p>
+    <p class="drec">Recomendação: Railway</p>
+  </div>
+  <div class="dcard">
+    <div class="dtag">D2 · Orçamento mensal</div>
+    <p>Vira o teto configurado no console da Anthropic e o kill-switch no código — sem esse número a Fase 1 não deveria começar.</p>
+    <p class="drec">Sugestão de partida: US$ 50/mês, alertas em 50/80/100%</p>
+  </div>
+  <div class="dcard">
+    <div class="dtag">D3 · Postgres como fonte da verdade</div>
+    <p>Aceita que o estado "real" da frota passe a viver fora do claude.ai, com o banco dos artifacts virando cache?</p>
+    <p class="drec">É a recomendação — na prática não há alternativa viável</p>
+  </div>
+  <div class="dcard" id="d4">
+    <div class="dtag">D4 · Como tratar entregas (sem poder publicar Claude Artifacts)</div>
+    <p>(a) Servidor hospeda o HTML no próprio domínio — 100% automático, mas deixa de ser um Claude Artifact.<br>(b) Servidor gera e guarda; você pede no chat "publica a entrega pendente" — mantém como artifact, custa um passo humano.<br>(c) Híbrido: sempre auto-hospeda (fecha sozinho) + oferece promoção a artifact quando você quiser.</p>
+    <p class="drec">Recomendação: (c) híbrido</p>
+  </div>
+  <div class="dcard">
+    <div class="dtag">D5 · Nomes de agente mudam de <code>ecc:*</code> para <code>frota:*</code></div>
+    <p>Exigência da própria regra de honestidade do SKILL.md — cria descontinuidade cosmética com relatórios históricos.</p>
+  </div>
+  <div class="dcard">
+    <div class="dtag">D6 · Republicar os 6 artifacts com connector</div>
+    <p>Risco de órfão de banco (já aconteceu antes). Alternativa: manter artifacts congelados e usar só a UI própria do servidor — perde a cidade 3D.</p>
+    <p class="drec">Recomendação: republicar, em etapas, com piloto de baixo risco primeiro</p>
+  </div>
+  <div class="dcard">
+    <div class="dtag">D7 · Canal de notificação</div>
+    <p>Telegram (mais rico, exige criar um bot) ou email (mais simples)?</p>
+  </div>
+  <div class="dcard">
+    <div class="dtag">D8 · Domínio próprio</div>
+    <p>Recomendado — ~US$ 12/ano — evita reregistrar o connector se trocar de provedor depois.</p>
+  </div>
+  <div class="dcard">
+    <div class="dtag">D9 · Frequência do agendador</div>
+    <p>Como fila vazia passa a custar zero, dá para rodar a cada 10 min em vez de 30 sem impacto de custo — melhora a latência percebida.</p>
+  </div>
+  <div class="dcard">
+    <div class="dtag">D10 · Residência de dados</div>
+    <p>Demandas podem conter material de terceiros — influencia D1 (Fly GRU mantém tudo no Brasil).</p>
+  </div>
+
+  <h2>Principais riscos</h2>
+  <div class="tblwrap"><table>
+    <tr><th>Risco</th><th>Sev.</th><th>Mitigação</th></tr>
+    <tr><td>Republicar artifacts órfã os bancos atuais</td><td><span class="sev crit">crítico</span></td><td>export completo antes; piloto com 1 artifact; nunca omitir <code>capabilities</code></td></tr>
+    <tr><td>Custo de API dispara sem perceber</td><td><span class="sev crit">crítico</span></td><td>teto no console + kill-switch + alertas 50/80/100%</td></tr>
+    <tr><td>Prompt injection via demanda</td><td><span class="sev alto">alto</span></td><td>conteúdo nunca em system prompt; structured output</td></tr>
+    <tr><td>Servidor não publica Claude Artifacts</td><td><span class="sev alto">alto</span></td><td>decisão D4 — híbrido recomendado</td></tr>
+    <tr><td>Container morre silenciosamente</td><td><span class="sev alto">alto</span></td><td>healthcheck externo + dead-man's-switch</td></tr>
+    <tr><td>Tarefa local e servidor rodando juntos, dados divergem</td><td><span class="sev alto">alto</span></td><td>corte limpo, nunca sobreposição</td></tr>
+    <tr><td>OAuth de connectors remotos evolui e quebra</td><td><span class="sev medio">médio</span></td><td>testar handshake real cedo (Fase 2)</td></tr>
+    <tr><td>Fidelidade reduzida vs. subagents reais do Claude Code</td><td><span class="sev medio">médio</span></td><td>evals contra relatórios históricos reais</td></tr>
+    <tr><td>Anexos não portáveis entre artifacts</td><td><span class="sev medio">médio</span></td><td>storage próprio + reupload manual dos existentes</td></tr>
+    <tr><td>Lock-in no Agent SDK</td><td><span class="sev baixo">baixo</span></td><td>orquestração isolada atrás de interface própria</td></tr>
+  </table></div>
+
+  <h2>Plano de fases</h2>
+
+  <details class="phase" open>
+    <summary>Fase 0 — Decisões e provisionamento<span class="crit-badge">bloqueia tudo</span></summary>
+    <div class="body"><ol>
+      <li>Fechar D1–D10 com você antes de qualquer código.</li>
+      <li>Provisionar provedor, Postgres, domínio, API key dedicada <strong>com teto de gasto</strong>, OAuth, canal de notificação.</li>
+      <li>Spike de 2h confirmando que não existe superfície HTTP sancionada para escrever no <code>db</code> de um artifact de fora.</li>
+      <li>Fixar IDs de modelo e preços vigentes.</li>
+    </ol></div>
+  </details>
+
+  <details class="phase">
+    <summary>Fase 1 — MVP: independência real</summary>
+    <div class="body">
+      <p class="muted">Entrega: a fila é processada 24/7 com o computador desligado. Passe único, sem decomposição multi-agente ainda.</p>
+      <ol>
+        <li>Esqueleto + validação de segredos no boot</li>
+        <li>Schema e migrações Postgres</li>
+        <li>Repositórios com claim transacional (<code>SKIP LOCKED</code>)</li>
+        <li>Cliente Anthropic com contabilidade e teto <span class="crit-badge">alto risco</span></li>
+        <li>Orquestrador de passe único reproduzindo os passos 1–4 do SKILL.md</li>
+        <li>Auditoria de métricas com structured output</li>
+        <li>Scheduler pg-boss — encerra sem chamar o modelo se fila vazia</li>
+        <li>UI web própria (criar demanda, ver fila, timeline, relatórios)</li>
+        <li>Notificação (Telegram/email)</li>
+        <li>Migração dos dados legados (export via Claude Code → import validado)</li>
+        <li>Deploy + healthcheck + watchdog + backup testado</li>
+      </ol>
+    </div>
+  </details>
+
+  <details class="phase">
+    <summary>Fase 2 — MCP server e connector</summary>
+    <div class="body"><ol>
+      <li>Módulo de tools compartilhado (in-process para o agente + HTTP para o connector)</li>
+      <li>Streamable HTTP + OAuth + allowlist + validação de audience <span class="crit-badge">fronteira de segurança</span></li>
+      <li>Rate limiting e audit log nas chamadas MCP</li>
+      <li>Registro do connector na conta claude.ai + teste de handshake real</li>
+      <li>Validação: operar a frota inteira pelo chat, sem abrir nenhum artifact</li>
+    </ol></div>
+  </details>
+
+  <details class="phase">
+    <summary>Fase 3 — Paridade comportamental (multi-agente)</summary>
+    <div class="body"><ol>
+      <li>Registry dos 19 papéis <code>frota:*</code> com regras do SKILL.md como permissões reais de tools</li>
+      <li>Triagem de complexidade (nível 1–4) decidindo passe único vs. decomposição</li>
+      <li>Decomposição sequencial via subagents do Agent SDK</li>
+      <li>Checkpoints e handoffs com <code>agente</code> preenchido pelo código</li>
+      <li>Relatório com cadeia real de papéis invocados</li>
+      <li>Suite de evals contra demandas douradas (baseline: Teste 01, índice 93)</li>
+    </ol>
+    <p class="muted" style="margin-top:10px">Só aqui a tarefa local <code>frota-processar-fila</code> é desligada — nunca em paralelo com o servidor sobre bases diferentes.</p></div>
+  </details>
+
+  <details class="phase">
+    <summary>Fase 4 — Artifacts republicados</summary>
+    <div class="body"><ol>
+      <li>Piloto com 1 artifact de baixo risco (sugestão: Painel Geral) <span class="crit-badge">risco R1</span></li>
+      <li>Trocar <code>window.claude.db</code> por tools MCP, db local vira cache com selo "sem conexão"</li>
+      <li>Operação (o mais complexo — Kanban, Análises, Status, Detalhes)</li>
+      <li>Conector de Inteligência com handoffs por polling (ritmo ajustado, não streaming real)</li>
+      <li>Demais artifacts (Organograma, Código de Conduta, Sistema Organizacional)</li>
+    </ol></div>
+  </details>
+
+  <details class="phase">
+    <summary>Fase 5 — Entregas</summary>
+    <div class="body"><ol>
+      <li>Geração e hospedagem de entrega seguindo o design system da frota</li>
+      <li>Tool <code>promover_entrega</code> para publicação assistida como Claude Artifact</li>
+      <li>Estados <code>Aguardando humano</code> / <code>Aguardando insumo</code> com notificação dedicada</li>
+    </ol></div>
+  </details>
+
+  <details class="phase">
+    <summary>Fase 6 — Endurecimento</summary>
+    <div class="body"><ol>
+      <li>Observabilidade: métricas de run, custo por demanda</li>
+      <li>Teste real de restauração de backup</li>
+      <li>Ensaio de rotação de segredos</li>
+      <li>Revisão de segurança dedicada sobre a superfície MCP/OAuth</li>
+      <li>Runbook de falhas (run falha, teto trava, connector para de autenticar)</li>
+    </ol></div>
+  </details>
+
+  <h2>Critérios de sucesso</h2>
+  <ul class="checklist">
+    <li>Demanda processada de ponta a ponta com o computador desligado</li>
+    <li>Run com fila vazia não gera nenhuma chamada ao modelo</li>
+    <li>Duas runs concorrentes nunca processam a mesma demanda</li>
+    <li>Connector MCP autenticado por OAuth, allowlist de uma conta</li>
+    <li>Teto de gasto pausa a frota automaticamente e notifica</li>
+    <li>Campo <code>agente</code> sempre corresponde a um papel realmente invocado</li>
+    <li>Métricas de auditoria derivam de violações citadas, nunca de números livres</li>
+    <li>Dados legados migrados e conferidos</li>
+    <li>6 artifacts republicados sem perda de db/assets</li>
+    <li>Tarefa local desligada sem período de sobreposição</li>
+    <li>Backup restaurado com sucesso ao menos uma vez</li>
+    <li>Nenhum segredo no repositório; boot falha se faltar segredo obrigatório</li>
+  </ul>
+
+  <div class="foot">
+    <p>Fonte do comportamento atual: <code>~/.claude/scheduled-tasks/frota-processar-fila/SKILL.md</code> — mantido como contrato de paridade até a Fase 3 estar completa.</p>
+    <p>Repositório novo sugerido: <code>~/Projects/frota-agentes-server</code> (ainda não existe — nada foi criado até você decidir D1–D4).</p>
+  </div>
+</div>

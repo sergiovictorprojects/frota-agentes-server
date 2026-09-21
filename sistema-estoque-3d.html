@@ -1,0 +1,437 @@
+<title>Estoque 3D</title>
+<style>
+  :root{
+    --bg:#F5F6F8; --surface:#FFFFFF; --surface-2:#ECEFF3; --border:#DBE0E7;
+    --text:#161B22; --text-dim:#5B6472; --text-faint:#8891A0;
+    --accent:#0F6E64; --accent-soft:#DFF1EE;
+    --gestor:#A8640C; --gestor-soft:#F8E9D3;
+    --cat-elet:#1D4ED8; --cat-elet-soft:#DBE7FB;
+    --cat-perec:#0F6E64; --cat-perec-soft:#DFF1EE;
+    --cat-constr:#B45309; --cat-constr-soft:#FBEBD6;
+    --cat-vest:#7A3B69; --cat-vest-soft:#F1E4EE;
+    --warn:#B3261E; --warn-soft:#F8E1DF;
+  }
+  @media (prefers-color-scheme: dark){
+    :root:not([data-theme="light"]){
+      --bg:#0C1116; --surface:#121821; --surface-2:#182029;
+      --border:#28323E; --text:#E8ECF1; --text-dim:#9AA6B4; --text-faint:#6C7784;
+      --accent:#4FBDB0; --accent-soft:#14332F;
+      --gestor:#E3B65A; --gestor-soft:#3A2A12;
+      --cat-elet:#7FA6F5; --cat-elet-soft:#1B2740;
+      --cat-perec:#4FBDB0; --cat-perec-soft:#14332F;
+      --cat-constr:#E3A857; --cat-constr-soft:#3A2A12;
+      --cat-vest:#C98AB8; --cat-vest-soft:#2E2130;
+      --warn:#E4877E; --warn-soft:#3A1F1D;
+    }
+  }
+  :root[data-theme="dark"]{
+    --bg:#0C1116; --surface:#121821; --surface-2:#182029;
+    --border:#28323E; --text:#E8ECF1; --text-dim:#9AA6B4; --text-faint:#6C7784;
+    --accent:#4FBDB0; --accent-soft:#14332F;
+    --gestor:#E3B65A; --gestor-soft:#3A2A12;
+    --cat-elet:#7FA6F5; --cat-elet-soft:#1B2740;
+    --cat-perec:#4FBDB0; --cat-perec-soft:#14332F;
+    --cat-constr:#E3A857; --cat-constr-soft:#3A2A12;
+    --cat-vest:#C98AB8; --cat-vest-soft:#2E2130;
+    --warn:#E4877E; --warn-soft:#3A1F1D;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;padding:0}
+  body{background:var(--bg); color:var(--text); font-family:"Public Sans","Segoe UI",system-ui,sans-serif; font-size:14px; line-height:1.55}
+  code{font-family:"IBM Plex Mono",ui-monospace,monospace; font-size:0.87em}
+  a{color:var(--accent)}
+  .wrap{max-width:1040px; margin:0 auto; padding-inline:20px}
+  h1,h2,h3{font-family:"Space Grotesk",sans-serif; font-weight:700; text-wrap:balance; margin:0 0 8px}
+  h1{font-size:clamp(24px,4.5vw,34px)}
+  h2{font-size:18px}
+  h3{font-size:14px; margin:0}
+  p{margin:0 0 10px; max-width:70ch}
+
+  .artrail{
+    position:fixed; top:50%; right:0; transform:translateY(-50%);
+    display:flex; flex-direction:column; gap:1px;
+    background:var(--surface); border:1px solid var(--border); border-right:none;
+    border-radius:14px 0 0 14px; padding:8px 0; box-shadow:-4px 0 16px rgba(0,0,0,0.10);
+    z-index:400; overflow:hidden; width:46px;
+    transition:width .3s cubic-bezier(.22,.8,.32,1);
+  }
+  .artrail:hover, .artrail:focus-within{ width:min(236px,84vw); }
+  .artrail-item{ display:flex; align-items:center; gap:12px; padding:9px 13px; text-decoration:none; white-space:nowrap; color:var(--text-dim); }
+  .artrail-item:hover{background:var(--surface-2); color:var(--accent)}
+  .artrail-icon{ flex:none; width:26px; height:26px; border-radius:7px; background:var(--surface-2); display:flex; align-items:center; justify-content:center; color:var(--text-dim); transition:background .2s ease, color .2s ease; }
+  .artrail-icon svg{width:15px; height:15px; display:block}
+  .artrail-item:hover .artrail-icon{background:var(--accent); color:#fff}
+  .artrail-item.hub .artrail-icon{background:var(--gestor-soft); color:var(--gestor)}
+  .artrail-item.hub:hover .artrail-icon{background:var(--gestor); color:#fff}
+  .artrail-item.current{background:var(--surface-2); pointer-events:none}
+  .artrail-item.current .artrail-icon{background:var(--accent); color:#fff}
+  .artrail-item.current .artrail-label{color:var(--text); font-weight:700}
+  .artrail-label{ font-size:12.8px; font-weight:600; opacity:0; transform:translateX(-6px); transition:opacity .2s ease .06s, transform .2s ease .06s; }
+  .artrail:hover .artrail-label, .artrail:focus-within .artrail-label{opacity:1; transform:translateX(0)}
+
+  .theme-toggle{
+    position:fixed; top:16px; right:16px; z-index:410; width:36px; height:36px; border-radius:50%;
+    background:var(--surface); border:1px solid var(--border); display:flex; align-items:center; justify-content:center;
+    cursor:pointer; color:var(--text-dim); padding:0;
+  }
+  .theme-toggle:hover{border-color:var(--accent); color:var(--accent)}
+  .theme-toggle svg{width:17px; height:17px; display:block}
+  .theme-toggle .tt-moon{display:block}
+  .theme-toggle .tt-sun{display:none}
+  :root[data-theme="dark"] .theme-toggle .tt-moon{display:none}
+  :root[data-theme="dark"] .theme-toggle .tt-sun{display:block}
+  @media (prefers-color-scheme: dark){
+    :root:not([data-theme="light"]) .theme-toggle .tt-moon{display:none}
+    :root:not([data-theme="light"]) .theme-toggle .tt-sun{display:block}
+  }
+
+  .draft-ribbon{
+    position:fixed; top:22px; right:-58px; z-index:405; width:220px; text-align:center;
+    background:var(--warn); color:#fff; font-family:"IBM Plex Mono",monospace; font-size:10.5px; font-weight:700;
+    letter-spacing:0.06em; text-transform:uppercase; padding:5px 0; transform:rotate(45deg);
+    box-shadow:0 2px 8px rgba(0,0,0,.25); pointer-events:none;
+  }
+
+  .hero{background:var(--surface); border-bottom:1px solid var(--border); padding-block:34px 22px}
+  .eyebrow{font-family:"IBM Plex Mono",monospace; text-transform:uppercase; letter-spacing:0.12em; font-size:10.5px; color:var(--gestor); margin:0 0 8px; font-weight:600}
+  .lede{color:var(--text-dim); font-size:14px}
+  .meta-row{display:flex; gap:16px; flex-wrap:wrap; margin-top:10px; font-size:12px; color:var(--text-faint); font-family:"IBM Plex Mono",monospace}
+
+  .warn-bar{
+    display:flex; gap:10px; align-items:flex-start; background:var(--warn-soft); border:1px solid var(--warn);
+    border-radius:10px; padding:12px 14px; margin-top:16px; font-size:12.5px; color:var(--text);
+  }
+  .warn-bar svg{flex:none; width:18px; height:18px; color:var(--warn); margin-top:1px}
+  .warn-bar strong{color:var(--warn)}
+
+  .legend{display:flex; gap:10px; flex-wrap:wrap; margin-top:16px}
+  .legend-item{display:flex; align-items:center; gap:7px; background:var(--surface-2); border:1px solid var(--border); border-radius:999px; padding:5px 12px 5px 8px; font-size:11.5px}
+  .legend-dot{width:10px; height:10px; border-radius:50%; flex:none}
+
+  section{padding-block:30px}
+
+  .iso-wrap{ perspective:1500px; display:flex; justify-content:center; padding:30px 10px 50px; }
+  .iso-floor{
+    display:grid; grid-template-columns:repeat(3,148px); grid-template-rows:repeat(3,148px); gap:9px;
+    transform:rotateX(58deg) rotateZ(45deg); transform-style:preserve-3d;
+  }
+  .tile{ position:relative; border-radius:12px; background:var(--surface-2); border:1px solid var(--border);
+    box-shadow:0 9px 0 0 rgba(0,0,0,.10), 0 18px 22px -10px rgba(0,0,0,.24);
+    transition:transform .18s ease, box-shadow .18s ease; }
+  .tile.corredor{ background:repeating-linear-gradient(45deg, var(--surface-2), var(--surface-2) 9px, var(--bg) 9px, var(--bg) 18px); box-shadow:0 4px 0 0 rgba(0,0,0,.06); opacity:.7; }
+  .tile.setor{ cursor:pointer; background:var(--t-soft); border-color:var(--t-c); box-shadow:0 9px 0 0 color-mix(in srgb, var(--t-c) 55%, black), 0 20px 22px -10px rgba(0,0,0,.32); }
+  .tile.setor:hover, .tile.setor:focus-visible{ transform:translateZ(16px); box-shadow:0 22px 0 0 color-mix(in srgb, var(--t-c) 55%, black), 0 34px 28px -12px rgba(0,0,0,.36); outline:none; }
+  .tile-label{ position:absolute; inset:0; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:5px;
+    transform:rotateZ(-45deg) rotateX(-58deg); text-align:center; padding:8px; }
+  .tile-label svg{width:22px; height:22px; color:var(--t-c)}
+  .tile-label .tl-name{font-family:"Space Grotesk",sans-serif; font-weight:700; font-size:12px; color:var(--text)}
+  .tile-label .tl-id{font-family:"IBM Plex Mono",monospace; font-size:9.5px; color:var(--text-faint); letter-spacing:0.04em}
+
+  .panel{background:var(--surface); border:1px solid var(--border); border-radius:12px; padding:22px 24px}
+
+  .breadcrumb{display:flex; align-items:center; gap:6px; font-family:"IBM Plex Mono",monospace; font-size:11.5px; color:var(--text-faint); margin-bottom:16px}
+  .breadcrumb button{background:none; border:none; color:var(--accent); font-family:inherit; font-size:inherit; cursor:pointer; padding:0}
+  .breadcrumb button:hover{text-decoration:underline}
+
+  .setor-head{display:flex; align-items:center; justify-content:space-between; gap:16px; flex-wrap:wrap; margin-bottom:16px}
+  .frota-badge{display:inline-flex; align-items:center; gap:7px; background:var(--t-soft); color:var(--t-c); border:1px solid var(--t-c); border-radius:999px; padding:5px 12px; font-size:11.5px; font-weight:700}
+  .frota-badge .fd{width:8px; height:8px; border-radius:50%; background:var(--t-c)}
+
+  .occ-row{display:flex; align-items:center; gap:10px; margin:14px 0 18px; font-size:12px}
+  .occ-track{flex:1; height:9px; background:var(--surface-2); border-radius:999px; overflow:hidden}
+  .occ-fill{height:100%; border-radius:999px; background:var(--t-c)}
+  .occ-val{font-family:"IBM Plex Mono",monospace; color:var(--text-faint); font-size:11px; flex:none}
+
+  .search-row{margin-bottom:14px}
+  .search-row input{width:100%; max-width:340px; font-family:inherit; font-size:13px; padding:8px 11px; border-radius:7px; border:1px solid var(--border); background:var(--bg); color:var(--text)}
+  .search-row input:focus{outline:2px solid var(--accent); outline-offset:-1px}
+
+  table{width:100%; border-collapse:collapse; font-size:12.8px}
+  th{text-align:left; font-family:"IBM Plex Mono",monospace; font-size:10.5px; text-transform:uppercase; letter-spacing:0.05em; color:var(--text-faint); font-weight:600; padding:8px 10px; border-bottom:1px solid var(--border)}
+  td{padding:9px 10px; border-bottom:1px solid var(--border); color:var(--text-dim)}
+  td:first-child, th:first-child{color:var(--text); font-weight:600}
+  tr:last-child td{border-bottom:none}
+  .giro{display:inline-block; padding:2px 8px; border-radius:999px; font-size:10.5px; font-weight:700; font-family:"IBM Plex Mono",monospace}
+  .giro-alto{background:var(--accent-soft); color:var(--accent)}
+  .giro-medio{background:var(--cat-constr-soft); color:var(--cat-constr)}
+  .giro-baixo{background:var(--surface-2); color:var(--text-faint)}
+  .empty-note{padding:20px; text-align:center; color:var(--text-faint); font-size:12.5px}
+
+  footer{padding-block:20px 50px; text-align:center}
+  footer p{color:var(--text-faint); font-size:11.5px}
+
+  @media (max-width:600px){
+    .iso-floor{ grid-template-columns:repeat(3,102px); grid-template-rows:repeat(3,102px); gap:6px; }
+    .tile-label svg{width:17px; height:17px}
+    .tile-label .tl-name{font-size:10px}
+    .draft-ribbon{width:180px; top:16px; right:-52px; font-size:9px}
+  }
+</style>
+
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=Public+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@500;600&display=swap" rel="stylesheet">
+
+<div class="draft-ribbon">Rascunho conceitual</div>
+
+<button type="button" class="theme-toggle" id="themeToggle" aria-label="Alternar tema claro/escuro" title="Alternar tema">
+  <svg class="tt-sun" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6"><circle cx="10" cy="10" r="3.4"/><path d="M10 2v2M10 16v2M18 10h-2M4 10H2M15.5 4.5l-1.4 1.4M5.9 14.1l-1.4 1.4M15.5 15.5l-1.4-1.4M5.9 5.9 4.5 4.5" stroke-linecap="round"/></svg>
+  <svg class="tt-moon" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M16.5 12.3A7 7 0 1 1 7.7 3.5a5.6 5.6 0 0 0 8.8 8.8z" stroke-linejoin="round"/></svg>
+</button>
+
+<nav class="artrail" aria-label="Artefatos">
+  <a class="artrail-item hub" href="https://claude.ai/artifact/1jJhYzXznLSE3rSThzoSsR">
+    <span class="artrail-icon"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6"><rect x="2.5" y="2.5" width="6" height="6" rx="1"/><rect x="11.5" y="2.5" width="6" height="6" rx="1"/><rect x="2.5" y="11.5" width="6" height="6" rx="1"/><rect x="11.5" y="11.5" width="6" height="6" rx="1"/></svg></span>
+    <span class="artrail-label">Painel Geral</span>
+  </a>
+  <a class="artrail-item" href="https://claude.ai/artifact/TvUcpQ6be7wj88STgYmTcq">
+    <span class="artrail-icon"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M3 5h14M3 10h14M3 15h9" stroke-linecap="round"/></svg></span>
+    <span class="artrail-label">Fila de Demandas</span>
+  </a>
+  <a class="artrail-item" href="https://claude.ai/artifact/8rdeRj8exFa6pUYZ6nJYMe">
+    <span class="artrail-icon"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6"><circle cx="4" cy="15" r="2"/><circle cx="16" cy="15" r="2"/><circle cx="10" cy="4" r="2"/><path d="M10 6v4M8.3 9.3 5.5 13.2M11.7 9.3l2.8 3.9" stroke-linecap="round"/></svg></span>
+    <span class="artrail-label">Conector de Inteligência</span>
+  </a>
+  <a class="artrail-item current" href="#">
+    <span class="artrail-icon"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M3 7 10 3l7 4-7 4-7-4Z" stroke-linejoin="round"/><path d="M3 7v6l7 4M17 7v6l-7 4M10 11v6" stroke-linejoin="round"/></svg></span>
+    <span class="artrail-label">Estoque 3D</span>
+  </a>
+</nav>
+
+<header class="hero">
+  <div class="wrap">
+    <p class="eyebrow">Gestores · Demanda de Juliano</p>
+    <h1>Sistema de Organização de Estoque — Modelo 3D</h1>
+    <p class="lede">Vista isométrica do armazém: clique em qualquer setor para entrar, ver os produtos armazenados e a frota responsável por movimentá-los.</p>
+    <div class="meta-row">
+      <span>4 categorias de produto</span><span>·</span><span>6 setores</span><span>·</span><span>4 frotas</span>
+    </div>
+    <div class="warn-bar">
+      <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M10 2.5 18 17H2L10 2.5Z" stroke-linejoin="round"/><path d="M10 8v4M10 14.2v.1" stroke-linecap="round"/></svg>
+      <div><strong>Layout provisório.</strong> O desenho real do armazém não veio anexado à demanda — este modelo usa um layout genérico de 3×3 setores, categorias e produtos de exemplo. Assim que o layout real for anexado, este artifact pode ser refeito em cima dele (ou migrado para Three.js, como no Conector de Inteligência, para navegação 3D completa por câmera).</div>
+    </div>
+    <div class="legend" id="frotaLegend"></div>
+  </div>
+</header>
+
+<div class="wrap">
+  <section id="mapSection">
+    <h2>Planta do armazém</h2>
+    <p style="color:var(--text-dim); font-size:12.8px">Setores coloridos são clicáveis. Os quadros hachurados são corredores de passagem que conectam os setores no piso.</p>
+    <div class="iso-wrap"><div class="iso-floor" id="isoFloor"></div></div>
+  </section>
+
+  <section id="setorSection" style="display:none; padding-top:0">
+    <div class="panel">
+      <div class="breadcrumb">
+        <button type="button" id="backBtn">Armazém</button>
+        <span>/</span>
+        <span id="bcSetor">Setor</span>
+      </div>
+      <div class="setor-head">
+        <h2 id="setorTitle" style="margin:0"></h2>
+        <span class="frota-badge" id="frotaBadge"></span>
+      </div>
+      <div class="occ-row">
+        <span style="color:var(--text-faint); font-family:'IBM Plex Mono',monospace; font-size:11px">Ocupação</span>
+        <div class="occ-track"><div class="occ-fill" id="occFill" style="width:0%"></div></div>
+        <span class="occ-val" id="occVal">—</span>
+      </div>
+      <div class="search-row"><input type="text" id="searchInput" placeholder="Buscar produto por nome ou SKU…" aria-label="Buscar produto por nome ou SKU"></div>
+      <table>
+        <thead><tr><th>Produto</th><th>SKU</th><th>Qtd.</th><th>Giro</th></tr></thead>
+        <tbody id="productBody"></tbody>
+      </table>
+      <div class="empty-note" id="emptyNote" style="display:none">Nenhum produto encontrado.</div>
+    </div>
+  </section>
+</div>
+
+<footer><div class="wrap"><p>Rascunho conceitual gerado automaticamente pela fila de demandas — Frota de Agentes. Substitua pelos dados reais do armazém assim que o layout for anexado.</p></div></footer>
+
+<script>
+(function(){
+  var root = document.documentElement, btn = document.getElementById('themeToggle'), KEY = 'artifact-theme-pref';
+  var stored = null;
+  try{ stored = localStorage.getItem(KEY); }catch(e){}
+  if(stored === 'light' || stored === 'dark') root.setAttribute('data-theme', stored);
+  btn.addEventListener('click', function(){
+    var current = root.getAttribute('data-theme');
+    var isDark = current === 'dark' || (!current && window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches);
+    var next = isDark ? 'light' : 'dark';
+    root.setAttribute('data-theme', next);
+    try{ localStorage.setItem(KEY, next); }catch(e){}
+  });
+})();
+</script>
+
+<script>
+document.addEventListener('DOMContentLoaded', function(){
+  function esc(s){ return String(s==null?'':s).replace(/[&<>"']/g, function(c){ return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]; }); }
+
+  var ICONS = {
+    chip: '<svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6"><rect x="6" y="6" width="8" height="8" rx="1"/><path d="M8 6V3M12 6V3M8 17v-3M12 17v-3M6 8H3M6 12H3M17 8h-3M17 12h-3" stroke-linecap="round"/></svg>',
+    snow: '<svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M10 2v16M3.3 6l13.4 8M3.3 14 16.7 6" stroke-linecap="round"/></svg>',
+    brick: '<svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6"><rect x="2" y="4" width="7" height="5"/><rect x="11" y="4" width="7" height="5"/><rect x="2" y="11" width="7" height="5"/><rect x="11" y="11" width="7" height="5"/></svg>',
+    hanger: '<svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M10 3a2 2 0 0 1 1.2 3.6L10 7.6l-1.2-1A2 2 0 0 1 10 3Z" stroke-linejoin="round"/><path d="M10 7.6 3 12.5a1.6 1.6 0 0 0 .9 2.9h12.2a1.6 1.6 0 0 0 .9-2.9L10 7.6Z" stroke-linejoin="round"/></svg>',
+    dock: '<svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6"><rect x="3" y="7" width="14" height="9" rx="1"/><path d="M3 7 10 3l7 4M7 16v-4h6v4" stroke-linejoin="round"/></svg>'
+  };
+
+  var CATEGORIAS = {
+    elet:   {nome:'Eletrônicos',            icon:'chip',   c:'--cat-elet'},
+    perec:  {nome:'Perecíveis',             icon:'snow',   c:'--cat-perec'},
+    constr: {nome:'Materiais de Construção',icon:'brick',  c:'--cat-constr'},
+    vest:   {nome:'Vestuário',              icon:'hanger', c:'--cat-vest'}
+  };
+
+  var FROTAS = {
+    alfa:    {nome:'Frota Alfa',    tipo:'Empilhadeira elétrica', c:'--cat-elet'},
+    bravo:   {nome:'Frota Bravo',   tipo:'Furgão refrigerado',    c:'--cat-perec'},
+    charlie: {nome:'Frota Charlie', tipo:'Caminhão / paleteira',  c:'--cat-constr'},
+    delta:   {nome:'Frota Delta',   tipo:'Van de picking',        c:'--cat-vest'}
+  };
+
+  var SETORES = [
+    {id:'S2', gx:1, gy:0, nome:'Perecíveis',   categoria:'perec',  frota:'bravo',   capacidade:700},
+    {id:'S6', gx:2, gy:0, nome:'Expedição',    categoria:null,     frota:'alfa',    capacidade:0},
+    {id:'S3', gx:0, gy:1, nome:'Construção',   categoria:'constr', frota:'charlie', capacidade:2900},
+    {id:'S1', gx:1, gy:1, nome:'Eletrônicos',  categoria:'elet',   frota:'alfa',    capacidade:320},
+    {id:'S4', gx:2, gy:1, nome:'Vestuário',    categoria:'vest',   frota:'delta',   capacidade:800},
+    {id:'S5', gx:0, gy:2, nome:'Recebimento',  categoria:null,     frota:'delta',   capacidade:0}
+  ];
+
+  var PRODUTOS = [
+    {sku:'ELT-101', nome:'Notebook X200 14"',      categoria:'elet', qtd:42,  giro:'medio'},
+    {sku:'ELT-102', nome:'Monitor 24" IPS',         categoria:'elet', qtd:30,  giro:'medio'},
+    {sku:'ELT-103', nome:'Roteador Wi-Fi 6',        categoria:'elet', qtd:85,  giro:'alto'},
+    {sku:'ELT-104', nome:'Powerbank 10000mAh',      categoria:'elet', qtd:120, giro:'alto'},
+    {sku:'PER-201', nome:'Iogurte Natural 1L',      categoria:'perec', qtd:200, giro:'alto'},
+    {sku:'PER-202', nome:'Queijo Muçarela 500g',    categoria:'perec', qtd:150, giro:'alto'},
+    {sku:'PER-203', nome:'Suco de Laranja 1L',      categoria:'perec', qtd:180, giro:'alto'},
+    {sku:'PER-204', nome:'Frango Congelado 1kg',    categoria:'perec', qtd:90,  giro:'medio'},
+    {sku:'CON-301', nome:'Cimento CP-II 50kg',      categoria:'constr', qtd:60,   giro:'medio'},
+    {sku:'CON-302', nome:'Tijolo Cerâmico (milheiro)', categoria:'constr', qtd:24, giro:'baixo'},
+    {sku:'CON-303', nome:'Tinta Acrílica 18L',      categoria:'constr', qtd:35,  giro:'baixo'},
+    {sku:'CON-304', nome:'Cabo Elétrico 2.5mm (rolo 100m)', categoria:'constr', qtd:18, giro:'baixo'},
+    {sku:'VES-401', nome:'Camiseta Algodão P/M/G',  categoria:'vest', qtd:400, giro:'alto'},
+    {sku:'VES-402', nome:'Calça Jeans',             categoria:'vest', qtd:150, giro:'medio'},
+    {sku:'VES-403', nome:'Jaqueta Corta-Vento',     categoria:'vest', qtd:80,  giro:'baixo'},
+    {sku:'VES-404', nome:'Tênis Esportivo',         categoria:'vest', qtd:110, giro:'medio'}
+  ];
+
+  function produtosDoSetor(catId){
+    if(!catId) return [];
+    return PRODUTOS.filter(function(p){ return p.categoria === catId; });
+  }
+  function ocupacaoSetor(setor){
+    if(!setor.categoria || !setor.capacidade) return null;
+    var total = produtosDoSetor(setor.categoria).reduce(function(s,p){ return s + p.qtd; }, 0);
+    return Math.min(100, Math.round(total / setor.capacidade * 100));
+  }
+
+  // ---- legenda de frotas ----
+  var legendBox = document.getElementById('frotaLegend');
+  legendBox.innerHTML = Object.keys(FROTAS).map(function(k){
+    var f = FROTAS[k];
+    return '<span class="legend-item"><span class="legend-dot" style="background:var(' + f.c + ')"></span>' +
+      esc(f.nome) + ' · ' + esc(f.tipo) + '</span>';
+  }).join('');
+
+  // ---- planta isométrica 3x3 ----
+  var floor = document.getElementById('isoFloor');
+  var byPos = {};
+  SETORES.forEach(function(s){ byPos[s.gx + ',' + s.gy] = s; });
+  var cellsHtml = '';
+  for(var row=0; row<3; row++){
+    for(var col=0; col<3; col++){
+      var s = byPos[col + ',' + row];
+      if(s){
+        var cat = s.categoria ? CATEGORIAS[s.categoria] : null;
+        var icon = cat ? ICONS[cat.icon] : ICONS.dock;
+        var colorVar = cat ? cat.c : '--gestor';
+        cellsHtml += '<div class="tile setor" tabindex="0" role="button" data-id="' + esc(s.id) + '" ' +
+          'style="grid-column:' + (col+1) + '; grid-row:' + (row+1) + '; --t-c:var(' + colorVar + '); --t-soft:var(' + colorVar + '-soft, var(--surface-2));">' +
+          '<div class="tile-label">' + icon + '<span class="tl-name">' + esc(s.nome) + '</span><span class="tl-id">' + esc(s.id) + '</span></div></div>';
+      } else {
+        cellsHtml += '<div class="tile corredor" style="grid-column:' + (col+1) + '; grid-row:' + (row+1) + ';"></div>';
+      }
+    }
+  }
+  floor.innerHTML = cellsHtml;
+
+  var mapSection = document.getElementById('mapSection');
+  var setorSection = document.getElementById('setorSection');
+  var searchInput = document.getElementById('searchInput');
+  var currentSetorId = null;
+  var lastFocusedTile = null;
+
+  function renderProdutos(){
+    var setor = SETORES.filter(function(s){ return s.id === currentSetorId; })[0];
+    if(!setor) return;
+    var termo = (searchInput.value || '').trim().toLowerCase();
+    var lista = produtosDoSetor(setor.categoria).filter(function(p){
+      if(!termo) return true;
+      return p.nome.toLowerCase().indexOf(termo) > -1 || p.sku.toLowerCase().indexOf(termo) > -1;
+    });
+    var body = document.getElementById('productBody');
+    var emptyNote = document.getElementById('emptyNote');
+    if(lista.length === 0){
+      body.innerHTML = '';
+      emptyNote.style.display = 'block';
+      emptyNote.textContent = setor.categoria ? 'Nenhum produto encontrado.' : 'Este setor é uma doca de fluxo (sem estoque próprio) — apenas trânsito de mercadorias.';
+    } else {
+      emptyNote.style.display = 'none';
+      body.innerHTML = lista.map(function(p){
+        return '<tr><td>' + esc(p.nome) + '</td><td style="font-family:\'IBM Plex Mono\',monospace">' + esc(p.sku) + '</td>' +
+          '<td>' + esc(p.qtd) + '</td><td><span class="giro giro-' + esc(p.giro) + '">' + esc(p.giro) + '</span></td></tr>';
+      }).join('');
+    }
+  }
+
+  function openSetor(id){
+    var setor = SETORES.filter(function(s){ return s.id === id; })[0];
+    if(!setor) return;
+    currentSetorId = id;
+    lastFocusedTile = floor.querySelector('.tile[data-id="' + id + '"]');
+    var cat = setor.categoria ? CATEGORIAS[setor.categoria] : null;
+    var frota = FROTAS[setor.frota];
+    var colorVar = cat ? cat.c : '--gestor';
+    setorSection.style.setProperty('--t-c', 'var(' + colorVar + ')');
+    setorSection.style.setProperty('--t-soft', 'var(' + colorVar + '-soft, var(--surface-2))');
+    document.getElementById('bcSetor').textContent = setor.id + ' — ' + setor.nome;
+    document.getElementById('setorTitle').textContent = setor.nome + (cat ? '' : ' (doca de fluxo)');
+    document.getElementById('frotaBadge').innerHTML = '<span class="fd"></span>' + esc(frota.nome) + ' · ' + esc(frota.tipo);
+    var occ = ocupacaoSetor(setor);
+    document.getElementById('occFill').style.width = (occ==null ? 0 : occ) + '%';
+    document.getElementById('occVal').textContent = occ==null ? 'sem estoque próprio' : (occ + '% da capacidade');
+    searchInput.value = '';
+    renderProdutos();
+    mapSection.style.display = 'none';
+    setorSection.style.display = 'block';
+    window.scrollTo({top:0, behavior:'smooth'});
+    document.getElementById('backBtn').focus();
+  }
+
+  function closeSetor(){
+    setorSection.style.display = 'none';
+    mapSection.style.display = 'block';
+    currentSetorId = null;
+    if(lastFocusedTile){ lastFocusedTile.focus(); lastFocusedTile = null; }
+  }
+
+  floor.addEventListener('click', function(ev){
+    var tile = ev.target.closest('.tile.setor');
+    if(tile) openSetor(tile.getAttribute('data-id'));
+  });
+  floor.addEventListener('keydown', function(ev){
+    if(ev.key !== 'Enter' && ev.key !== ' ') return;
+    var tile = ev.target.closest('.tile.setor');
+    if(tile){ ev.preventDefault(); openSetor(tile.getAttribute('data-id')); }
+  });
+  document.getElementById('backBtn').addEventListener('click', closeSetor);
+  searchInput.addEventListener('input', renderProdutos);
+  document.addEventListener('keydown', function(ev){
+    if(ev.key === 'Escape' && setorSection.style.display !== 'none') closeSetor();
+  });
+});
+</script>

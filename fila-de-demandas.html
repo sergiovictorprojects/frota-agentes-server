@@ -1,0 +1,663 @@
+<title>Fila de Demandas</title>
+<style>
+  :root{
+    --bg:#F5F6F8; --surface:#FFFFFF; --surface-2:#ECEFF3; --border:#DBE0E7;
+    --text:#161B22; --text-dim:#5B6472; --text-faint:#8891A0;
+    --accent:#0F6E64; --accent-soft:#DFF1EE;
+    --gestor:#A8640C;
+    --st-blue:#1D4ED8; --st-blue-soft:#DBE7FB;
+    --st-amber:#B45309; --st-amber-soft:#FBEBD6;
+    --st-green:#0F6E64; --st-green-soft:#DFF1EE;
+    --st-gray:#5B6472; --st-gray-soft:#ECEFF3;
+    --critical:#B3261E; --critical-soft:#F8E1DF;
+    --high:#B45309; --high-soft:#FBEBD6;
+    --medium:#0F6E64; --medium-soft:#DFF1EE;
+    --low:#5B6472; --low-soft:#ECEFF3;
+  }
+  @media (prefers-color-scheme: dark){
+    :root:not([data-theme="light"]){
+      --bg:#0C1116; --surface:#121821; --surface-2:#182029;
+      --border:#28323E; --text:#E8ECF1; --text-dim:#9AA6B4; --text-faint:#6C7784;
+      --accent:#4FBDB0; --accent-soft:#14332F;
+      --gestor:#E3B65A;
+      --st-blue:#7FA6F5; --st-blue-soft:#1B2740;
+      --st-amber:#E3A857; --st-amber-soft:#3A2A12;
+      --st-green:#4FBDB0; --st-green-soft:#14332F;
+      --st-gray:#9AA6B4; --st-gray-soft:#182029;
+      --critical:#E4877E; --critical-soft:#3A1F1D;
+      --high:#E3A857; --high-soft:#3A2A12;
+      --medium:#4FBDB0; --medium-soft:#14332F;
+      --low:#9AA6B4; --low-soft:#182029;
+    }
+  }
+  :root[data-theme="dark"]{
+    --bg:#0C1116; --surface:#121821; --surface-2:#182029;
+    --border:#28323E; --text:#E8ECF1; --text-dim:#9AA6B4; --text-faint:#6C7784;
+    --accent:#4FBDB0; --accent-soft:#14332F;
+    --gestor:#E3B65A;
+    --st-blue:#7FA6F5; --st-blue-soft:#1B2740;
+    --st-amber:#E3A857; --st-amber-soft:#3A2A12;
+    --st-green:#4FBDB0; --st-green-soft:#14332F;
+    --st-gray:#9AA6B4; --st-gray-soft:#182029;
+    --critical:#E4877E; --critical-soft:#3A1F1D;
+    --high:#E3A857; --high-soft:#3A2A12;
+    --medium:#4FBDB0; --medium-soft:#14332F;
+    --low:#9AA6B4; --low-soft:#182029;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;padding:0}
+  body{background:var(--bg); color:var(--text); font-family:"Public Sans","Segoe UI",system-ui,sans-serif; font-size:14px; line-height:1.55}
+  code{font-family:"IBM Plex Mono",ui-monospace,monospace; font-size:0.87em}
+  a{color:var(--accent)}
+  .wrap{max-width:880px; margin:0 auto; padding-inline:20px}
+  h1,h2,h3{font-family:"Space Grotesk",sans-serif; font-weight:700; text-wrap:balance; margin:0 0 8px}
+  h1{font-size:clamp(24px,4.5vw,32px)}
+  h2{font-size:17px; margin-top:0}
+  p{margin:0 0 10px; max-width:70ch}
+  label{display:block; font-size:11.5px; font-weight:600; color:var(--text-dim); margin-bottom:5px; text-transform:uppercase; letter-spacing:0.04em}
+  input,select,textarea{
+    width:100%; font-family:inherit; font-size:13.5px; padding:9px 11px; border-radius:6px;
+    border:1px solid var(--border); background:var(--surface); color:var(--text);
+  }
+  textarea{resize:vertical; min-height:64px}
+  input:focus,select:focus,textarea:focus{outline:2px solid var(--accent); outline-offset:-1px}
+  .field{margin-bottom:14px}
+  .row2{display:grid; grid-template-columns:1fr 1fr; gap:14px}
+  @media (max-width:520px){ .row2{grid-template-columns:1fr} }
+
+  .hero{background:var(--surface); border-bottom:1px solid var(--border); padding-block:34px 22px}
+  .eyebrow{font-family:"IBM Plex Mono",monospace; text-transform:uppercase; letter-spacing:0.12em; font-size:10.5px; color:var(--text-faint); margin:0 0 8px; font-weight:600}
+  .lede{color:var(--text-dim); font-size:14px}
+
+  .artrail{
+    position:fixed; top:50%; right:0; transform:translateY(-50%);
+    display:flex; flex-direction:column; gap:1px;
+    background:var(--surface); border:1px solid var(--border); border-right:none;
+    border-radius:14px 0 0 14px; padding:8px 0; box-shadow:-4px 0 16px rgba(0,0,0,0.10);
+    z-index:400; overflow:hidden; width:46px;
+    transition:width .3s cubic-bezier(.22,.8,.32,1);
+  }
+  .artrail:hover, .artrail:focus-within{ width:min(236px,84vw); }
+  .artrail-item{
+    display:flex; align-items:center; gap:12px; padding:9px 13px; text-decoration:none;
+    white-space:nowrap; color:var(--text-dim);
+  }
+  .artrail-item:hover{background:var(--surface-2); color:var(--accent)}
+  .artrail-icon{
+    flex:none; width:26px; height:26px; border-radius:7px; background:var(--surface-2);
+    display:flex; align-items:center; justify-content:center; color:var(--text-dim);
+    transition:background .2s ease, color .2s ease;
+  }
+  .artrail-icon svg{width:15px; height:15px; display:block}
+  .artrail-item:hover .artrail-icon{background:var(--accent); color:#fff}
+  .artrail-item.hub .artrail-icon{background:var(--gestor-soft,#F8E9D3); color:var(--gestor,#A8640C)}
+  .artrail-item.hub:hover .artrail-icon{background:var(--gestor,#A8640C); color:#fff}
+  .artrail-item.current{background:var(--surface-2); pointer-events:none}
+  .artrail-item.current .artrail-icon{background:var(--accent); color:#fff}
+  .artrail-item.current .artrail-label{color:var(--text); font-weight:700}
+  .artrail-label{
+    font-size:12.8px; font-weight:600; opacity:0; transform:translateX(-6px);
+    transition:opacity .2s ease .06s, transform .2s ease .06s;
+  }
+  .artrail:hover .artrail-label, .artrail:focus-within .artrail-label{opacity:1; transform:translateX(0)}
+
+  .theme-toggle{
+    position:fixed; top:16px; right:16px; z-index:410; width:36px; height:36px; border-radius:50%;
+    background:var(--surface); border:1px solid var(--border); display:flex; align-items:center; justify-content:center;
+    cursor:pointer; color:var(--text-dim); padding:0;
+  }
+  .theme-toggle:hover{border-color:var(--accent); color:var(--accent)}
+  .theme-toggle svg{width:17px; height:17px; display:block}
+  .theme-toggle .tt-moon{display:block}
+  .theme-toggle .tt-sun{display:none}
+  :root[data-theme="dark"] .theme-toggle .tt-moon{display:none}
+  :root[data-theme="dark"] .theme-toggle .tt-sun{display:block}
+  @media (prefers-color-scheme: dark){
+    :root:not([data-theme="light"]) .theme-toggle .tt-moon{display:none}
+    :root:not([data-theme="light"]) .theme-toggle .tt-sun{display:block}
+  }
+
+  section{padding-block:28px}
+  .panel{background:var(--surface); border:1px solid var(--border); border-radius:10px; padding:20px 22px}
+
+  .prio-group{display:flex; gap:8px; flex-wrap:wrap}
+  .prio-opt{flex:1; min-width:110px}
+  .prio-opt input{position:absolute; opacity:0; pointer-events:none}
+  .prio-opt label{
+    display:block; text-align:center; padding:9px 8px; border-radius:6px; border:1px solid var(--border);
+    cursor:pointer; font-size:12px; font-weight:700; text-transform:none; letter-spacing:0; color:var(--text-dim);
+  }
+  .prio-opt input:checked + label{color:#fff}
+  .prio-opt[data-p="CRITICAL"] input:checked + label{background:var(--critical); border-color:var(--critical)}
+  .prio-opt[data-p="HIGH"] input:checked + label{background:var(--high); border-color:var(--high)}
+  .prio-opt[data-p="MEDIUM"] input:checked + label{background:var(--medium); border-color:var(--medium)}
+  .prio-opt[data-p="LOW"] input:checked + label{background:var(--low); border-color:var(--low)}
+
+  .filebox{border:1px dashed var(--border); border-radius:6px; padding:10px; font-size:12.3px; color:var(--text-faint)}
+  .file-list{margin-top:8px; display:flex; flex-direction:column; gap:5px}
+  .file-item{display:flex; align-items:center; justify-content:space-between; background:var(--surface-2); border-radius:5px; padding:5px 9px; font-size:12px}
+  .file-item button{background:none; border:none; color:var(--critical); cursor:pointer; font-size:12px; padding:0 4px}
+
+  button.primary{
+    background:var(--accent); color:#fff; border:none; border-radius:6px; padding:10px 20px;
+    font-size:13px; font-weight:700; cursor:pointer; font-family:inherit;
+  }
+  button.primary:disabled{opacity:0.5; cursor:not-allowed}
+  .status-msg{font-size:12.3px; margin-top:10px; min-height:16px}
+  .status-msg.ok{color:var(--st-green)}
+  .status-msg.err{color:var(--critical)}
+
+  .tabs{display:flex; gap:6px; flex-wrap:wrap; margin-bottom:16px}
+  .tabs button{
+    background:var(--surface); border:1px solid var(--border); border-radius:4px; padding:6px 13px;
+    font-size:11.5px; font-weight:600; color:var(--text-dim); cursor:pointer; font-family:inherit;
+  }
+  .tabs button.active{background:var(--accent); color:#fff; border-color:var(--accent)}
+
+  .card{background:var(--surface); border:1px solid var(--border); border-radius:8px; padding:16px 18px; margin-bottom:12px}
+  .card-head{display:flex; justify-content:space-between; align-items:flex-start; gap:10px; flex-wrap:wrap}
+  .badge{display:inline-flex; font-family:"IBM Plex Mono",monospace; font-size:10px; font-weight:700; padding:3px 8px; border-radius:4px; letter-spacing:0.03em}
+  .b-critical{background:var(--critical-soft); color:var(--critical)}
+  .b-high{background:var(--high-soft); color:var(--high)}
+  .b-medium{background:var(--medium-soft); color:var(--medium)}
+  .b-low{background:var(--low-soft); color:var(--low)}
+  .card h3{font-size:15px; margin:4px 0 4px; font-family:"Public Sans",sans-serif; font-weight:700}
+  .card-cat{font-size:11px; color:var(--text-faint); font-family:"IBM Plex Mono",monospace}
+  .card p{font-size:13px; color:var(--text-dim); margin:6px 0}
+  .card-meta{display:flex; flex-wrap:wrap; gap:10px; font-size:11px; color:var(--text-faint); margin-top:8px}
+  .card-status select{width:auto; font-size:11.5px; padding:5px 8px}
+  .card-actions{display:flex; gap:8px; flex-wrap:wrap; margin-top:8px}
+  .msg-toggle{background:none; border:1px solid var(--border); border-radius:4px; color:var(--accent); cursor:pointer; padding:4px 10px; font-size:11px; font-family:inherit; margin-top:0}
+  .finish-btn{background:var(--accent); border:1px solid var(--accent); border-radius:4px; color:#fff; cursor:pointer; padding:4px 10px; font-size:11px; font-weight:700; font-family:inherit}
+  .finish-btn:disabled{opacity:0.6; cursor:not-allowed}
+  a.finish-link{display:inline-block; text-decoration:none}
+  a.finish-link:hover{opacity:0.9}
+  .msg-panel{margin-top:12px; padding-top:12px; border-top:1px dashed var(--border)}
+  .msg-thread{max-height:220px; overflow-y:auto; margin-bottom:10px; display:flex; flex-direction:column; gap:8px}
+  .msg-item{background:var(--surface-2); border-radius:6px; padding:8px 10px}
+  .msg-item .m-from{font-size:10.5px; font-weight:700; color:var(--accent); text-transform:uppercase; letter-spacing:0.03em}
+  .msg-item.solicitante .m-from{color:var(--gestor)}
+  .msg-item .m-text{font-size:12.5px; color:var(--text-dim); margin-top:2px}
+  .msg-item .m-date{font-size:10px; color:var(--text-faint); margin-top:3px}
+  .msg-form{display:flex; gap:6px; flex-wrap:wrap}
+  .msg-form select{flex:1; min-width:180px}
+  .msg-form input{flex:2; min-width:180px}
+  .msg-form button{background:var(--accent); color:#fff; border:none; border-radius:6px; padding:8px 14px; font-size:12px; font-weight:700; cursor:pointer; font-family:inherit}
+
+  .empty{text-align:center; padding:40px 20px; color:var(--text-faint); font-size:13px}
+  .note{font-size:12px; color:var(--text-faint); margin-top:10px}
+  footer{padding-block:20px 50px; text-align:center}
+  footer p{color:var(--text-faint); font-size:11px}
+</style>
+
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=Public+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@500;600&display=swap" rel="stylesheet">
+
+<button type="button" class="theme-toggle" id="themeToggle" aria-label="Alternar tema claro/escuro" title="Alternar tema">
+  <svg class="tt-sun" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6"><circle cx="10" cy="10" r="3.4"/><path d="M10 2v2M10 16v2M18 10h-2M4 10H2M15.5 4.5l-1.4 1.4M5.9 14.1l-1.4 1.4M15.5 15.5l-1.4-1.4M5.9 5.9 4.5 4.5" stroke-linecap="round"/></svg>
+  <svg class="tt-moon" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M16.5 12.3A7 7 0 1 1 7.7 3.5a5.6 5.6 0 0 0 8.8 8.8z" stroke-linejoin="round"/></svg>
+</button>
+<script>
+(function(){
+  var root = document.documentElement, btn = document.getElementById('themeToggle'), KEY = 'artifact-theme-pref';
+  var stored = null;
+  try{ stored = localStorage.getItem(KEY); }catch(e){}
+  if(stored === 'light' || stored === 'dark') root.setAttribute('data-theme', stored);
+  btn.addEventListener('click', function(){
+    var current = root.getAttribute('data-theme');
+    var isDark = current === 'dark' || (!current && window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches);
+    var next = isDark ? 'light' : 'dark';
+    root.setAttribute('data-theme', next);
+    try{ localStorage.setItem(KEY, next); }catch(e){}
+  });
+})();
+</script>
+<nav class="artrail" aria-label="Artefatos">
+  <a class="artrail-item hub" href="https://claude.ai/artifact/1jJhYzXznLSE3rSThzoSsR">
+    <span class="artrail-icon"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6"><rect x="2.5" y="2.5" width="6" height="6" rx="1"/><rect x="11.5" y="2.5" width="6" height="6" rx="1"/><rect x="2.5" y="11.5" width="6" height="6" rx="1"/><rect x="11.5" y="11.5" width="6" height="6" rx="1"/></svg></span>
+    <span class="artrail-label">Painel Geral</span>
+  </a>
+  <a class="artrail-item current" href="#">
+    <span class="artrail-icon"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M3 5h14M3 10h14M3 15h9" stroke-linecap="round"/></svg></span>
+    <span class="artrail-label">Fila de Demandas</span>
+  </a>
+  <a class="artrail-item" href="https://claude.ai/artifact/8rdeRj8exFa6pUYZ6nJYMe">
+    <span class="artrail-icon"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6"><circle cx="4" cy="15" r="2"/><circle cx="16" cy="15" r="2"/><circle cx="10" cy="4" r="2"/><path d="M10 6v4M8.3 9.3 5.5 13.2M11.7 9.3l2.8 3.9" stroke-linecap="round"/></svg></span>
+    <span class="artrail-label">Conector de Inteligência</span>
+  </a>
+  <a class="artrail-item" href="https://claude.ai/artifact/KnqZpBUkSBusLFxTAzLmVN">
+    <span class="artrail-icon"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6"><rect x="7" y="2.5" width="6" height="4" rx="1"/><rect x="2" y="13.5" width="6" height="4" rx="1"/><rect x="12" y="13.5" width="6" height="4" rx="1"/><path d="M10 6.5v3M5 13.5v-3h10v3" stroke-linecap="round" stroke-linejoin="round"/></svg></span>
+    <span class="artrail-label">Organograma</span>
+  </a>
+  <a class="artrail-item" href="https://claude.ai/artifact/4cCPGEFezkxGC8SpfR5qGy">
+    <span class="artrail-icon"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M10 2.5 16.5 5v5c0 4-2.8 6.6-6.5 7.5C6.3 16.6 3.5 14 3.5 10V5L10 2.5z" stroke-linejoin="round"/><path d="M7.3 10 9 11.7l3.7-3.9" stroke-linecap="round" stroke-linejoin="round"/></svg></span>
+    <span class="artrail-label">Código de Conduta</span>
+  </a>
+  <a class="artrail-item" href="https://claude.ai/artifact/6qy1GomQLhaESVdnfazNqj">
+    <span class="artrail-icon"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6"><circle cx="10" cy="10" r="2.6"/><path d="M10 3v2M10 15v2M17 10h-2M5 10H3M14.9 5.1l-1.4 1.4M6.5 13.5l-1.4 1.4M14.9 14.9l-1.4-1.4M6.5 6.5 5.1 5.1" stroke-linecap="round"/></svg></span>
+    <span class="artrail-label">Configurações</span>
+  </a>
+  <a class="artrail-item" href="https://claude.ai/artifact/3onfCGGcodYPcZcnWYKEY7">
+    <span class="artrail-icon"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M4 16V9M10 16V4M16 16v-6" stroke-linecap="round"/><path d="M2.5 16.5h15" stroke-linecap="round"/></svg></span>
+    <span class="artrail-label">Análises</span>
+  </a>
+</nav>
+
+<header class="hero">
+  <div class="wrap">
+    <p class="eyebrow">Portal</p>
+    <h1>Fila de Demandas</h1>
+    <p class="lede">Registre aqui o que precisa ser feito — a demanda entra na fila, e os Gestores decidem qual categoria toca primeiro.</p>
+  </div>
+</header>
+
+<div class="wrap">
+  <section>
+    <div class="panel">
+      <h2>Nova demanda</h2>
+      <form id="demandForm">
+        <div class="field">
+          <label for="fTitulo">Título</label>
+          <input id="fTitulo" type="text" required placeholder="Ex.: Revisar segurança do endpoint de login">
+        </div>
+        <div class="field">
+          <label for="fDescricao">Descrição</label>
+          <textarea id="fDescricao" required placeholder="O que precisa ser feito, e por quê"></textarea>
+        </div>
+        <div class="row2">
+          <div class="field">
+            <label for="fCategoria">Categoria (área responsável)</label>
+            <select id="fCategoria"></select>
+          </div>
+          <div class="field">
+            <label for="fPrazo">Prazo desejado (opcional)</label>
+            <input id="fPrazo" type="date">
+          </div>
+        </div>
+        <div class="field">
+          <label>Prioridade</label>
+          <div class="prio-group" id="prioGroup">
+            <div class="prio-opt" data-p="CRITICAL"><input type="radio" name="prio" id="pC" value="CRITICAL"><label for="pC">Crítica</label></div>
+            <div class="prio-opt" data-p="HIGH"><input type="radio" name="prio" id="pH" value="HIGH"><label for="pH">Alta</label></div>
+            <div class="prio-opt" data-p="MEDIUM"><input type="radio" name="prio" id="pM" value="MEDIUM" checked><label for="pM">Média</label></div>
+            <div class="prio-opt" data-p="LOW"><input type="radio" name="prio" id="pL" value="LOW"><label for="pL">Baixa</label></div>
+          </div>
+        </div>
+        <div class="row2">
+          <div class="field">
+            <label for="fSolicitante">Solicitante (opcional)</label>
+            <input id="fSolicitante" type="text" placeholder="Seu nome">
+          </div>
+          <div class="field">
+            <label for="fReferencias">Referências (links, notas — opcional)</label>
+            <input id="fReferencias" type="text" placeholder="https://... ou uma nota curta">
+          </div>
+        </div>
+        <div class="field">
+          <label>Anexos (opcional)</label>
+          <div class="filebox">
+            <input id="fFile" type="file" style="width:auto">
+            <span id="fileHint">PDF, imagem, markdown, texto, CSV, JSON — até 20 MB.</span>
+            <div class="file-list" id="fileList"></div>
+          </div>
+        </div>
+        <button class="primary" type="submit" id="submitBtn">Registrar demanda</button>
+        <div class="status-msg" id="formMsg"></div>
+      </form>
+    </div>
+  </section>
+
+  <section>
+    <h2 style="margin-bottom:14px">Fila</h2>
+    <div class="tabs" id="statusTabs">
+      <button data-f="all" class="active">Todas</button>
+      <button data-f="Nova">Nova</button>
+      <button data-f="Em andamento">Em andamento</button>
+      <button data-f="Concluída">Concluída</button>
+      <button data-f="Arquivada">Arquivada</button>
+    </div>
+    <div id="queueList">
+      <div class="empty">Carregando a fila</div>
+    </div>
+  </section>
+</div>
+
+<footer>
+  <div class="wrap"><p>Dados guardados no banco deste artifact — visíveis para quem tiver acesso a ele. Entradas de outros viewers chegam ao vivo.</p></div>
+</footer>
+
+<script>
+var CATEGORIAS = [
+  {id:'gestores', nome:'Gestores decidem (padrão)'},
+  {id:'d1', nome:'D1 · Arquitetura & Sistema'},
+  {id:'d2', nome:'D2 · Pesquisa & Descoberta'},
+  {id:'d3', nome:'D3 · Qualidade & Revisão'},
+  {id:'d4', nome:'D4 · Segurança'},
+  {id:'d5', nome:'D5 · Build & CI/CD'},
+  {id:'d6', nome:'D6 · Testes & Validação'},
+  {id:'d7', nome:'D7 · Infra Distribuída / Swarm'},
+  {id:'d8', nome:'D8 · Documentação & Conhecimento'},
+  {id:'d9', nome:'D9 · Limpeza & Manutenção'},
+  {id:'d10', nome:'D10 · Performance & Otimização'},
+  {id:'d11', nome:'D11 · Design & Produto'},
+  {id:'d12', nome:'D12 · Release Open Source'},
+  {id:'d13', nome:'D13 · Loop Generativo (GAN)'},
+  {id:'d14', nome:'D14 · Automação Web'},
+  {id:'d15', nome:'D15 · Rede & Infraestrutura'},
+  {id:'d16', nome:'D16 · Growth & Marketing'},
+  {id:'d17', nome:'D17 · Meta / Processo'},
+  {id:'d18', nome:'D18 · Comunicação & Triagem'}
+];
+var PRIO_LABEL = {CRITICAL:'Crítica', HIGH:'Alta', MEDIUM:'Média', LOW:'Baixa'};
+
+/* Sistema dinâmico de cores por status da fila */
+var STATUS_STYLE = {
+  'Nova':         {bg:'var(--st-blue-soft)',  fg:'var(--st-blue)'},
+  'Em andamento': {bg:'var(--st-amber-soft)', fg:'var(--st-amber)'},
+  'Concluída':    {bg:'var(--st-green-soft)', fg:'var(--st-green)'},
+  'Arquivada':    {bg:'var(--st-gray-soft)',  fg:'var(--st-gray)'}
+};
+function statusChip(s){
+  var st = STATUS_STYLE[s] || STATUS_STYLE['Nova'];
+  return '<span class="badge" style="background:' + st.bg + ';color:' + st.fg + '">' + escapeHtml(s||'Nova') + '</span>';
+}
+
+var catSelect = document.getElementById('fCategoria');
+CATEGORIAS.forEach(function(c){
+  var opt = document.createElement('option');
+  opt.value = c.id; opt.textContent = c.nome;
+  catSelect.appendChild(opt);
+});
+
+function catNome(id){
+  var c = CATEGORIAS.filter(function(x){return x.id===id;})[0];
+  return c ? c.nome : id;
+}
+function fmtDate(iso){
+  if(!iso) return '';
+  try{
+    var d = new Date(iso);
+    return d.toLocaleDateString('pt-BR', {day:'2-digit', month:'short', year:'numeric'});
+  }catch(e){ return iso; }
+}
+function escapeHtml(s){
+  return String(s==null?'':s).replace(/[&<>"']/g, function(c){
+    return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c];
+  });
+}
+
+var pendingFiles = [];
+
+document.getElementById('fFile').addEventListener('change', function(ev){
+  var f = ev.target.files[0];
+  if(!f) return;
+  pendingFiles.push({file:f, id:null, status:'pendente'});
+  renderFileList();
+  ev.target.value = '';
+});
+
+function renderFileList(){
+  var box = document.getElementById('fileList');
+  box.innerHTML = '';
+  pendingFiles.forEach(function(pf, i){
+    var row = document.createElement('div');
+    row.className = 'file-item';
+    var sizeKb = Math.round(pf.file.size/1024);
+    row.innerHTML = '<span>' + escapeHtml(pf.file.name) + ' (' + sizeKb + ' KB)' +
+      (pf.status==='enviando' ? ' — enviando' : pf.status==='erro' ? ' — falhou' : '') + '</span>';
+    var btn = document.createElement('button');
+    btn.type = 'button';
+    btn.textContent = 'remover';
+    btn.addEventListener('click', function(){ pendingFiles.splice(i,1); renderFileList(); });
+    row.appendChild(btn);
+    box.appendChild(row);
+  });
+}
+
+var dbReady = null, assetsReady = null;
+
+(async function init(){
+  var claudeApi = window.claude;
+  if(!claudeApi){
+    setMsg('Este formulário só funciona dentro do claude.ai.', 'err');
+    return;
+  }
+  dbReady = await claudeApi.use('db');
+  assetsReady = await claudeApi.use('assets');
+
+  if(!dbReady){
+    setMsg('Não foi possível conectar ao banco deste artifact nesta visualização.', 'err');
+    document.getElementById('submitBtn').disabled = true;
+    return;
+  }
+
+  subscribeQueue();
+})();
+
+var allDocs = [];
+var currentFilter = 'all';
+var openMsgId = null;
+var justFinishedIds = {};
+var msgUnsub = null;
+var msgCache = {};
+
+function toggleMessages(id){
+  if(openMsgId === id){
+    if(msgUnsub) msgUnsub();
+    msgUnsub = null; openMsgId = null; renderQueue(); return;
+  }
+  if(msgUnsub) msgUnsub();
+  openMsgId = id;
+  msgUnsub = dbReady.doc('demandas/' + id).collection('mensagens').orderBy('criadoEm', 'asc').limit(200).onSnapshot(
+    function(snap){ msgCache[id] = snap.docs.map(function(d){ return d.data(); }); renderQueue(); },
+    function(){ msgCache[id] = []; renderQueue(); }
+  );
+  renderQueue();
+}
+
+function msgAuthorOptions(){
+  var html = '<option value="solicitante">Solicitante</option>';
+  CATEGORIAS.filter(function(c){return c.id!=='gestores';}).forEach(function(c){
+    html += '<option value="agente:' + c.id + '">Agente de ' + escapeHtml(c.nome) + '</option>';
+  });
+  return html;
+}
+
+function renderMessagePanel(id){
+  var msgs = msgCache[id] || [];
+  var threadHtml = msgs.length ? msgs.map(function(m){
+    var isSolic = m.autor === 'solicitante';
+    var fromLabel = isSolic ? 'Solicitante' : 'Agente de ' + catNome(m.setor) + ' verificando';
+    return '<div class="msg-item' + (isSolic ? ' solicitante' : '') + '">' +
+      '<div class="m-from">' + escapeHtml(fromLabel) + '</div>' +
+      '<div class="m-text">' + escapeHtml(m.texto) + '</div>' +
+      '<div class="m-date">' + fmtDate(m.criadoEm) + '</div></div>';
+  }).join('') : '<div class="empty" style="padding:14px">Nenhuma mensagem ainda — use o campo abaixo para validar algo com o solicitante.</div>';
+  return '<div class="msg-panel">' +
+    '<div class="msg-thread">' + threadHtml + '</div>' +
+    '<div class="msg-form">' +
+      '<select class="msg-from-sel">' + msgAuthorOptions() + '</select>' +
+      '<input class="msg-text-inp" type="text" placeholder="Ex.: preciso confirmar o ambiente de produção antes de prosseguir">' +
+      '<button type="button" class="msg-send-btn">Enviar</button>' +
+    '</div></div>';
+}
+
+function subscribeQueue(){
+  dbReady.collection('demandas').orderBy('criadoEm', 'desc').limit(200).onSnapshot(
+    function(snap){
+      allDocs = snap.docs.map(function(d){ return Object.assign({_id:d.id}, d.data()); });
+      renderQueue();
+    },
+    function(err){
+      document.getElementById('queueList').innerHTML =
+        '<div class="empty">Não foi possível carregar a fila agora (' + escapeHtml(err.code) + ').</div>';
+    }
+  );
+}
+
+document.getElementById('statusTabs').addEventListener('click', function(ev){
+  var btn = ev.target.closest('button');
+  if(!btn) return;
+  currentFilter = btn.getAttribute('data-f');
+  document.querySelectorAll('#statusTabs button').forEach(function(b){ b.classList.toggle('active', b===btn); });
+  renderQueue();
+});
+
+function renderQueue(){
+  var list = document.getElementById('queueList');
+  var docs = currentFilter==='all' ? allDocs : allDocs.filter(function(d){ return d.status===currentFilter; });
+  if(docs.length===0){
+    list.innerHTML = '<div class="empty">Nenhuma demanda ' +
+      (currentFilter==='all' ? 'registrada ainda — use o formulário acima.' : 'com este status.') + '</div>';
+    return;
+  }
+  list.innerHTML = '';
+  docs.forEach(function(d){
+    var card = document.createElement('div');
+    card.className = 'card';
+    var prio = d.prioridade || 'MEDIUM';
+    var anexosHtml = (d.anexos||[]).map(function(a){
+      return '<a class="card-attach" href="' + escapeHtml(a.url) + '" target="_blank" rel="noopener">' + escapeHtml(a.filename) + '</a>';
+    }).join(' ');
+    card.innerHTML =
+      '<div class="card-head">' +
+        '<div><span class="badge b-' + prio.toLowerCase() + '">' + PRIO_LABEL[prio] + '</span> ' + statusChip(d.status) + ' ' +
+        '<span class="card-cat">' + escapeHtml(catNome(d.categoria)) + '</span>' +
+        '<h3>' + escapeHtml(d.titulo) + '</h3></div>' +
+        '<div class="card-status"></div>' +
+      '</div>' +
+      '<p>' + escapeHtml(d.descricao) + '</p>' +
+      (d.referencias ? '<p style="font-size:12px;color:var(--text-faint)">Ref.: ' + escapeHtml(d.referencias) + '</p>' : '') +
+      (anexosHtml ? '<div class="card-meta">' + anexosHtml + '</div>' : '') +
+      '<div class="card-meta">' +
+        (d.solicitante ? '<span>Por ' + escapeHtml(d.solicitante) + '</span>' : '') +
+        '<span>Registrada ' + fmtDate(d.criadoEm) + '</span>' +
+        (d.prazo ? '<span>Prazo: ' + fmtDate(d.prazo) + '</span>' : '') +
+      '</div>' +
+      '<div class="card-actions">' +
+      '<button type="button" class="msg-toggle" data-id="' + d._id + '">' +
+        (openMsgId === d._id ? 'Ocultar mensagens' : 'Mensagens' + ((msgCache[d._id]||[]).length ? ' (' + msgCache[d._id].length + ')' : '')) +
+      '</button>' +
+      (justFinishedIds[d._id] ?
+        '<a class="finish-btn finish-link" href="' + escapeHtml(justFinishedIds[d._id]) + '">✓ Concluída — dados copiados, abrir Análises →</a>' :
+        (d.status !== 'Concluída' && d.status !== 'Arquivada') ?
+          '<button type="button" class="finish-btn">Finalizar e registrar relatório →</button>' : '') +
+      '</div>' +
+      (openMsgId === d._id ? renderMessagePanel(d._id) : '');
+    var statusSel = document.createElement('select');
+    ['Nova','Em andamento','Concluída','Arquivada'].forEach(function(s){
+      var o = document.createElement('option'); o.value = s; o.textContent = s;
+      if(s === (d.status||'Nova')) o.selected = true;
+      statusSel.appendChild(o);
+    });
+    statusSel.addEventListener('change', function(){
+      dbReady.doc('demandas/' + d._id).update({status: statusSel.value}).catch(function(){});
+    });
+    card.querySelector('.card-status').appendChild(statusSel);
+    var msgBtn = card.querySelector('.msg-toggle');
+    msgBtn.addEventListener('click', function(){ toggleMessages(d._id); });
+    var sendBtn = card.querySelector('.msg-send-btn');
+    if(sendBtn){
+      sendBtn.addEventListener('click', function(){
+        var sel = card.querySelector('.msg-from-sel');
+        var inp = card.querySelector('.msg-text-inp');
+        var texto = inp.value.trim();
+        if(!texto) return;
+        var val = sel.value;
+        var autor = val === 'solicitante' ? 'solicitante' : 'agente';
+        var setor = val === 'solicitante' ? null : val.split(':')[1];
+        sendBtn.disabled = true;
+        dbReady.doc('demandas/' + d._id).collection('mensagens').add({
+          autor: autor, setor: setor, texto: texto, criadoEm: new Date().toISOString()
+        }).then(function(){
+          inp.value = '';
+          /* Automação: primeira resposta de um agente move a demanda de Nova para Em andamento */
+          if(autor === 'agente' && (d.status||'Nova') === 'Nova'){
+            dbReady.doc('demandas/' + d._id).update({status:'Em andamento'}).catch(function(){});
+          }
+        }).finally(function(){ sendBtn.disabled = false; });
+      });
+    }
+    var finishBtn = card.querySelector('.finish-btn:not(.finish-link)');
+    if(finishBtn){
+      /* Artifacts têm bancos isolados — não dá pra pré-preencher o formulário de Análises
+         por URL (o artifact carrega num iframe de origem própria, sem a query string da
+         página externa). A área de transferência cruza essa fronteira; a URL não cruza. */
+      finishBtn.addEventListener('click', function(){
+        finishBtn.disabled = true;
+        finishBtn.textContent = 'Finalizando…';
+        var payload = '[FROTA-HANDOFF v1]\ntitulo=' + (d.titulo || '') + '\ncategoria=' + (d.categoria || '') + '\ndemandaId=' + d._id;
+        try{
+          if(navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(payload);
+        }catch(e){}
+        justFinishedIds[d._id] = 'https://claude.ai/artifact/3onfCGGcodYPcZcnWYKEY7';
+        dbReady.doc('demandas/' + d._id).update({status:'Concluída'})
+          .catch(function(){})
+          .finally(function(){ renderQueue(); });
+      });
+    }
+    list.appendChild(card);
+  });
+}
+
+function setMsg(text, kind){
+  var el = document.getElementById('formMsg');
+  el.textContent = text;
+  el.className = 'status-msg' + (kind ? ' ' + kind : '');
+}
+
+document.getElementById('demandForm').addEventListener('submit', async function(ev){
+  ev.preventDefault();
+  if(!dbReady){ setMsg('Banco indisponível nesta visualização.', 'err'); return; }
+
+  var titulo = document.getElementById('fTitulo').value.trim();
+  var descricao = document.getElementById('fDescricao').value.trim();
+  if(!titulo || !descricao){ setMsg('Preencha título e descrição.', 'err'); return; }
+
+  var submitBtn = document.getElementById('submitBtn');
+  submitBtn.disabled = true;
+  setMsg('Enviando');
+
+  var anexos = [];
+  if(assetsReady && pendingFiles.length){
+    for(var i=0;i<pendingFiles.length;i++){
+      pendingFiles[i].status = 'enviando';
+      renderFileList();
+      try{
+        var res = await assetsReady.upload(pendingFiles[i].file);
+        anexos.push({id:res.id, url:res.url, filename:pendingFiles[i].file.name, contentType:res.contentType, sizeBytes:res.sizeBytes});
+      }catch(e){
+        pendingFiles[i].status = 'erro';
+      }
+    }
+    renderFileList();
+  }
+
+  var doc = {
+    titulo: titulo,
+    descricao: descricao,
+    categoria: document.getElementById('fCategoria').value,
+    prioridade: document.querySelector('input[name="prio"]:checked').value,
+    prazo: document.getElementById('fPrazo').value || null,
+    solicitante: document.getElementById('fSolicitante').value.trim() || null,
+    referencias: document.getElementById('fReferencias').value.trim() || null,
+    anexos: anexos,
+    status: 'Nova',
+    criadoEm: new Date().toISOString()
+  };
+
+  try{
+    await dbReady.collection('demandas').add(doc);
+    setMsg('Demanda registrada.', 'ok');
+    document.getElementById('demandForm').reset();
+    document.getElementById('pM').checked = true;
+    pendingFiles = [];
+    renderFileList();
+  }catch(e){
+    setMsg('Não foi possível registrar (' + (e && e.code ? e.code : 'erro') + ').', 'err');
+  }finally{
+    submitBtn.disabled = false;
+  }
+});
+</script>

@@ -1,0 +1,523 @@
+<title>Configurações</title>
+<style>
+  :root{
+    --bg:#F5F6F8; --surface:#FFFFFF; --surface-2:#ECEFF3; --border:#DBE0E7;
+    --text:#161B22; --text-dim:#5B6472; --text-faint:#8891A0;
+    --accent:#0F6E64; --accent-soft:#DFF1EE;
+    --frota:#7A3B69; --frota-soft:#F1E4EE;
+    --st-blue:#1D4ED8; --st-blue-soft:#DBE7FB;
+    --st-amber:#B45309; --st-amber-soft:#FBEBD6;
+    --st-green:#0F6E64; --st-green-soft:#DFF1EE;
+    --st-gray:#5B6472; --st-gray-soft:#ECEFF3;
+    --st-red:#B3261E; --st-red-soft:#F8E1DF;
+  }
+  @media (prefers-color-scheme: dark){
+    :root:not([data-theme="light"]){
+      --bg:#0C1116; --surface:#121821; --surface-2:#182029;
+      --border:#28323E; --text:#E8ECF1; --text-dim:#9AA6B4; --text-faint:#6C7784;
+      --accent:#4FBDB0; --accent-soft:#14332F;
+      --frota:#C98AB8; --frota-soft:#2E2130;
+      --st-blue:#7FA6F5; --st-blue-soft:#1B2740;
+      --st-amber:#E3A857; --st-amber-soft:#3A2A12;
+      --st-green:#4FBDB0; --st-green-soft:#14332F;
+      --st-gray:#9AA6B4; --st-gray-soft:#182029;
+      --st-red:#E4877E; --st-red-soft:#3A1F1D;
+    }
+  }
+  :root[data-theme="dark"]{
+    --bg:#0C1116; --surface:#121821; --surface-2:#182029;
+    --border:#28323E; --text:#E8ECF1; --text-dim:#9AA6B4; --text-faint:#6C7784;
+    --accent:#4FBDB0; --accent-soft:#14332F;
+    --frota:#C98AB8; --frota-soft:#2E2130;
+    --st-blue:#7FA6F5; --st-blue-soft:#1B2740;
+    --st-amber:#E3A857; --st-amber-soft:#3A2A12;
+    --st-green:#4FBDB0; --st-green-soft:#14332F;
+    --st-gray:#9AA6B4; --st-gray-soft:#182029;
+    --st-red:#E4877E; --st-red-soft:#3A1F1D;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;padding:0}
+  body{background:var(--bg); color:var(--text); font-family:"Public Sans","Segoe UI",system-ui,sans-serif; font-size:14px; line-height:1.55}
+  code{font-family:"IBM Plex Mono",ui-monospace,monospace; font-size:0.87em}
+  a{color:var(--accent)}
+  .wrap{max-width:880px; margin:0 auto; padding-inline:20px}
+  h1,h2,h3{font-family:"Space Grotesk",sans-serif; font-weight:700; text-wrap:balance; margin:0 0 8px}
+  h1{font-size:clamp(24px,4.5vw,32px)}
+  h2{font-size:17px; margin-top:0}
+  p{margin:0 0 10px; max-width:70ch}
+  label{display:block; font-size:11.5px; font-weight:600; color:var(--text-dim); margin-bottom:5px; text-transform:uppercase; letter-spacing:0.04em}
+  input,select,textarea{
+    width:100%; font-family:inherit; font-size:13.5px; padding:9px 11px; border-radius:6px;
+    border:1px solid var(--border); background:var(--surface); color:var(--text);
+  }
+  textarea{resize:vertical; min-height:56px}
+  input:focus,select:focus,textarea:focus{outline:2px solid var(--accent); outline-offset:-1px}
+  .field{margin-bottom:14px}
+  .row2{display:grid; grid-template-columns:1fr 1fr; gap:14px}
+  @media (max-width:520px){ .row2{grid-template-columns:1fr} }
+
+  .hero{background:var(--surface); border-bottom:1px solid var(--border); padding-block:34px 22px}
+  .eyebrow{font-family:"IBM Plex Mono",monospace; text-transform:uppercase; letter-spacing:0.12em; font-size:10.5px; color:var(--text-faint); margin:0 0 8px; font-weight:600}
+  .lede{color:var(--text-dim); font-size:14px}
+
+  .artrail{
+    position:fixed; top:50%; right:0; transform:translateY(-50%);
+    display:flex; flex-direction:column; gap:1px;
+    background:var(--surface); border:1px solid var(--border); border-right:none;
+    border-radius:14px 0 0 14px; padding:8px 0; box-shadow:-4px 0 16px rgba(0,0,0,0.10);
+    z-index:400; overflow:hidden; width:46px;
+    transition:width .3s cubic-bezier(.22,.8,.32,1);
+  }
+  .artrail:hover, .artrail:focus-within{ width:min(236px,84vw); }
+  .artrail-item{
+    display:flex; align-items:center; gap:12px; padding:9px 13px; text-decoration:none;
+    white-space:nowrap; color:var(--text-dim);
+  }
+  .artrail-item:hover{background:var(--surface-2); color:var(--accent)}
+  .artrail-icon{
+    flex:none; width:26px; height:26px; border-radius:7px; background:var(--surface-2);
+    display:flex; align-items:center; justify-content:center; color:var(--text-dim);
+    transition:background .2s ease, color .2s ease;
+  }
+  .artrail-icon svg{width:15px; height:15px; display:block}
+  .artrail-item:hover .artrail-icon{background:var(--accent); color:#fff}
+  .artrail-item.hub .artrail-icon{background:var(--gestor-soft,#F8E9D3); color:var(--gestor,#A8640C)}
+  .artrail-item.hub:hover .artrail-icon{background:var(--gestor,#A8640C); color:#fff}
+  .artrail-item.current{background:var(--surface-2); pointer-events:none}
+  .artrail-item.current .artrail-icon{background:var(--accent); color:#fff}
+  .artrail-item.current .artrail-label{color:var(--text); font-weight:700}
+  .artrail-label{
+    font-size:12.8px; font-weight:600; opacity:0; transform:translateX(-6px);
+    transition:opacity .2s ease .06s, transform .2s ease .06s;
+  }
+  .artrail:hover .artrail-label, .artrail:focus-within .artrail-label{opacity:1; transform:translateX(0)}
+
+  .theme-toggle{
+    position:fixed; top:16px; right:16px; z-index:410; width:36px; height:36px; border-radius:50%;
+    background:var(--surface); border:1px solid var(--border); display:flex; align-items:center; justify-content:center;
+    cursor:pointer; color:var(--text-dim); padding:0;
+  }
+  .theme-toggle:hover{border-color:var(--accent); color:var(--accent)}
+  .theme-toggle svg{width:17px; height:17px; display:block}
+  .theme-toggle .tt-moon{display:block}
+  .theme-toggle .tt-sun{display:none}
+  :root[data-theme="dark"] .theme-toggle .tt-moon{display:none}
+  :root[data-theme="dark"] .theme-toggle .tt-sun{display:block}
+  @media (prefers-color-scheme: dark){
+    :root:not([data-theme="light"]) .theme-toggle .tt-moon{display:none}
+    :root:not([data-theme="light"]) .theme-toggle .tt-sun{display:block}
+  }
+
+  .howbox{
+    margin-top:16px; padding:12px 15px; background:var(--surface-2); border-radius:6px;
+    font-size:12.5px; color:var(--text-dim); border-left:3px solid var(--frota);
+  }
+  .howbox b{color:var(--text)}
+
+  section{padding-block:26px; border-top:1px solid var(--border)}
+  section:first-of-type{border-top:none}
+  .panel{background:var(--surface); border:1px solid var(--border); border-radius:10px; padding:20px 22px}
+  .panel .kicker{font-family:"IBM Plex Mono",monospace; font-size:10.5px; color:var(--frota); font-weight:700; letter-spacing:0.06em; margin-bottom:4px; text-transform:uppercase}
+
+  .filebox{border:1px dashed var(--border); border-radius:6px; padding:10px; font-size:12.3px; color:var(--text-faint)}
+
+  button.primary{
+    background:var(--accent); color:#fff; border:none; border-radius:6px; padding:10px 20px;
+    font-size:13px; font-weight:700; cursor:pointer; font-family:inherit;
+  }
+  button.primary:disabled{opacity:0.5; cursor:not-allowed}
+  .status-msg{font-size:12.3px; margin-top:10px; min-height:16px}
+  .status-msg.ok{color:var(--st-green)}
+  .status-msg.err{color:var(--st-red)}
+
+  .card{background:var(--surface); border:1px solid var(--border); border-radius:8px; padding:14px 16px; margin-bottom:10px}
+  .card-head{display:flex; justify-content:space-between; align-items:flex-start; gap:10px; flex-wrap:wrap}
+  .card h3{font-size:14px; margin:0 0 4px; font-family:"Public Sans",sans-serif; font-weight:700}
+  .card p{font-size:12.5px; color:var(--text-dim); margin:5px 0}
+  .card-meta{display:flex; flex-wrap:wrap; gap:10px; font-size:11px; color:var(--text-faint); margin-top:6px}
+  .badge{display:inline-flex; font-family:"IBM Plex Mono",monospace; font-size:10px; font-weight:700; padding:3px 8px; border-radius:4px; letter-spacing:0.03em}
+  .card-status select{width:auto; font-size:11.5px; padding:5px 8px}
+
+  .empty{text-align:center; padding:26px 20px; color:var(--text-faint); font-size:12.5px}
+  footer{padding-block:20px 50px; text-align:center}
+  footer p{color:var(--text-faint); font-size:11px}
+</style>
+
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=Public+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@500;600&display=swap" rel="stylesheet">
+
+<button type="button" class="theme-toggle" id="themeToggle" aria-label="Alternar tema claro/escuro" title="Alternar tema">
+  <svg class="tt-sun" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6"><circle cx="10" cy="10" r="3.4"/><path d="M10 2v2M10 16v2M18 10h-2M4 10H2M15.5 4.5l-1.4 1.4M5.9 14.1l-1.4 1.4M15.5 15.5l-1.4-1.4M5.9 5.9 4.5 4.5" stroke-linecap="round"/></svg>
+  <svg class="tt-moon" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M16.5 12.3A7 7 0 1 1 7.7 3.5a5.6 5.6 0 0 0 8.8 8.8z" stroke-linejoin="round"/></svg>
+</button>
+<script>
+(function(){
+  var root = document.documentElement, btn = document.getElementById('themeToggle'), KEY = 'artifact-theme-pref';
+  var stored = null;
+  try{ stored = localStorage.getItem(KEY); }catch(e){}
+  if(stored === 'light' || stored === 'dark') root.setAttribute('data-theme', stored);
+  btn.addEventListener('click', function(){
+    var current = root.getAttribute('data-theme');
+    var isDark = current === 'dark' || (!current && window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches);
+    var next = isDark ? 'light' : 'dark';
+    root.setAttribute('data-theme', next);
+    try{ localStorage.setItem(KEY, next); }catch(e){}
+  });
+})();
+</script>
+<nav class="artrail" aria-label="Artefatos">
+  <a class="artrail-item hub" href="https://claude.ai/artifact/1jJhYzXznLSE3rSThzoSsR">
+    <span class="artrail-icon"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6"><rect x="2.5" y="2.5" width="6" height="6" rx="1"/><rect x="11.5" y="2.5" width="6" height="6" rx="1"/><rect x="2.5" y="11.5" width="6" height="6" rx="1"/><rect x="11.5" y="11.5" width="6" height="6" rx="1"/></svg></span>
+    <span class="artrail-label">Painel Geral</span>
+  </a>
+  <a class="artrail-item" href="https://claude.ai/artifact/TvUcpQ6be7wj88STgYmTcq">
+    <span class="artrail-icon"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M3 5h14M3 10h14M3 15h9" stroke-linecap="round"/></svg></span>
+    <span class="artrail-label">Fila de Demandas</span>
+  </a>
+  <a class="artrail-item" href="https://claude.ai/artifact/8rdeRj8exFa6pUYZ6nJYMe">
+    <span class="artrail-icon"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6"><circle cx="4" cy="15" r="2"/><circle cx="16" cy="15" r="2"/><circle cx="10" cy="4" r="2"/><path d="M10 6v4M8.3 9.3 5.5 13.2M11.7 9.3l2.8 3.9" stroke-linecap="round"/></svg></span>
+    <span class="artrail-label">Conector de Inteligência</span>
+  </a>
+  <a class="artrail-item" href="https://claude.ai/artifact/KnqZpBUkSBusLFxTAzLmVN">
+    <span class="artrail-icon"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6"><rect x="7" y="2.5" width="6" height="4" rx="1"/><rect x="2" y="13.5" width="6" height="4" rx="1"/><rect x="12" y="13.5" width="6" height="4" rx="1"/><path d="M10 6.5v3M5 13.5v-3h10v3" stroke-linecap="round" stroke-linejoin="round"/></svg></span>
+    <span class="artrail-label">Organograma</span>
+  </a>
+  <a class="artrail-item" href="https://claude.ai/artifact/4cCPGEFezkxGC8SpfR5qGy">
+    <span class="artrail-icon"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M10 2.5 16.5 5v5c0 4-2.8 6.6-6.5 7.5C6.3 16.6 3.5 14 3.5 10V5L10 2.5z" stroke-linejoin="round"/><path d="M7.3 10 9 11.7l3.7-3.9" stroke-linecap="round" stroke-linejoin="round"/></svg></span>
+    <span class="artrail-label">Código de Conduta</span>
+  </a>
+  <a class="artrail-item current" href="#">
+    <span class="artrail-icon"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6"><circle cx="10" cy="10" r="2.6"/><path d="M10 3v2M10 15v2M17 10h-2M5 10H3M14.9 5.1l-1.4 1.4M6.5 13.5l-1.4 1.4M14.9 14.9l-1.4-1.4M6.5 6.5 5.1 5.1" stroke-linecap="round"/></svg></span>
+    <span class="artrail-label">Configurações</span>
+  </a>
+  <a class="artrail-item" href="https://claude.ai/artifact/TvUcpQ6be7wj88STgYmTcq">
+    <span class="artrail-icon"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M4 16V9M10 16V4M16 16v-6" stroke-linecap="round"/><path d="M2.5 16.5h15" stroke-linecap="round"/></svg></span>
+    <span class="artrail-label">Análises</span>
+  </a>
+</nav>
+
+<header class="hero">
+  <div class="wrap">
+    <p class="eyebrow">Portal</p>
+    <h1>Configurações</h1>
+    <p class="lede">Registre novos agentes propostos (a partir de repositórios ou plugins) e novas fontes de conhecimento para o Conector de Inteligência.</p>
+    <div class="howbox">
+      <b>Como isto funciona:</b> esta página registra pedidos — ela não instala nada sozinha. Cada item entra numa lista pendente que Claude lê numa sessão de trabalho real e integra de fato (novo agente no Conector de Inteligência, conteúdo processado por <code>book-to-skill</code>). Fontes de conhecimento seguem a mesma regra do <a href="https://claude.ai/artifact/4cCPGEFezkxGC8SpfR5qGy">Código de Conduta</a>: só material com proveniência legítima.
+    </div>
+  </div>
+</header>
+
+<div class="wrap">
+  <section>
+    <div class="panel">
+      <div class="kicker">Novo agente</div>
+      <h2>Propor agente</h2>
+      <form id="agentForm">
+        <div class="row2">
+          <div class="field">
+            <label for="aNome">Nome / id do agente</label>
+            <input id="aNome" type="text" required placeholder="Ex.: novopacote:revisor-rust">
+          </div>
+          <div class="field">
+            <label for="aFonte">Repositório / fonte (URL)</label>
+            <input id="aFonte" type="text" required placeholder="https://github.com/...">
+          </div>
+        </div>
+        <div class="row2">
+          <div class="field">
+            <label for="aCategoria">Categoria sugerida</label>
+            <select id="aCategoria"></select>
+          </div>
+          <div class="field">
+            <label for="aTier">Papel sugerido</label>
+            <select id="aTier">
+              <option value="coord">Coordenador</option>
+              <option value="colab" selected>Colaborador</option>
+            </select>
+          </div>
+        </div>
+        <div class="field">
+          <label for="aAtividade">Atividade (o que ele faz)</label>
+          <textarea id="aAtividade" required placeholder="Conceito de uma frase"></textarea>
+        </div>
+        <div class="field">
+          <label for="aAntipadrao">Antipadrão conhecido (opcional)</label>
+          <input id="aAntipadrao" type="text" placeholder="O que ele deve evitar">
+        </div>
+        <button class="primary" type="submit" id="agentSubmit">Propor agente</button>
+        <div class="status-msg" id="agentMsg"></div>
+      </form>
+    </div>
+    <h2 style="margin:20px 0 12px">Agentes propostos</h2>
+    <div id="agentList"><div class="empty">Carregando</div></div>
+  </section>
+
+  <section>
+    <div class="panel">
+      <div class="kicker">Nova fonte de conhecimento</div>
+      <h2>Adicionar livro, documento ou arquivo</h2>
+      <form id="knowForm">
+        <div class="row2">
+          <div class="field">
+            <label for="kTitulo">Título</label>
+            <input id="kTitulo" type="text" required placeholder="Nome do livro/documento/repositório">
+          </div>
+          <div class="field">
+            <label for="kTipo">Tipo</label>
+            <select id="kTipo">
+              <option>Livro</option>
+              <option>Documento</option>
+              <option>Repositório de código</option>
+              <option>Outro</option>
+            </select>
+          </div>
+        </div>
+        <div class="row2">
+          <div class="field">
+            <label for="kMetodo">Como incorporar</label>
+            <select id="kMetodo">
+              <option>book-to-skill (converter em skill local)</option>
+              <option>Context7 (documentação de biblioteca)</option>
+              <option>Leitura direta (referência pontual)</option>
+              <option>Outro</option>
+            </select>
+          </div>
+          <div class="field">
+            <label for="kUrl">URL de referência (opcional se anexar arquivo)</label>
+            <input id="kUrl" type="text" placeholder="https://...">
+          </div>
+        </div>
+        <div class="field">
+          <label>Anexar arquivo (opcional)</label>
+          <div class="filebox">
+            <input id="kFile" type="file" style="width:auto">
+            <div id="kFileName" style="margin-top:6px"></div>
+            <span>PDF, markdown, texto, CSV, JSON — até 20 MB. Arquivos .epub não são aceitos aqui; use a URL de referência.</span>
+          </div>
+        </div>
+        <div class="field">
+          <label for="kNota">Nota (opcional)</label>
+          <textarea id="kNota" placeholder="Contexto, por que essa fonte importa"></textarea>
+        </div>
+        <button class="primary" type="submit" id="knowSubmit">Adicionar fonte</button>
+        <div class="status-msg" id="knowMsg"></div>
+      </form>
+    </div>
+    <h2 style="margin:20px 0 12px">Fontes propostas</h2>
+    <div id="knowList"><div class="empty">Carregando</div></div>
+  </section>
+</div>
+
+<footer>
+  <div class="wrap"><p>Dados guardados no banco deste artifact. Peça para Claude checar esta página numa próxima sessão para integrar o que estiver pendente.</p></div>
+</footer>
+
+<script>
+var CATEGORIAS = [
+  {id:'gestores', nome:'Gestores decidem (padrão)'},
+  {id:'d1', nome:'D1 · Arquitetura & Sistema'}, {id:'d2', nome:'D2 · Pesquisa & Descoberta'},
+  {id:'d3', nome:'D3 · Qualidade & Revisão'}, {id:'d4', nome:'D4 · Segurança'},
+  {id:'d5', nome:'D5 · Build & CI/CD'}, {id:'d6', nome:'D6 · Testes & Validação'},
+  {id:'d7', nome:'D7 · Infra Distribuída / Swarm'}, {id:'d8', nome:'D8 · Documentação & Conhecimento'},
+  {id:'d9', nome:'D9 · Limpeza & Manutenção'}, {id:'d10', nome:'D10 · Performance & Otimização'},
+  {id:'d11', nome:'D11 · Design & Produto'}, {id:'d12', nome:'D12 · Release Open Source'},
+  {id:'d13', nome:'D13 · Loop Generativo (GAN)'}, {id:'d14', nome:'D14 · Automação Web'},
+  {id:'d15', nome:'D15 · Rede & Infraestrutura'}, {id:'d16', nome:'D16 · Growth & Marketing'},
+  {id:'d17', nome:'D17 · Meta / Processo'}, {id:'d18', nome:'D18 · Comunicação & Triagem'}
+];
+var catSel = document.getElementById('aCategoria');
+CATEGORIAS.forEach(function(c){
+  var o = document.createElement('option'); o.value = c.id; o.textContent = c.nome;
+  catSel.appendChild(o);
+});
+function catNome(id){ var c = CATEGORIAS.filter(function(x){return x.id===id;})[0]; return c ? c.nome : id; }
+
+/* Sistema dinâmico de cores por status — uma tabela única, fácil de estender */
+var STATUS_STYLE = {
+  'Pendente':   {bg:'var(--st-amber-soft)', fg:'var(--st-amber)'},
+  'Integrado':  {bg:'var(--st-green-soft)', fg:'var(--st-green)'},
+  'Incorporada':{bg:'var(--st-green-soft)', fg:'var(--st-green)'},
+  'Rejeitado':  {bg:'var(--st-red-soft)',   fg:'var(--st-red)'},
+  'Rejeitada':  {bg:'var(--st-red-soft)',   fg:'var(--st-red)'}
+};
+function statusBadge(s){
+  var st = STATUS_STYLE[s] || STATUS_STYLE['Pendente'];
+  return '<span class="badge" style="background:' + st.bg + ';color:' + st.fg + '">' + escapeHtml(s || 'Pendente') + '</span>';
+}
+
+function escapeHtml(s){
+  return String(s==null?'':s).replace(/[&<>"']/g, function(c){
+    return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c];
+  });
+}
+function fmtDate(iso){
+  if(!iso) return '';
+  try{ return new Date(iso).toLocaleDateString('pt-BR', {day:'2-digit', month:'short', year:'numeric'}); }
+  catch(e){ return iso; }
+}
+function setMsg(id, text, kind){
+  var el = document.getElementById(id);
+  el.textContent = text;
+  el.className = 'status-msg' + (kind ? ' ' + kind : '');
+}
+
+var dbReady = null, assetsReady = null, kFileChosen = null;
+
+document.getElementById('kFile').addEventListener('change', function(ev){
+  kFileChosen = ev.target.files[0] || null;
+  document.getElementById('kFileName').textContent = kFileChosen ? ('Selecionado: ' + kFileChosen.name) : '';
+});
+
+(async function init(){
+  var claudeApi = window.claude;
+  if(!claudeApi){
+    setMsg('agentMsg', 'Este formulário só funciona dentro do claude.ai.', 'err');
+    setMsg('knowMsg', 'Este formulário só funciona dentro do claude.ai.', 'err');
+    document.getElementById('agentList').innerHTML = '<div class="empty">Indisponível fora do claude.ai.</div>';
+    document.getElementById('knowList').innerHTML = '<div class="empty">Indisponível fora do claude.ai.</div>';
+    return;
+  }
+  dbReady = await claudeApi.use('db');
+  assetsReady = await claudeApi.use('assets');
+  if(!dbReady){
+    document.getElementById('agentSubmit').disabled = true;
+    document.getElementById('knowSubmit').disabled = true;
+    setMsg('agentMsg', 'Não foi possível conectar ao banco deste artifact.', 'err');
+    return;
+  }
+  subscribeAgents();
+  subscribeKnowledge();
+})();
+
+function subscribeAgents(){
+  dbReady.collection('agentes_propostos').orderBy('criadoEm', 'desc').limit(100).onSnapshot(
+    function(snap){ renderAgents(snap.docs.map(function(d){ return Object.assign({_id:d.id}, d.data()); })); },
+    function(err){ document.getElementById('agentList').innerHTML = '<div class="empty">Erro ao carregar (' + escapeHtml(err.code) + ').</div>'; }
+  );
+}
+function subscribeKnowledge(){
+  dbReady.collection('fontes_conhecimento').orderBy('criadoEm', 'desc').limit(100).onSnapshot(
+    function(snap){ renderKnowledge(snap.docs.map(function(d){ return Object.assign({_id:d.id}, d.data()); })); },
+    function(err){ document.getElementById('knowList').innerHTML = '<div class="empty">Erro ao carregar (' + escapeHtml(err.code) + ').</div>'; }
+  );
+}
+
+function renderAgents(docs){
+  var list = document.getElementById('agentList');
+  if(!docs.length){ list.innerHTML = '<div class="empty">Nenhum agente proposto ainda.</div>'; return; }
+  list.innerHTML = '';
+  docs.forEach(function(d){
+    var card = document.createElement('div');
+    card.className = 'card';
+    card.innerHTML =
+      '<div class="card-head"><div>' + statusBadge(d.status) + ' <h3 style="display:inline">' + escapeHtml(d.nome) + '</h3></div><div class="card-status"></div></div>' +
+      '<p>' + escapeHtml(d.atividade) + '</p>' +
+      (d.antipadrao ? '<p style="color:var(--text-faint)">Antipadrão: ' + escapeHtml(d.antipadrao) + '</p>' : '') +
+      '<div class="card-meta"><span>' + escapeHtml(catNome(d.categoria)) + '</span><span>' + (d.tier==='coord'?'Coordenador':'Colaborador') + '</span>' +
+      '<a href="' + escapeHtml(d.fonte) + '" target="_blank" rel="noopener">Fonte</a><span>' + fmtDate(d.criadoEm) + '</span></div>';
+    var sel = document.createElement('select');
+    ['Pendente','Integrado','Rejeitado'].forEach(function(s){
+      var o = document.createElement('option'); o.value = s; o.textContent = s;
+      if(s === (d.status||'Pendente')) o.selected = true;
+      sel.appendChild(o);
+    });
+    sel.addEventListener('change', function(){ dbReady.doc('agentes_propostos/' + d._id).update({status: sel.value}).catch(function(){}); });
+    card.querySelector('.card-status').appendChild(sel);
+    list.appendChild(card);
+  });
+}
+
+function renderKnowledge(docs){
+  var list = document.getElementById('knowList');
+  if(!docs.length){ list.innerHTML = '<div class="empty">Nenhuma fonte proposta ainda.</div>'; return; }
+  list.innerHTML = '';
+  docs.forEach(function(d){
+    var card = document.createElement('div');
+    card.className = 'card';
+    var linkHtml = d.anexo ? '<a href="' + escapeHtml(d.anexo.url) + '" target="_blank" rel="noopener">' + escapeHtml(d.anexo.filename) + '</a>'
+      : d.url ? '<a href="' + escapeHtml(d.url) + '" target="_blank" rel="noopener">Referência</a>' : '';
+    card.innerHTML =
+      '<div class="card-head"><div>' + statusBadge(d.status) + ' <h3 style="display:inline">' + escapeHtml(d.titulo) + '</h3></div><div class="card-status"></div></div>' +
+      '<p>' + escapeHtml(d.tipo) + ' · ' + escapeHtml(d.metodo) + '</p>' +
+      (d.nota ? '<p style="color:var(--text-faint)">' + escapeHtml(d.nota) + '</p>' : '') +
+      '<div class="card-meta">' + linkHtml + '<span>' + fmtDate(d.criadoEm) + '</span></div>';
+    var sel = document.createElement('select');
+    ['Pendente','Incorporada','Rejeitada'].forEach(function(s){
+      var o = document.createElement('option'); o.value = s; o.textContent = s;
+      if(s === (d.status||'Pendente')) o.selected = true;
+      sel.appendChild(o);
+    });
+    sel.addEventListener('change', function(){ dbReady.doc('fontes_conhecimento/' + d._id).update({status: sel.value}).catch(function(){}); });
+    card.querySelector('.card-status').appendChild(sel);
+    list.appendChild(card);
+  });
+}
+
+document.getElementById('agentForm').addEventListener('submit', async function(ev){
+  ev.preventDefault();
+  if(!dbReady) return;
+  var nome = document.getElementById('aNome').value.trim();
+  var fonte = document.getElementById('aFonte').value.trim();
+  var atividade = document.getElementById('aAtividade').value.trim();
+  if(!nome || !fonte || !atividade){ setMsg('agentMsg', 'Preencha nome, fonte e atividade.', 'err'); return; }
+  var btn = document.getElementById('agentSubmit');
+  btn.disabled = true; setMsg('agentMsg', 'Enviando');
+  try{
+    await dbReady.collection('agentes_propostos').add({
+      nome: nome, fonte: fonte,
+      categoria: document.getElementById('aCategoria').value,
+      tier: document.getElementById('aTier').value,
+      atividade: atividade,
+      antipadrao: document.getElementById('aAntipadrao').value.trim() || null,
+      status: 'Pendente',
+      criadoEm: new Date().toISOString()
+    });
+    setMsg('agentMsg', 'Agente proposto.', 'ok');
+    document.getElementById('agentForm').reset();
+  }catch(e){
+    setMsg('agentMsg', 'Falha ao propor (' + (e && e.code ? e.code : 'erro') + ').', 'err');
+  }finally{ btn.disabled = false; }
+});
+
+document.getElementById('knowForm').addEventListener('submit', async function(ev){
+  ev.preventDefault();
+  if(!dbReady) return;
+  var titulo = document.getElementById('kTitulo').value.trim();
+  var url = document.getElementById('kUrl').value.trim();
+  if(!titulo){ setMsg('knowMsg', 'Preencha o título.', 'err'); return; }
+  if(!url && !kFileChosen){ setMsg('knowMsg', 'Informe uma URL de referência ou anexe um arquivo.', 'err'); return; }
+  var btn = document.getElementById('knowSubmit');
+  btn.disabled = true; setMsg('knowMsg', 'Enviando');
+
+  var anexo = null;
+  if(kFileChosen && assetsReady){
+    try{
+      var res = await assetsReady.upload(kFileChosen);
+      anexo = {id:res.id, url:res.url, filename:kFileChosen.name, contentType:res.contentType, sizeBytes:res.sizeBytes};
+    }catch(e){
+      setMsg('knowMsg', 'Falha ao enviar o arquivo (' + (e && e.code ? e.code : 'erro') + ').', 'err');
+      btn.disabled = false; return;
+    }
+  }
+
+  try{
+    await dbReady.collection('fontes_conhecimento').add({
+      titulo: titulo,
+      tipo: document.getElementById('kTipo').value,
+      metodo: document.getElementById('kMetodo').value,
+      url: url || null,
+      anexo: anexo,
+      nota: document.getElementById('kNota').value.trim() || null,
+      status: 'Pendente',
+      criadoEm: new Date().toISOString()
+    });
+    setMsg('knowMsg', 'Fonte adicionada.', 'ok');
+    document.getElementById('knowForm').reset();
+    kFileChosen = null;
+    document.getElementById('kFileName').textContent = '';
+  }catch(e){
+    setMsg('knowMsg', 'Falha ao adicionar (' + (e && e.code ? e.code : 'erro') + ').', 'err');
+  }finally{ btn.disabled = false; }
+});
+</script>

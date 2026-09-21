@@ -1,0 +1,761 @@
+<title>Sistema Organizacional para Engenheiros</title>
+<style>
+  :root{
+    --bg:#F5F6F8; --surface:#FFFFFF; --surface-2:#ECEFF3; --border:#DBE0E7;
+    --text:#161B22; --text-dim:#5B6472; --text-faint:#8891A0;
+    --accent:#0F6E64; --accent-soft:#DFF1EE;
+    --st-blue:#1D4ED8; --st-blue-soft:#DBE7FB;
+    --st-amber:#B45309; --st-amber-soft:#FBEBD6;
+    --st-green:#0F6E64; --st-green-soft:#DFF1EE;
+    --st-gray:#5B6472; --st-gray-soft:#ECEFF3;
+    --st-red:#B3261E; --st-red-soft:#F8E1DF;
+    --st-purple:#6D4BC4; --st-purple-soft:#EAE5FA;
+  }
+  @media (prefers-color-scheme: dark){
+    :root:not([data-theme="light"]){
+      --bg:#0C1116; --surface:#121821; --surface-2:#182029;
+      --border:#28323E; --text:#E8ECF1; --text-dim:#9AA6B4; --text-faint:#6C7784;
+      --accent:#4FBDB0; --accent-soft:#14332F;
+      --st-blue:#7FA6F5; --st-blue-soft:#1B2740;
+      --st-amber:#E3A857; --st-amber-soft:#3A2A12;
+      --st-green:#4FBDB0; --st-green-soft:#14332F;
+      --st-gray:#9AA6B4; --st-gray-soft:#182029;
+      --st-red:#E4877E; --st-red-soft:#3A1F1D;
+      --st-purple:#B3A2F2; --st-purple-soft:#241C40;
+    }
+  }
+  :root[data-theme="dark"]{
+    --bg:#0C1116; --surface:#121821; --surface-2:#182029;
+    --border:#28323E; --text:#E8ECF1; --text-dim:#9AA6B4; --text-faint:#6C7784;
+    --accent:#4FBDB0; --accent-soft:#14332F;
+    --st-blue:#7FA6F5; --st-blue-soft:#1B2740;
+    --st-amber:#E3A857; --st-amber-soft:#3A2A12;
+    --st-green:#4FBDB0; --st-green-soft:#14332F;
+    --st-gray:#9AA6B4; --st-gray-soft:#182029;
+    --st-red:#E4877E; --st-red-soft:#3A1F1D;
+    --st-purple:#B3A2F2; --st-purple-soft:#241C40;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;padding:0; height:100%}
+  body{background:var(--bg); color:var(--text); font-family:"Public Sans","Segoe UI",system-ui,sans-serif; font-size:13.5px; line-height:1.5}
+  code{font-family:"IBM Plex Mono",ui-monospace,monospace; font-size:0.87em}
+  a{color:var(--accent)}
+  h1,h2,h3,h4{font-family:"Space Grotesk",sans-serif; font-weight:700; margin:0 0 6px; text-wrap:balance}
+  p{margin:0 0 8px}
+  input,select,textarea{
+    width:100%; font-family:inherit; font-size:13px; padding:8px 10px; border-radius:6px;
+    border:1px solid var(--border); background:var(--surface); color:var(--text);
+  }
+  textarea{resize:vertical; min-height:70px}
+  input:focus,select:focus,textarea:focus{outline:2px solid var(--accent); outline-offset:-1px}
+  label{display:block; font-size:10.5px; font-weight:600; color:var(--text-dim); margin-bottom:4px; text-transform:uppercase; letter-spacing:0.04em}
+  .field{margin-bottom:12px}
+  .row2{display:grid; grid-template-columns:1fr 1fr; gap:10px}
+  .row3{display:grid; grid-template-columns:1fr 1fr 1fr; gap:10px}
+  @media (max-width:720px){ .row2,.row3{grid-template-columns:1fr} }
+  button{font-family:inherit; cursor:pointer}
+  button.primary{background:var(--accent); color:#fff; border:none; border-radius:6px; padding:9px 16px; font-size:12.5px; font-weight:700}
+  button.primary:disabled{opacity:.5; cursor:not-allowed}
+  button.ghost{background:none; border:1px solid var(--border); border-radius:6px; padding:7px 12px; font-size:12px; font-weight:600; color:var(--text-dim)}
+  button.ghost:hover{border-color:var(--accent); color:var(--accent)}
+  .status-msg{font-size:11.5px; margin-top:8px; min-height:14px}
+  .status-msg.ok{color:var(--st-green)} .status-msg.err{color:var(--st-red)}
+
+  /* APP SHELL */
+  #app{display:flex; height:100vh; overflow:hidden}
+  #side{
+    width:220px; flex:none; background:var(--surface); border-right:1px solid var(--border);
+    display:flex; flex-direction:column; overflow-y:auto;
+  }
+  .brand{padding:18px 18px 14px; border-bottom:1px solid var(--border)}
+  .brand .eyebrow{font-family:"IBM Plex Mono",monospace; font-size:10px; color:var(--text-faint); text-transform:uppercase; letter-spacing:0.1em; margin-bottom:4px}
+  .brand h1{font-size:16px; margin:0}
+  .navlist{padding:10px; display:flex; flex-direction:column; gap:2px; flex:1}
+  .navlist button{
+    display:flex; align-items:center; gap:10px; text-align:left; background:none; border:none;
+    padding:9px 10px; border-radius:7px; font-size:12.8px; font-weight:600; color:var(--text-dim); width:100%;
+  }
+  .navlist button:hover{background:var(--surface-2); color:var(--text)}
+  .navlist button.active{background:var(--accent-soft); color:var(--accent)}
+  .navlist .nicon{flex:none; width:18px; height:18px; display:flex; align-items:center; justify-content:center}
+  .navlist .nicon svg{width:16px; height:16px}
+  .side-foot{padding:12px 18px 16px; border-top:1px solid var(--border); font-size:10.8px; color:var(--text-faint)}
+  .side-foot a{color:var(--text-faint); text-decoration:underline}
+
+  #main{flex:1; overflow-y:auto; position:relative}
+  .topbar{
+    position:sticky; top:0; z-index:5; display:flex; align-items:center; justify-content:space-between;
+    padding:16px 26px; background:var(--bg); border-bottom:1px solid var(--border);
+  }
+  .topbar h2{font-size:19px; margin:0}
+  .topbar .sub{font-size:12px; color:var(--text-faint); margin-top:2px}
+  .content{padding:22px 26px 60px; max-width:1100px}
+
+  .theme-toggle{
+    width:34px; height:34px; border-radius:50%; background:var(--surface); border:1px solid var(--border);
+    display:flex; align-items:center; justify-content:center; cursor:pointer; color:var(--text-dim); padding:0; flex:none;
+  }
+  .theme-toggle:hover{border-color:var(--accent); color:var(--accent)}
+  .theme-toggle svg{width:16px; height:16px}
+  .theme-toggle .tt-moon{display:block} .theme-toggle .tt-sun{display:none}
+  :root[data-theme="dark"] .theme-toggle .tt-moon{display:none}
+  :root[data-theme="dark"] .theme-toggle .tt-sun{display:block}
+  @media (prefers-color-scheme: dark){
+    :root:not([data-theme="light"]) .theme-toggle .tt-moon{display:none}
+    :root:not([data-theme="light"]) .theme-toggle .tt-sun{display:block}
+  }
+  #opBanner{
+    display:none; align-items:center; gap:8px; background:var(--surface); border:1px solid var(--st-purple);
+    border-radius:999px; padding:5px 12px; font-size:10.5px; font-family:"IBM Plex Mono",monospace; font-weight:700;
+    color:var(--st-purple);
+  }
+  #opBanner.active{display:inline-flex}
+  #opBanner{position:relative}
+  #opBanner .op-dot{width:6px; height:6px; border-radius:50%; background:var(--st-purple); animation:opPulse2 1.8s ease-in-out infinite}
+  .op-tooltip{
+    display:none; position:absolute; top:calc(100% + 6px); right:0; z-index:50; text-align:left;
+    background:var(--surface); border:1px solid var(--st-purple); border-radius:10px; padding:10px 12px;
+    min-width:220px; max-width:320px; box-shadow:0 10px 28px rgba(0,0,0,.22);
+    font-family:"Public Sans",sans-serif; text-transform:none; letter-spacing:normal; font-weight:400;
+  }
+  #opBanner:hover .op-tooltip, #opBanner:focus-within .op-tooltip{display:block}
+  .op-tooltip .ot-row{padding:6px 0; border-top:1px dashed var(--border); font-size:11.5px; color:var(--text-dim)}
+  .op-tooltip .ot-row:first-child{border-top:none; padding-top:0}
+  .op-tooltip .ot-setor{font-family:"IBM Plex Mono",monospace; font-size:10px; font-weight:700; color:var(--st-purple); text-transform:uppercase; display:block; margin-bottom:2px}
+  @keyframes opPulse2{0%,100%{opacity:1} 50%{opacity:.3}}
+
+  .view{display:none}
+  .view.active{display:block}
+
+  /* DASHBOARD */
+  .stat-grid{display:grid; grid-template-columns:repeat(auto-fit,minmax(170px,1fr)); gap:12px; margin-bottom:22px}
+  .stat-card{background:var(--surface); border:1px solid var(--border); border-radius:10px; padding:16px}
+  .stat-card .num{font-family:"Space Grotesk",sans-serif; font-size:26px; font-weight:700}
+  .stat-card .lbl{font-size:11px; color:var(--text-faint); text-transform:uppercase; letter-spacing:0.03em; margin-top:2px}
+  .panel-grid{display:grid; grid-template-columns:1.3fr 1fr; gap:16px}
+  @media (max-width:820px){ .panel-grid{grid-template-columns:1fr} }
+  .panel{background:var(--surface); border:1px solid var(--border); border-radius:10px; padding:18px 20px; margin-bottom:16px}
+  .panel h3{font-size:14px; margin-bottom:10px}
+  .mini-row{display:flex; justify-content:space-between; align-items:center; padding:7px 0; border-bottom:1px solid var(--border); font-size:12.5px}
+  .mini-row:last-child{border-bottom:none}
+  .mini-row .m-t{color:var(--text-dim)}
+  .empty{text-align:center; padding:24px 10px; color:var(--text-faint); font-size:12.5px}
+
+  /* TABLE / LIST */
+  .list-toolbar{display:flex; justify-content:space-between; align-items:center; margin-bottom:14px; gap:10px; flex-wrap:wrap}
+  .card{background:var(--surface); border:1px solid var(--border); border-radius:8px; padding:14px 16px; margin-bottom:10px}
+  .card-head{display:flex; justify-content:space-between; align-items:flex-start; gap:10px; flex-wrap:wrap}
+  .card h4{font-size:13.5px; margin:0}
+  .card .meta{font-size:11px; color:var(--text-faint); margin-top:4px; display:flex; gap:10px; flex-wrap:wrap}
+  .badge{display:inline-flex; font-family:"IBM Plex Mono",monospace; font-size:9.5px; font-weight:700; padding:3px 8px; border-radius:4px; letter-spacing:0.03em; white-space:nowrap}
+  .card-actions{display:flex; gap:6px; align-items:center}
+  .card-actions select{width:auto; font-size:11px; padding:4px 7px}
+  .card-actions button{background:none; border:1px solid var(--border); border-radius:5px; color:var(--st-red); cursor:pointer; padding:5px 9px; font-size:11px}
+
+  /* KANBAN */
+  .kanban{display:grid; grid-template-columns:repeat(4,1fr); gap:12px}
+  @media (max-width:900px){ .kanban{grid-template-columns:1fr 1fr} }
+  @media (max-width:560px){ .kanban{grid-template-columns:1fr} }
+  .kcol{background:var(--surface-2); border-radius:10px; padding:10px}
+  .kcol h4{font-size:11.5px; text-transform:uppercase; letter-spacing:0.04em; color:var(--text-dim); margin:2px 6px 10px; display:flex; justify-content:space-between}
+  .kcard{background:var(--surface); border:1px solid var(--border); border-radius:8px; padding:10px 11px; margin-bottom:8px}
+  .kcard h5{font-size:12.5px; margin:0 0 4px; font-family:"Public Sans",sans-serif; font-weight:700}
+  .kcard .kmeta{font-size:10.5px; color:var(--text-faint); display:flex; justify-content:space-between; align-items:center; margin-top:6px}
+  .kcard select{width:auto; font-size:10px; padding:3px 5px}
+
+  /* DOCS */
+  .doc-card{cursor:pointer}
+  .doc-card .doc-preview{font-size:12px; color:var(--text-dim); margin-top:4px; max-height:38px; overflow:hidden}
+  .doc-editor{display:none; margin-top:10px; padding-top:10px; border-top:1px dashed var(--border)}
+  .doc-editor.open{display:block}
+
+  /* BARS (metrics) */
+  .bar-row{display:flex; align-items:center; gap:10px; margin-bottom:10px; font-size:12px}
+  .bar-row .bl{width:120px; flex:none; color:var(--text-dim)}
+  .bar-track{flex:1; height:10px; background:var(--surface-2); border-radius:99px; overflow:hidden}
+  .bar-fill{height:100%; border-radius:99px}
+  .bar-row .bv{width:34px; flex:none; text-align:right; font-family:"IBM Plex Mono",monospace; font-size:11px; color:var(--text-faint)}
+
+  .filebox{border:1px dashed var(--border); border-radius:6px; padding:8px; font-size:11.5px; color:var(--text-faint)}
+</style>
+
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=Public+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@500;600&display=swap" rel="stylesheet">
+
+<div id="app">
+  <aside id="side">
+    <div class="brand">
+      <div class="eyebrow">Escritório de Engenharia</div>
+      <h1>Sistema Organizacional</h1>
+    </div>
+    <nav class="navlist" id="navlist">
+      <button data-view="dash" class="active"><span class="nicon"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6"><rect x="2.5" y="2.5" width="6" height="6" rx="1"/><rect x="11.5" y="2.5" width="6" height="6" rx="1"/><rect x="2.5" y="11.5" width="6" height="6" rx="1"/><rect x="11.5" y="11.5" width="6" height="6" rx="1"/></svg></span>Visão Geral</button>
+      <button data-view="crm"><span class="nicon"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6"><circle cx="10" cy="6.5" r="3"/><path d="M4 17c0-3.3 2.7-6 6-6s6 2.7 6 6" stroke-linecap="round"/></svg></span>Clientes (CRM)</button>
+      <button data-view="agenda"><span class="nicon"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6"><rect x="2.5" y="4" width="15" height="13.5" rx="1.5"/><path d="M2.5 8h15M6.5 2.5v3M13.5 2.5v3" stroke-linecap="round"/></svg></span>Agenda</button>
+      <button data-view="projetos"><span class="nicon"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6"><rect x="2.5" y="3" width="4.2" height="14" rx="1"/><rect x="7.9" y="3" width="4.2" height="9" rx="1"/><rect x="13.3" y="3" width="4.2" height="11.5" rx="1"/></svg></span>Projetos (Scrum)</button>
+      <button data-view="docs"><span class="nicon"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M5 2.5h7l3 3v12H5z" stroke-linejoin="round"/><path d="M7.5 9h5M7.5 12h5M7.5 15h3" stroke-linecap="round"/></svg></span>Documentos</button>
+      <button data-view="fin"><span class="nicon"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M10 2.5v15M14 5.8c0-1.5-1.8-2.3-4-2.3s-4 .9-4 2.4c0 3.1 8 1.6 8 4.7 0 1.5-1.8 2.4-4 2.4s-4-.8-4-2.3" stroke-linecap="round"/></svg></span>Financeiro</button>
+      <button data-view="metrics"><span class="nicon"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M4 16V9M10 16V4M16 16v-6" stroke-linecap="round"/><path d="M2.5 16.5h15" stroke-linecap="round"/></svg></span>Métricas</button>
+    </nav>
+    <div class="side-foot">Construído pela Frota de Agentes a partir da demanda <em>Teste 01</em>. <a href="https://claude.ai/artifact/1jJhYzXznLSE3rSThzoSsR">Ver Painel Geral</a></div>
+  </aside>
+
+  <main id="main">
+    <div class="topbar">
+      <div>
+        <h2 id="topTitle">Visão Geral</h2>
+        <div class="sub" id="topSub">Panorama do escritório — clientes, agenda, projetos e finanças em um só lugar</div>
+      </div>
+      <div id="opBanner"><span class="op-dot"></span><span id="opBannerText">Modo Operação ativo</span><div class="op-tooltip" id="opTooltip"></div></div>
+      <button type="button" class="theme-toggle" id="themeToggle" aria-label="Alternar tema claro/escuro" title="Alternar tema">
+        <svg class="tt-sun" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6"><circle cx="10" cy="10" r="3.4"/><path d="M10 2v2M10 16v2M18 10h-2M4 10H2M15.5 4.5l-1.4 1.4M5.9 14.1l-1.4 1.4M15.5 15.5l-1.4-1.4M5.9 5.9 4.5 4.5" stroke-linecap="round"/></svg>
+        <svg class="tt-moon" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M16.5 12.3A7 7 0 1 1 7.7 3.5a5.6 5.6 0 0 0 8.8 8.8z" stroke-linejoin="round"/></svg>
+      </button>
+    </div>
+
+    <div class="content">
+
+      <!-- VISÃO GERAL -->
+      <section class="view active" id="view-dash">
+        <div class="stat-grid" id="dashStats"></div>
+        <div class="panel-grid">
+          <div>
+            <div class="panel">
+              <h3>Próximos eventos</h3>
+              <div id="dashAgenda"><div class="empty">Carregando</div></div>
+            </div>
+            <div class="panel">
+              <h3>Projetos em andamento</h3>
+              <div id="dashProjetos"><div class="empty">Carregando</div></div>
+            </div>
+          </div>
+          <div>
+            <div class="panel">
+              <h3>Financeiro do mês</h3>
+              <div id="dashFin"><div class="empty">Carregando</div></div>
+            </div>
+            <div class="panel">
+              <h3>Clientes recentes</h3>
+              <div id="dashClientes"><div class="empty">Carregando</div></div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- CRM -->
+      <section class="view" id="view-crm">
+        <div class="panel">
+          <h3>Novo cliente</h3>
+          <form id="crmForm">
+            <div class="row2">
+              <div class="field"><label for="cNome">Nome / contato</label><input id="cNome" required placeholder="Ex.: Ana Ribeiro"></div>
+              <div class="field"><label for="cEmpresa">Empresa / obra</label><input id="cEmpresa" placeholder="Ex.: Construtora Aliança"></div>
+            </div>
+            <div class="row2">
+              <div class="field"><label for="cContato">E-mail / telefone</label><input id="cContato" placeholder="contato@empresa.com"></div>
+              <div class="field"><label for="cStatus">Status</label>
+                <select id="cStatus"><option>Prospecto</option><option>Ativo</option><option>Inativo</option></select>
+              </div>
+            </div>
+            <div class="field"><label for="cProjeto">Projeto vinculado (opcional)</label><input id="cProjeto" placeholder="Ex.: Reforma industrial — Galpão 3"></div>
+            <button class="primary" type="submit" id="crmSubmit">Salvar cliente</button>
+            <div class="status-msg" id="crmMsg"></div>
+          </form>
+        </div>
+        <h3 style="margin:18px 0 12px">Clientes cadastrados</h3>
+        <div id="crmList"><div class="empty">Carregando</div></div>
+      </section>
+
+      <!-- AGENDA -->
+      <section class="view" id="view-agenda">
+        <div class="panel">
+          <h3>Novo compromisso</h3>
+          <form id="agendaForm">
+            <div class="row2">
+              <div class="field"><label for="eTitulo">Título</label><input id="eTitulo" required placeholder="Ex.: Visita técnica — Galpão 3"></div>
+              <div class="field"><label for="eTipo">Tipo</label>
+                <select id="eTipo"><option>Reunião</option><option>Visita técnica</option><option>Prazo de entrega</option><option>Outro</option></select>
+              </div>
+            </div>
+            <div class="row2">
+              <div class="field"><label for="eData">Data</label><input id="eData" type="date" required></div>
+              <div class="field"><label for="eHora">Hora</label><input id="eHora" type="time"></div>
+            </div>
+            <div class="field"><label for="eCliente">Cliente vinculado (opcional)</label><input id="eCliente" placeholder="Nome do cliente"></div>
+            <button class="primary" type="submit" id="agendaSubmit">Adicionar à agenda</button>
+            <div class="status-msg" id="agendaMsg"></div>
+          </form>
+        </div>
+        <h3 style="margin:18px 0 12px">Compromissos</h3>
+        <div id="agendaList"><div class="empty">Carregando</div></div>
+      </section>
+
+      <!-- PROJETOS / SCRUM -->
+      <section class="view" id="view-projetos">
+        <div class="panel">
+          <h3>Nova tarefa / projeto</h3>
+          <form id="projForm">
+            <div class="row2">
+              <div class="field"><label for="pTitulo">Título</label><input id="pTitulo" required placeholder="Ex.: Revisar plantas estruturais"></div>
+              <div class="field"><label for="pCliente">Cliente / projeto</label><input id="pCliente" placeholder="Ex.: Galpão 3"></div>
+            </div>
+            <div class="row2">
+              <div class="field"><label for="pResp">Responsável</label><input id="pResp" placeholder="Ex.: Eng. Carlos Souza"></div>
+              <div class="field"><label for="pPrio">Prioridade</label>
+                <select id="pPrio"><option value="CRITICAL">Crítica</option><option value="HIGH">Alta</option><option value="MEDIUM" selected>Média</option><option value="LOW">Baixa</option></select>
+              </div>
+            </div>
+            <button class="primary" type="submit" id="projSubmit">Adicionar ao quadro</button>
+            <div class="status-msg" id="projMsg"></div>
+          </form>
+        </div>
+        <h3 style="margin:18px 0 12px">Quadro Scrum</h3>
+        <div class="kanban" id="kanbanBoard"></div>
+      </section>
+
+      <!-- DOCUMENTOS -->
+      <section class="view" id="view-docs">
+        <div class="panel">
+          <h3>Novo documento</h3>
+          <form id="docForm">
+            <div class="row2">
+              <div class="field"><label for="dTitulo">Título</label><input id="dTitulo" required placeholder="Ex.: Checklist de entrega — Galpão 3"></div>
+              <div class="field"><label for="dCategoria">Categoria (opcional)</label><input id="dCategoria" placeholder="Ex.: Procedimento, Ata, Memorial"></div>
+            </div>
+            <div class="field"><label for="dConteudo">Conteúdo</label><textarea id="dConteudo" required placeholder="Escreva o conteúdo do documento ou nota"></textarea></div>
+            <button class="primary" type="submit" id="docSubmit">Salvar documento</button>
+            <div class="status-msg" id="docMsg"></div>
+          </form>
+        </div>
+        <h3 style="margin:18px 0 12px">Biblioteca de documentos</h3>
+        <div id="docList"><div class="empty">Carregando</div></div>
+      </section>
+
+      <!-- FINANCEIRO -->
+      <section class="view" id="view-fin">
+        <div class="panel">
+          <h3>Novo lançamento</h3>
+          <form id="finForm">
+            <div class="row3">
+              <div class="field"><label for="tTipo">Tipo</label><select id="tTipo"><option>Receita</option><option>Despesa</option></select></div>
+              <div class="field"><label for="tValor">Valor (R$)</label><input id="tValor" type="number" step="0.01" min="0" required placeholder="0,00"></div>
+              <div class="field"><label for="tData">Data</label><input id="tData" type="date" required></div>
+            </div>
+            <div class="row2">
+              <div class="field"><label for="tDescricao">Descrição</label><input id="tDescricao" required placeholder="Ex.: Honorários — Projeto executivo"></div>
+              <div class="field"><label for="tCliente">Cliente vinculado (opcional)</label><input id="tCliente" placeholder="Nome do cliente"></div>
+            </div>
+            <button class="primary" type="submit" id="finSubmit">Lançar</button>
+            <div class="status-msg" id="finMsg"></div>
+          </form>
+        </div>
+        <h3 style="margin:18px 0 12px">Lançamentos</h3>
+        <div id="finList"><div class="empty">Carregando</div></div>
+      </section>
+
+      <!-- MÉTRICAS -->
+      <section class="view" id="view-metrics">
+        <div class="stat-grid" id="metricsStats"></div>
+        <div class="panel">
+          <h3>Projetos por status</h3>
+          <div id="metricsProj"></div>
+        </div>
+        <div class="panel">
+          <h3>Clientes por status</h3>
+          <div id="metricsCli"></div>
+        </div>
+        <div class="panel">
+          <h3>Financeiro acumulado</h3>
+          <div id="metricsFin"></div>
+        </div>
+      </section>
+
+    </div>
+  </main>
+</div>
+
+<script>
+/* ---------- tema ---------- */
+(function(){
+  var root = document.documentElement, btn = document.getElementById('themeToggle'), KEY = 'artifact-theme-pref';
+  var stored = null;
+  try{ stored = localStorage.getItem(KEY); }catch(e){}
+  if(stored === 'light' || stored === 'dark') root.setAttribute('data-theme', stored);
+  btn.addEventListener('click', function(){
+    var current = root.getAttribute('data-theme');
+    var isDark = current === 'dark' || (!current && window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches);
+    var next = isDark ? 'light' : 'dark';
+    root.setAttribute('data-theme', next);
+    try{ localStorage.setItem(KEY, next); }catch(e){}
+  });
+})();
+
+/* ---------- navegação de abas ---------- */
+var VIEW_META = {
+  dash:{t:'Visão Geral', s:'Panorama do escritório — clientes, agenda, projetos e finanças em um só lugar'},
+  crm:{t:'Clientes (CRM)', s:'Cadastro e acompanhamento de clientes e obras'},
+  agenda:{t:'Agenda', s:'Compromissos, visitas técnicas e prazos'},
+  projetos:{t:'Projetos (Scrum)', s:'Quadro Kanban de tarefas por status'},
+  docs:{t:'Documentos', s:'Notas, procedimentos e atas do escritório'},
+  fin:{t:'Financeiro', s:'Receitas e despesas do escritório'},
+  metrics:{t:'Métricas', s:'Indicadores consolidados de toda a operação'}
+};
+document.getElementById('navlist').addEventListener('click', function(ev){
+  var btn = ev.target.closest('button'); if(!btn) return;
+  var v = btn.getAttribute('data-view');
+  document.querySelectorAll('#navlist button').forEach(function(b){ b.classList.toggle('active', b===btn); });
+  document.querySelectorAll('.view').forEach(function(s){ s.classList.toggle('active', s.id === 'view-'+v); });
+  document.getElementById('topTitle').textContent = VIEW_META[v].t;
+  document.getElementById('topSub').textContent = VIEW_META[v].s;
+});
+
+/* ---------- helpers ---------- */
+function escapeHtml(s){
+  return String(s==null?'':s).replace(/[&<>"']/g, function(c){
+    return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c];
+  });
+}
+function fmtDate(iso){
+  if(!iso) return '';
+  try{ var p = iso.split('-'); return p[2] + '/' + p[1] + '/' + p[0]; }catch(e){ return iso; }
+}
+function fmtMoney(n){
+  n = Number(n)||0;
+  return 'R$ ' + n.toLocaleString('pt-BR', {minimumFractionDigits:2, maximumFractionDigits:2});
+}
+function setMsg(id, text, kind){
+  var el = document.getElementById(id);
+  el.textContent = text; el.className = 'status-msg' + (kind ? ' ' + kind : '');
+}
+var PRIO_STYLE = {
+  CRITICAL:{bg:'var(--st-red-soft)', fg:'var(--st-red)', label:'Crítica'},
+  HIGH:{bg:'var(--st-amber-soft)', fg:'var(--st-amber)', label:'Alta'},
+  MEDIUM:{bg:'var(--st-blue-soft)', fg:'var(--st-blue)', label:'Média'},
+  LOW:{bg:'var(--st-gray-soft)', fg:'var(--st-gray)', label:'Baixa'}
+};
+function prioBadge(p){
+  var st = PRIO_STYLE[p] || PRIO_STYLE.MEDIUM;
+  return '<span class="badge" style="background:'+st.bg+';color:'+st.fg+'">'+st.label+'</span>';
+}
+
+/* ---------- estado ---------- */
+var dbReady = null;
+var clientes = [], eventos = [], projetos = [], documentos = [], transacoes = [];
+var openDocId = null;
+var KANBAN_COLS = ['Backlog','Em Andamento','Revisão','Concluído'];
+
+(async function init(){
+  var claudeApi = window.claude;
+  if(!claudeApi){
+    ['crmMsg','agendaMsg','projMsg','docMsg','finMsg'].forEach(function(id){ setMsg(id, 'Este app só funciona dentro do claude.ai.', 'err'); });
+    return;
+  }
+  dbReady = await claudeApi.use('db');
+  if(!dbReady){
+    ['crmSubmit','agendaSubmit','projSubmit','docSubmit','finSubmit'].forEach(function(id){ document.getElementById(id).disabled = true; });
+    return;
+  }
+  subscribeAll();
+  dbReady.doc('estado/operacao').onSnapshot(function(snap){
+    var st = snap.exists ? snap.data() : null;
+    var el = document.getElementById('opBanner');
+    if(!el) return;
+    if(st && st.ativo){
+      el.classList.add('active');
+      var count = 0;
+      if(st.porSetor){ Object.keys(st.porSetor).forEach(function(k){ count += (st.porSetor[k].emAndamento || 0); }); }
+      document.getElementById('opBannerText').textContent =
+        count>0 ? (count + (count===1 ? ' demanda em andamento' : ' demandas em andamento')) : 'Modo Operação ativo';
+      var tip = document.getElementById('opTooltip');
+      if(tip){
+        var rows = [];
+        if(st.porSetor){
+          Object.keys(st.porSetor).forEach(function(k){
+            var s = st.porSetor[k];
+            if(s.emAndamento > 0){
+              var etapa = (s.atual && s.atual.etapa) ? s.atual.etapa : 'Em andamento';
+              var quem = (s.atual && s.atual.agente) ? s.atual.agente : k;
+              var tit = (s.atual && s.atual.titulo) ? escapeHtml(s.atual.titulo) + ' — ' : '';
+              rows.push('<div class="ot-row"><span class="ot-setor">' + escapeHtml(quem) + '</span>' + tit + escapeHtml(etapa) + '</div>');
+            }
+          });
+        }
+        tip.innerHTML = rows.length ? rows.join('') : '<div class="ot-row">Sem detalhes de etapa no momento.</div>';
+      }
+    }else{
+      el.classList.remove('active');
+    }
+  }, function(){});
+})();
+
+function subscribeAll(){
+  dbReady.collection('clientes').orderBy('criadoEm','desc').limit(300).onSnapshot(function(s){
+    clientes = s.docs.map(function(d){ return Object.assign({_id:d.id}, d.data()); });
+    renderCRM(); renderDashboard(); renderMetrics();
+  }, function(){});
+  dbReady.collection('eventos').orderBy('data','asc').limit(300).onSnapshot(function(s){
+    eventos = s.docs.map(function(d){ return Object.assign({_id:d.id}, d.data()); });
+    renderAgenda(); renderDashboard();
+  }, function(){});
+  dbReady.collection('projetos').orderBy('criadoEm','desc').limit(300).onSnapshot(function(s){
+    projetos = s.docs.map(function(d){ return Object.assign({_id:d.id}, d.data()); });
+    renderKanban(); renderDashboard(); renderMetrics();
+  }, function(){});
+  dbReady.collection('documentos').orderBy('criadoEm','desc').limit(300).onSnapshot(function(s){
+    documentos = s.docs.map(function(d){ return Object.assign({_id:d.id}, d.data()); });
+    renderDocs();
+  }, function(){});
+  dbReady.collection('transacoes').orderBy('data','desc').limit(300).onSnapshot(function(s){
+    transacoes = s.docs.map(function(d){ return Object.assign({_id:d.id}, d.data()); });
+    renderFin(); renderDashboard(); renderMetrics();
+  }, function(){});
+}
+
+/* ---------- CRM ---------- */
+document.getElementById('crmForm').addEventListener('submit', async function(ev){
+  ev.preventDefault();
+  if(!dbReady) return;
+  var nome = document.getElementById('cNome').value.trim();
+  if(!nome){ setMsg('crmMsg','Preencha o nome.','err'); return; }
+  var btn = document.getElementById('crmSubmit'); btn.disabled = true; setMsg('crmMsg','Salvando');
+  try{
+    await dbReady.collection('clientes').add({
+      nome: nome,
+      empresa: document.getElementById('cEmpresa').value.trim() || null,
+      contato: document.getElementById('cContato').value.trim() || null,
+      status: document.getElementById('cStatus').value,
+      projeto: document.getElementById('cProjeto').value.trim() || null,
+      criadoEm: new Date().toISOString()
+    });
+    setMsg('crmMsg','Cliente salvo.','ok'); document.getElementById('crmForm').reset();
+  }catch(e){ setMsg('crmMsg','Falha ao salvar.','err'); }
+  finally{ btn.disabled = false; }
+});
+function renderCRM(){
+  var list = document.getElementById('crmList');
+  if(!clientes.length){ list.innerHTML = '<div class="empty">Nenhum cliente cadastrado ainda.</div>'; return; }
+  list.innerHTML = clientes.map(function(c){
+    var stColor = c.status==='Ativo' ? {bg:'var(--st-green-soft)',fg:'var(--st-green)'} : c.status==='Inativo' ? {bg:'var(--st-gray-soft)',fg:'var(--st-gray)'} : {bg:'var(--st-blue-soft)',fg:'var(--st-blue)'};
+    return '<div class="card"><div class="card-head"><div><h4>'+escapeHtml(c.nome)+'</h4>'+
+      '<div class="meta">'+(c.empresa?'<span>'+escapeHtml(c.empresa)+'</span>':'')+(c.contato?'<span>'+escapeHtml(c.contato)+'</span>':'')+(c.projeto?'<span>Projeto: '+escapeHtml(c.projeto)+'</span>':'')+'</div></div>'+
+      '<span class="badge" style="background:'+stColor.bg+';color:'+stColor.fg+'">'+escapeHtml(c.status)+'</span></div></div>';
+  }).join('');
+}
+
+/* ---------- AGENDA ---------- */
+document.getElementById('agendaForm').addEventListener('submit', async function(ev){
+  ev.preventDefault();
+  if(!dbReady) return;
+  var titulo = document.getElementById('eTitulo').value.trim();
+  var data = document.getElementById('eData').value;
+  if(!titulo || !data){ setMsg('agendaMsg','Preencha título e data.','err'); return; }
+  var btn = document.getElementById('agendaSubmit'); btn.disabled = true; setMsg('agendaMsg','Salvando');
+  try{
+    await dbReady.collection('eventos').add({
+      titulo: titulo, tipo: document.getElementById('eTipo').value, data: data,
+      hora: document.getElementById('eHora').value || null,
+      cliente: document.getElementById('eCliente').value.trim() || null,
+      criadoEm: new Date().toISOString()
+    });
+    setMsg('agendaMsg','Compromisso adicionado.','ok'); document.getElementById('agendaForm').reset();
+  }catch(e){ setMsg('agendaMsg','Falha ao salvar.','err'); }
+  finally{ btn.disabled = false; }
+});
+function renderAgenda(){
+  var list = document.getElementById('agendaList');
+  if(!eventos.length){ list.innerHTML = '<div class="empty">Nenhum compromisso na agenda.</div>'; return; }
+  list.innerHTML = eventos.map(function(e){
+    return '<div class="card"><div class="card-head"><div><h4>'+escapeHtml(e.titulo)+'</h4>'+
+      '<div class="meta"><span>'+fmtDate(e.data)+(e.hora?' · '+escapeHtml(e.hora):'')+'</span>'+(e.cliente?'<span>'+escapeHtml(e.cliente)+'</span>':'')+'</div></div>'+
+      '<span class="badge" style="background:var(--st-purple-soft);color:var(--st-purple)">'+escapeHtml(e.tipo)+'</span></div></div>';
+  }).join('');
+}
+
+/* ---------- PROJETOS / KANBAN ---------- */
+document.getElementById('projForm').addEventListener('submit', async function(ev){
+  ev.preventDefault();
+  if(!dbReady) return;
+  var titulo = document.getElementById('pTitulo').value.trim();
+  if(!titulo){ setMsg('projMsg','Preencha o título.','err'); return; }
+  var btn = document.getElementById('projSubmit'); btn.disabled = true; setMsg('projMsg','Salvando');
+  try{
+    await dbReady.collection('projetos').add({
+      titulo: titulo, cliente: document.getElementById('pCliente').value.trim() || null,
+      responsavel: document.getElementById('pResp').value.trim() || null,
+      prioridade: document.getElementById('pPrio').value, status: 'Backlog',
+      criadoEm: new Date().toISOString()
+    });
+    setMsg('projMsg','Tarefa adicionada ao quadro.','ok'); document.getElementById('projForm').reset();
+  }catch(e){ setMsg('projMsg','Falha ao salvar.','err'); }
+  finally{ btn.disabled = false; }
+});
+function renderKanban(){
+  var board = document.getElementById('kanbanBoard');
+  board.innerHTML = KANBAN_COLS.map(function(col){
+    var items = projetos.filter(function(p){ return (p.status||'Backlog') === col; });
+    return '<div class="kcol"><h4>'+col+'<span>'+items.length+'</span></h4>' +
+      (items.length ? items.map(function(p){
+        return '<div class="kcard"><h5>'+escapeHtml(p.titulo)+'</h5>'+
+          '<div class="meta" style="font-size:10.5px;color:var(--text-faint)">'+(p.cliente?escapeHtml(p.cliente):'')+(p.responsavel?' · '+escapeHtml(p.responsavel):'')+'</div>'+
+          '<div class="kmeta">'+prioBadge(p.prioridade)+'<select data-id="'+p._id+'" class="kstatus">' +
+          KANBAN_COLS.map(function(c){ return '<option'+(c===col?' selected':'')+'>'+c+'</option>'; }).join('') +
+          '</select></div></div>';
+      }).join('') : '<div class="empty" style="padding:12px 4px">Vazio</div>') +
+      '</div>';
+  }).join('');
+  board.querySelectorAll('.kstatus').forEach(function(sel){
+    sel.addEventListener('change', function(){
+      dbReady.doc('projetos/'+sel.getAttribute('data-id')).update({status: sel.value}).catch(function(){});
+    });
+  });
+}
+
+/* ---------- DOCUMENTOS ---------- */
+document.getElementById('docForm').addEventListener('submit', async function(ev){
+  ev.preventDefault();
+  if(!dbReady) return;
+  var titulo = document.getElementById('dTitulo').value.trim();
+  var conteudo = document.getElementById('dConteudo').value.trim();
+  if(!titulo || !conteudo){ setMsg('docMsg','Preencha título e conteúdo.','err'); return; }
+  var btn = document.getElementById('docSubmit'); btn.disabled = true; setMsg('docMsg','Salvando');
+  try{
+    await dbReady.collection('documentos').add({
+      titulo: titulo, categoria: document.getElementById('dCategoria').value.trim() || null,
+      conteudo: conteudo, criadoEm: new Date().toISOString()
+    });
+    setMsg('docMsg','Documento salvo.','ok'); document.getElementById('docForm').reset();
+  }catch(e){ setMsg('docMsg','Falha ao salvar.','err'); }
+  finally{ btn.disabled = false; }
+});
+function renderDocs(){
+  var list = document.getElementById('docList');
+  if(!documentos.length){ list.innerHTML = '<div class="empty">Nenhum documento ainda.</div>'; return; }
+  list.innerHTML = '';
+  documentos.forEach(function(d){
+    var card = document.createElement('div');
+    card.className = 'card doc-card';
+    card.innerHTML = '<div class="card-head"><div><h4>'+escapeHtml(d.titulo)+'</h4>'+
+      '<div class="doc-preview">'+escapeHtml((d.conteudo||'').slice(0,140))+'</div></div>'+
+      (d.categoria ? '<span class="badge" style="background:var(--surface-2);color:var(--text-dim)">'+escapeHtml(d.categoria)+'</span>' : '') +
+      '</div><div class="doc-editor" id="doc_'+d._id+'"></div>';
+    card.addEventListener('click', function(){
+      openDocId = (openDocId === d._id) ? null : d._id; renderDocs();
+    });
+    list.appendChild(card);
+    if(openDocId === d._id){
+      var ed = card.querySelector('.doc-editor');
+      ed.classList.add('open');
+      ed.innerHTML = '<p style="white-space:pre-wrap; font-size:12.5px; color:var(--text-dim)">'+escapeHtml(d.conteudo)+'</p>';
+    }
+  });
+}
+
+/* ---------- FINANCEIRO ---------- */
+document.getElementById('finForm').addEventListener('submit', async function(ev){
+  ev.preventDefault();
+  if(!dbReady) return;
+  var valor = parseFloat(document.getElementById('tValor').value);
+  var descricao = document.getElementById('tDescricao').value.trim();
+  var data = document.getElementById('tData').value;
+  if(!valor || !descricao || !data){ setMsg('finMsg','Preencha tipo, valor, descrição e data.','err'); return; }
+  var btn = document.getElementById('finSubmit'); btn.disabled = true; setMsg('finMsg','Salvando');
+  try{
+    await dbReady.collection('transacoes').add({
+      tipo: document.getElementById('tTipo').value, valor: valor, descricao: descricao, data: data,
+      cliente: document.getElementById('tCliente').value.trim() || null,
+      criadoEm: new Date().toISOString()
+    });
+    setMsg('finMsg','Lançamento registrado.','ok'); document.getElementById('finForm').reset();
+  }catch(e){ setMsg('finMsg','Falha ao salvar.','err'); }
+  finally{ btn.disabled = false; }
+});
+function renderFin(){
+  var list = document.getElementById('finList');
+  if(!transacoes.length){ list.innerHTML = '<div class="empty">Nenhum lançamento ainda.</div>'; return; }
+  list.innerHTML = transacoes.map(function(t){
+    var isRec = t.tipo === 'Receita';
+    return '<div class="card"><div class="card-head"><div><h4>'+escapeHtml(t.descricao)+'</h4>'+
+      '<div class="meta"><span>'+fmtDate(t.data)+'</span>'+(t.cliente?'<span>'+escapeHtml(t.cliente)+'</span>':'')+'</div></div>'+
+      '<span class="badge" style="background:'+(isRec?'var(--st-green-soft)':'var(--st-red-soft)')+';color:'+(isRec?'var(--st-green)':'var(--st-red)')+'">'+(isRec?'+':'-')+' '+fmtMoney(t.valor)+'</span></div></div>';
+  }).join('');
+}
+
+/* ---------- DASHBOARD ---------- */
+function renderDashboard(){
+  var hoje = new Date(); var ym = hoje.toISOString().slice(0,7);
+  var clientesAtivos = clientes.filter(function(c){ return c.status==='Ativo'; }).length;
+  var projAndamento = projetos.filter(function(p){ return p.status==='Em Andamento'; }).length;
+  var in7 = new Date(hoje.getTime() + 7*86400000);
+  var proxEventos = eventos.filter(function(e){ var d = new Date(e.data+'T00:00:00'); return d >= new Date(hoje.toDateString()) && d <= in7; });
+  var saldoMes = transacoes.filter(function(t){ return (t.data||'').slice(0,7)===ym; })
+    .reduce(function(acc,t){ return acc + (t.tipo==='Receita'? t.valor : -t.valor); }, 0);
+
+  document.getElementById('dashStats').innerHTML =
+    statCard(clientesAtivos, 'Clientes ativos') +
+    statCard(projAndamento, 'Projetos em andamento') +
+    statCard(proxEventos.length, 'Eventos nos próx. 7 dias') +
+    statCard(fmtMoney(saldoMes), 'Saldo do mês');
+
+  var ag = document.getElementById('dashAgenda');
+  ag.innerHTML = proxEventos.length ? proxEventos.slice(0,5).map(function(e){
+    return '<div class="mini-row"><span class="m-t">'+escapeHtml(e.titulo)+'</span><span>'+fmtDate(e.data)+'</span></div>';
+  }).join('') : '<div class="empty">Nada nos próximos 7 dias.</div>';
+
+  var pj = document.getElementById('dashProjetos');
+  var andamento = projetos.filter(function(p){ return p.status==='Em Andamento'; });
+  pj.innerHTML = andamento.length ? andamento.slice(0,5).map(function(p){
+    return '<div class="mini-row"><span class="m-t">'+escapeHtml(p.titulo)+'</span>'+prioBadge(p.prioridade)+'</div>';
+  }).join('') : '<div class="empty">Nenhum projeto em andamento.</div>';
+
+  var fin = document.getElementById('dashFin');
+  var recMes = transacoes.filter(function(t){ return (t.data||'').slice(0,7)===ym && t.tipo==='Receita'; }).reduce(function(a,t){return a+t.valor;},0);
+  var despMes = transacoes.filter(function(t){ return (t.data||'').slice(0,7)===ym && t.tipo==='Despesa'; }).reduce(function(a,t){return a+t.valor;},0);
+  fin.innerHTML = '<div class="mini-row"><span class="m-t">Receitas do mês</span><span style="color:var(--st-green)">'+fmtMoney(recMes)+'</span></div>' +
+    '<div class="mini-row"><span class="m-t">Despesas do mês</span><span style="color:var(--st-red)">'+fmtMoney(despMes)+'</span></div>' +
+    '<div class="mini-row"><span class="m-t">Saldo</span><span><b>'+fmtMoney(recMes-despMes)+'</b></span></div>';
+
+  var cl = document.getElementById('dashClientes');
+  cl.innerHTML = clientes.length ? clientes.slice(0,5).map(function(c){
+    return '<div class="mini-row"><span class="m-t">'+escapeHtml(c.nome)+'</span><span>'+escapeHtml(c.status)+'</span></div>';
+  }).join('') : '<div class="empty">Nenhum cliente cadastrado.</div>';
+}
+function statCard(num, lbl){
+  return '<div class="stat-card"><div class="num">'+num+'</div><div class="lbl">'+lbl+'</div></div>';
+}
+
+/* ---------- MÉTRICAS ---------- */
+function renderMetrics(){
+  document.getElementById('metricsStats').innerHTML =
+    statCard(clientes.length, 'Clientes totais') +
+    statCard(projetos.length, 'Tarefas totais') +
+    statCard(documentos.length, 'Documentos') +
+    statCard(transacoes.length, 'Lançamentos financeiros');
+
+  var projBox = document.getElementById('metricsProj');
+  projBox.innerHTML = KANBAN_COLS.map(function(col){
+    var n = projetos.filter(function(p){ return (p.status||'Backlog')===col; }).length;
+    var pct = projetos.length ? Math.round(n/projetos.length*100) : 0;
+    return barRow(col, pct, n, 'var(--accent)');
+  }).join('') || '<div class="empty">Sem dados ainda.</div>';
+
+  var cliBox = document.getElementById('metricsCli');
+  cliBox.innerHTML = ['Ativo','Prospecto','Inativo'].map(function(st){
+    var n = clientes.filter(function(c){ return c.status===st; }).length;
+    var pct = clientes.length ? Math.round(n/clientes.length*100) : 0;
+    return barRow(st, pct, n, 'var(--st-blue)');
+  }).join('') || '<div class="empty">Sem dados ainda.</div>';
+
+  var finBox = document.getElementById('metricsFin');
+  var totRec = transacoes.filter(function(t){return t.tipo==='Receita';}).reduce(function(a,t){return a+t.valor;},0);
+  var totDesp = transacoes.filter(function(t){return t.tipo==='Despesa';}).reduce(function(a,t){return a+t.valor;},0);
+  finBox.innerHTML = '<div class="mini-row"><span class="m-t">Receita acumulada</span><span style="color:var(--st-green)">'+fmtMoney(totRec)+'</span></div>' +
+    '<div class="mini-row"><span class="m-t">Despesa acumulada</span><span style="color:var(--st-red)">'+fmtMoney(totDesp)+'</span></div>' +
+    '<div class="mini-row"><span class="m-t">Resultado</span><span><b>'+fmtMoney(totRec-totDesp)+'</b></span></div>';
+}
+function barRow(label, pct, n, color){
+  return '<div class="bar-row"><span class="bl">'+escapeHtml(label)+'</span>'+
+    '<span class="bar-track"><span class="bar-fill" style="width:'+pct+'%;background:'+color+'"></span></span>'+
+    '<span class="bv">'+n+'</span></div>';
+}
+</script>

@@ -1,0 +1,392 @@
+<title>Painel Geral</title>
+<style>
+  :root{
+    --bg:#F5F6F8; --surface:#FFFFFF; --surface-2:#ECEFF3; --border:#DBE0E7;
+    --text:#161B22; --text-dim:#5B6472; --text-faint:#8891A0;
+    --accent:#0F6E64; --accent-soft:#DFF1EE;
+    --c1:#1D4ED8; --c1-soft:#DBE7FB;
+    --c2:#0F6E64; --c2-soft:#DFF1EE;
+    --c3:#7A3B69; --c3-soft:#F1E4EE;
+    --c4:#4B5CC4; --c4-soft:#E3E6FA;
+    --c5:#A8640C; --c5-soft:#F8E9D3;
+    --c6:#B45309; --c6-soft:#FBEBD6;
+  }
+  @media (prefers-color-scheme: dark){
+    :root:not([data-theme="light"]){
+      --bg:#0C1116; --surface:#121821; --surface-2:#182029;
+      --border:#28323E; --text:#E8ECF1; --text-dim:#9AA6B4; --text-faint:#6C7784;
+      --accent:#4FBDB0; --accent-soft:#14332F;
+      --c1:#7FA6F5; --c1-soft:#1B2740;
+      --c2:#4FBDB0; --c2-soft:#14332F;
+      --c3:#C98AB8; --c3-soft:#2E2130;
+      --c4:#9BA8F0; --c4-soft:#232449;
+      --c5:#E3B65A; --c5-soft:#3A2A12;
+      --c6:#E3A857; --c6-soft:#3A2A12;
+    }
+  }
+  :root[data-theme="dark"]{
+    --bg:#0C1116; --surface:#121821; --surface-2:#182029;
+    --border:#28323E; --text:#E8ECF1; --text-dim:#9AA6B4; --text-faint:#6C7784;
+    --accent:#4FBDB0; --accent-soft:#14332F;
+    --c1:#7FA6F5; --c1-soft:#1B2740;
+    --c2:#4FBDB0; --c2-soft:#14332F;
+    --c3:#C98AB8; --c3-soft:#2E2130;
+    --c4:#9BA8F0; --c4-soft:#232449;
+    --c5:#E3B65A; --c5-soft:#3A2A12;
+    --c6:#E3A857; --c6-soft:#3A2A12;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;padding:0}
+  body{background:var(--bg); color:var(--text); font-family:"Public Sans","Segoe UI",system-ui,sans-serif; font-size:14px; line-height:1.55}
+  code{font-family:"IBM Plex Mono",ui-monospace,monospace; font-size:0.87em}
+  a{color:var(--accent)}
+  .wrap{max-width:980px; margin:0 auto; padding-inline:20px}
+  h1,h2{font-family:"Space Grotesk",sans-serif; font-weight:700; text-wrap:balance; margin:0 0 8px}
+  h1{font-size:clamp(28px,5vw,40px)}
+  h2{font-size:15px; margin:0}
+  p{margin:0 0 10px; max-width:70ch}
+
+  .hero{background:var(--surface); border-bottom:1px solid var(--border); padding-block:44px 30px}
+  .eyebrow{font-family:"IBM Plex Mono",monospace; text-transform:uppercase; letter-spacing:0.12em; font-size:11px; color:var(--text-faint); margin:0 0 10px; font-weight:600}
+  .lede{color:var(--text-dim); font-size:15.5px; max-width:64ch}
+
+  .stats{display:flex; gap:24px; flex-wrap:wrap; margin-top:22px}
+  .stat b{display:block; font-family:"Space Grotesk",sans-serif; font-size:26px; font-variant-numeric:tabular-nums}
+  .stat span{font-size:11px; color:var(--text-faint); text-transform:uppercase; letter-spacing:0.04em}
+
+  .dynamic-line{
+    margin:14px 0 0; min-height:22px; font-size:14px; font-weight:600; color:var(--accent);
+    font-family:"IBM Plex Mono",monospace; opacity:0; transform:translateY(4px);
+    transition:opacity .5s ease, transform .5s ease;
+  }
+  .dynamic-line.show{opacity:1; transform:translateY(0)}
+
+  .agents-overview{display:grid; grid-template-columns:1.4fr 1fr; gap:16px}
+  @media (max-width:820px){ .agents-overview{grid-template-columns:1fr} }
+  .panel{background:var(--surface); border:1px solid var(--border); border-radius:12px; padding:20px 22px}
+  .panel h3{font-size:14px; margin:0 0 4px}
+  .panel .panel-sub{font-size:12px; color:var(--text-faint); margin-bottom:16px}
+  .bar-row{display:flex; align-items:center; gap:10px; margin-bottom:9px; font-size:12px}
+  .bar-row .bl{width:150px; flex:none; color:var(--text-dim); font-family:"IBM Plex Mono",monospace; font-size:11px}
+  .bar-track{flex:1; height:9px; background:var(--surface-2); border-radius:99px; overflow:hidden}
+  .bar-fill{height:100%; border-radius:99px; background:var(--accent); transition:width .6s ease}
+  .bar-row .bv{width:24px; flex:none; text-align:right; font-family:"IBM Plex Mono",monospace; font-size:11px; color:var(--text-faint)}
+
+  .special-list{display:flex; flex-direction:column; gap:10px}
+  .special-card{
+    background:var(--surface-2); border:1px solid var(--border); border-radius:10px; padding:13px 15px;
+    border-left:3px solid var(--gestor, #A8640C);
+  }
+  .special-card .sp-role{font-family:"IBM Plex Mono",monospace; font-size:9.5px; font-weight:700; text-transform:uppercase; letter-spacing:0.05em; color:var(--gestor, #A8640C)}
+  .special-card h4{font-size:13.5px; margin:3px 0 3px; font-family:"Space Grotesk",sans-serif}
+  .special-card p{font-size:11.8px; color:var(--text-dim); margin:0}
+
+  section{padding-block:34px}
+  .grid{display:grid; grid-template-columns:repeat(auto-fit,minmax(280px,1fr)); gap:14px}
+  .art-card{
+    display:block; text-decoration:none; color:var(--text); background:var(--surface); border:1px solid var(--border);
+    border-radius:10px; padding:20px 22px; border-left:4px solid var(--card-c, var(--accent));
+  }
+  .art-card:hover{border-color:var(--card-c, var(--accent))}
+  .art-card .card-top{display:flex; align-items:center; gap:10px; margin-bottom:8px}
+  .art-card .card-icon{
+    flex:none; width:32px; height:32px; border-radius:8px; display:flex; align-items:center; justify-content:center;
+    background:color-mix(in srgb, var(--card-c, var(--accent)) 16%, transparent); color:var(--card-c, var(--accent));
+  }
+  .art-card .card-icon svg{width:17px; height:17px}
+  .art-card .kicker{font-family:"IBM Plex Mono",monospace; font-size:10px; font-weight:700; text-transform:uppercase; letter-spacing:0.06em; color:var(--card-c, var(--accent))}
+  .art-card h2{margin-bottom:6px}
+  .art-card p{font-size:12.8px; color:var(--text-dim); margin-bottom:0}
+
+  .theme-toggle{
+    position:fixed; top:16px; right:16px; z-index:410; width:36px; height:36px; border-radius:50%;
+    background:var(--surface); border:1px solid var(--border); display:flex; align-items:center; justify-content:center;
+    cursor:pointer; color:var(--text-dim); padding:0;
+  }
+  .theme-toggle:hover{border-color:var(--accent); color:var(--accent)}
+  .theme-toggle svg{width:17px; height:17px; display:block}
+  .theme-toggle .tt-moon{display:block}
+  .theme-toggle .tt-sun{display:none}
+  :root[data-theme="dark"] .theme-toggle .tt-moon{display:none}
+  :root[data-theme="dark"] .theme-toggle .tt-sun{display:block}
+  @media (prefers-color-scheme: dark){
+    :root:not([data-theme="light"]) .theme-toggle .tt-moon{display:none}
+    :root:not([data-theme="light"]) .theme-toggle .tt-sun{display:block}
+  }
+
+  #opBanner{
+    display:none; align-items:center; gap:8px; background:var(--surface); border:1px solid var(--c3);
+    border-radius:999px; padding:6px 14px; font-size:11px; font-family:"IBM Plex Mono",monospace; font-weight:700;
+    color:var(--c3); margin-top:14px; position:relative;
+  }
+  #opBanner.active{display:inline-flex}
+  #opBanner .op-dot{width:7px; height:7px; border-radius:50%; background:var(--c3); animation:opPulse2 1.8s ease-in-out infinite}
+  @keyframes opPulse2{0%,100%{opacity:1} 50%{opacity:.3}}
+  .op-tooltip{
+    display:none; position:absolute; top:calc(100% + 6px); left:0; z-index:50; text-align:left;
+    background:var(--surface); border:1px solid var(--c3); border-radius:10px; padding:10px 12px;
+    min-width:220px; max-width:320px; box-shadow:0 10px 28px rgba(0,0,0,.22);
+    font-family:"Public Sans",sans-serif; text-transform:none; letter-spacing:normal; font-weight:400;
+  }
+  #opBanner:hover .op-tooltip, #opBanner:focus-within .op-tooltip{display:block}
+  .op-tooltip .ot-row{padding:6px 0; border-top:1px dashed var(--border); font-size:11.5px; color:var(--text-dim)}
+  .op-tooltip .ot-row:first-child{border-top:none; padding-top:0}
+  .op-tooltip .ot-setor{font-family:"IBM Plex Mono",monospace; font-size:10px; font-weight:700; color:var(--c3); text-transform:uppercase; display:block; margin-bottom:2px}
+
+  .order-list{counter-reset:step; margin-top:8px}
+  .order-item{display:flex; gap:14px; padding:14px 0; border-top:1px solid var(--border)}
+  .order-item:first-child{border-top:none}
+  .order-num{
+    counter-increment:step; flex:none; width:26px; height:26px; border-radius:50%; background:var(--surface-2);
+    display:flex; align-items:center; justify-content:center; font-family:"IBM Plex Mono",monospace; font-size:12px; font-weight:700; color:var(--text-dim);
+  }
+  .order-num::before{content:counter(step)}
+  .order-body h3{font-size:13.5px; margin:0 0 3px; font-family:"Public Sans",sans-serif; font-weight:700}
+  .order-body p{font-size:12.3px; color:var(--text-dim); margin:0}
+  .order-body a{font-size:12px}
+
+  footer{padding-block:20px 50px; text-align:center}
+  footer p{color:var(--text-faint); font-size:11.5px}
+</style>
+
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=Public+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@500;600&display=swap" rel="stylesheet">
+
+<button type="button" class="theme-toggle" id="themeToggle" aria-label="Alternar tema claro/escuro" title="Alternar tema">
+  <svg class="tt-sun" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6"><circle cx="10" cy="10" r="3.4"/><path d="M10 2v2M10 16v2M18 10h-2M4 10H2M15.5 4.5l-1.4 1.4M5.9 14.1l-1.4 1.4M15.5 15.5l-1.4-1.4M5.9 5.9 4.5 4.5" stroke-linecap="round"/></svg>
+  <svg class="tt-moon" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M16.5 12.3A7 7 0 1 1 7.7 3.5a5.6 5.6 0 0 0 8.8 8.8z" stroke-linejoin="round"/></svg>
+</button>
+<script>
+(function(){
+  var root = document.documentElement, btn = document.getElementById('themeToggle'), KEY = 'artifact-theme-pref';
+  var stored = null;
+  try{ stored = localStorage.getItem(KEY); }catch(e){}
+  if(stored === 'light' || stored === 'dark') root.setAttribute('data-theme', stored);
+  btn.addEventListener('click', function(){
+    var current = root.getAttribute('data-theme');
+    var isDark = current === 'dark' || (!current && window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches);
+    var next = isDark ? 'light' : 'dark';
+    root.setAttribute('data-theme', next);
+    try{ localStorage.setItem(KEY, next); }catch(e){}
+  });
+})();
+</script>
+<script>
+(async function initOpBanner(){
+  var claudeApi = window.claude;
+  if(!claudeApi) return;
+  var db = await claudeApi.use('db');
+  if(!db) return;
+  db.doc('estado/operacao').onSnapshot(function(snap){
+    var st = snap.exists ? snap.data() : null;
+    var el = document.getElementById('opBanner');
+    if(!el) return;
+    if(st && st.ativo){
+      el.classList.add('active');
+      var count = 0;
+      if(st.porSetor){ Object.keys(st.porSetor).forEach(function(k){ count += (st.porSetor[k].emAndamento || 0); }); }
+      document.getElementById('opBannerText').textContent =
+        count>0 ? (count + (count===1 ? ' demanda em andamento' : ' demandas em andamento')) : 'Modo Operação ativo';
+      var tip = document.getElementById('opTooltip');
+      if(tip){
+        var esc = function(s){ return String(s==null?'':s).replace(/[&<>"']/g, function(c){ return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]; }); };
+        var rows = [];
+        if(st.porSetor){
+          Object.keys(st.porSetor).forEach(function(k){
+            var s = st.porSetor[k];
+            if(s.emAndamento > 0){
+              var etapa = (s.atual && s.atual.etapa) ? s.atual.etapa : 'Em andamento';
+              var quem = (s.atual && s.atual.agente) ? s.atual.agente : k;
+              var tit = (s.atual && s.atual.titulo) ? esc(s.atual.titulo) + ' — ' : '';
+              rows.push('<div class="ot-row"><span class="ot-setor">' + esc(quem) + '</span>' + tit + esc(etapa) + '</div>');
+            }
+          });
+        }
+        tip.innerHTML = rows.length ? rows.join('') : '<div class="ot-row">Sem detalhes de etapa no momento.</div>';
+      }
+    }else{
+      el.classList.remove('active');
+    }
+  }, function(){});
+})();
+</script>
+<script>
+document.addEventListener('DOMContentLoaded', function(){
+  var SETORES = [
+    {id:'D1',nome:'Arquitetura & Sistema',n:6}, {id:'D2',nome:'Pesquisa & Descoberta',n:2},
+    {id:'D3',nome:'Qualidade & Revisão',n:21}, {id:'D4',nome:'Segurança',n:1},
+    {id:'D5',nome:'Build & CI/CD',n:12}, {id:'D6',nome:'Testes & Validação',n:5},
+    {id:'D7',nome:'Infra Distribuída',n:10}, {id:'D8',nome:'Documentação',n:4},
+    {id:'D9',nome:'Limpeza & Manutenção',n:4}, {id:'D10',nome:'Performance',n:2},
+    {id:'D11',nome:'Design & Produto',n:1}, {id:'D12',nome:'Release Open Source',n:3},
+    {id:'D13',nome:'Loop Generativo',n:3}, {id:'D14',nome:'Automação Web',n:1},
+    {id:'D15',nome:'Rede & Infra',n:4}, {id:'D16',nome:'Growth & Marketing',n:3},
+    {id:'D17',nome:'Meta / Processo',n:4}, {id:'D18',nome:'Comunicação & Triagem',n:1}
+  ];
+  var max = Math.max.apply(null, SETORES.map(function(s){ return s.n; }));
+  var box = document.getElementById('sectorBars');
+  if(box){
+    box.innerHTML = SETORES.map(function(s){
+      var pct = Math.round(s.n / max * 100);
+      return '<div class="bar-row"><span class="bl">' + s.id + ' · ' + s.nome + '</span>' +
+        '<span class="bar-track"><span class="bar-fill" style="width:' + pct + '%"></span></span>' +
+        '<span class="bv">' + s.n + '</span></div>';
+    }).join('');
+  }
+
+  var LINES = [
+    'Sistema de Agentes Especializados para Realização de Projetos',
+    '95 agentes · 18 setores · 1 objetivo: entregar',
+    'Do registro da demanda ao relatório final — tudo rastreável',
+    'Cada setor sabe seu escopo, seus limites e a quem presta contas'
+  ];
+  var el = document.getElementById('dynamicLine');
+  if(el){
+    var i = 0;
+    function show(){
+      el.classList.remove('show');
+      setTimeout(function(){
+        el.textContent = LINES[i % LINES.length];
+        el.classList.add('show');
+        i++;
+      }, 250);
+    }
+    show();
+    setInterval(show, 4000);
+  }
+});
+</script>
+
+<header class="hero">
+  <div class="wrap">
+    <p class="eyebrow">Painel Central</p>
+    <h1>Painel Geral</h1>
+    <p class="lede">Ponto de entrada único para os seis artefatos que compõem o sistema — do registro de uma demanda até o diagnóstico final do que foi entregue.</p>
+    <p class="dynamic-line" id="dynamicLine" aria-live="polite"></p>
+    <div id="opBanner"><span class="op-dot"></span><span id="opBannerText">Modo Operação ativo</span><div class="op-tooltip" id="opTooltip"></div></div>
+    <div class="stats">
+      <div class="stat"><b>95</b><span>Agentes mapeados</span></div>
+      <div class="stat"><b>18</b><span>Categorias</span></div>
+      <div class="stat"><b>4</b><span>Níveis de complexidade</span></div>
+      <div class="stat"><b>6</b><span>Artefatos conectados</span></div>
+    </div>
+  </div>
+</header>
+
+<div class="wrap">
+  <section style="padding-bottom:0">
+    <div class="agents-overview">
+      <div class="panel">
+        <h3>Agentes mapeados por setor</h3>
+        <div class="panel-sub">18 categorias de D1 a D18 — quantidade de agentes ativos em cada uma nesta máquina.</div>
+        <div id="sectorBars"></div>
+      </div>
+      <div class="panel">
+        <h3>Agentes especiais</h3>
+        <div class="panel-sub">Fora da hierarquia D1–D18 — decidem direção ou auditam o processo inteiro.</div>
+        <div class="special-list">
+          <div class="special-card">
+            <div class="sp-role">Gerência geral</div>
+            <h4>Gestores — Direção Executiva</h4>
+            <p>8 agentes. Não recebem ordens de ninguém na frota: decompõem o pedido do usuário e roteiam para os 18 setores.</p>
+          </div>
+          <div class="special-card">
+            <div class="sp-role">Auditor</div>
+            <h4>Agente Auditor da Frota — ecc:agent-evaluator</h4>
+            <p>Sede em D17. Audita o processo completo de todos os agentes ao final de cada demanda e comunica o veredito ao Coordenador responsável.</p>
+          </div>
+          <div class="special-card">
+            <div class="sp-role">Diagnosticador</div>
+            <h4>Métricas — frota:metricas</h4>
+            <p>Sede em D17. Entra em cena quando o Auditor confirma sucesso: transforma o Relatório de Operação em números.</p>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <div class="grid">
+      <a class="art-card" style="--card-c:var(--c1)" href="https://claude.ai/artifact/TvUcpQ6be7wj88STgYmTcq">
+        <div class="card-top">
+          <div class="card-icon"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M3 5h14M3 10h14M3 15h9" stroke-linecap="round"/></svg></div>
+          <div class="kicker">Entrada</div>
+        </div>
+        <h2>Fila de Demandas</h2>
+        <p>Registre o que precisa ser feito, acompanhe o status e converse com os agentes responsáveis pelo processo.</p>
+      </a>
+      <a class="art-card" style="--card-c:var(--c2)" href="https://claude.ai/artifact/8rdeRj8exFa6pUYZ6nJYMe">
+        <div class="card-top">
+          <div class="card-icon"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6"><circle cx="4" cy="15" r="2"/><circle cx="16" cy="15" r="2"/><circle cx="10" cy="4" r="2"/><path d="M10 6v4M8.3 9.3 5.5 13.2M11.7 9.3l2.8 3.9" stroke-linecap="round"/></svg></div>
+          <div class="kicker">Estrutura</div>
+        </div>
+        <h2>Conector de Inteligência</h2>
+        <p>Cidade 3D e modo de grafo — visualize como os 95 agentes se conectam por categoria e tipo de relação.</p>
+      </a>
+      <a class="art-card" style="--card-c:var(--c2)" href="https://claude.ai/artifact/KnqZpBUkSBusLFxTAzLmVN">
+        <div class="card-top">
+          <div class="card-icon"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6"><rect x="7" y="2.5" width="6" height="4" rx="1"/><rect x="2" y="13.5" width="6" height="4" rx="1"/><rect x="12" y="13.5" width="6" height="4" rx="1"/><path d="M10 6.5v3M5 13.5v-3h10v3" stroke-linecap="round" stroke-linejoin="round"/></svg></div>
+          <div class="kicker">Estrutura</div>
+        </div>
+        <h2>Organograma</h2>
+        <p>Referência tabular completa: gestores, coordenadores, colaboradores e como cada categoria se conecta.</p>
+      </a>
+      <a class="art-card" style="--card-c:var(--c5)" href="https://claude.ai/artifact/4cCPGEFezkxGC8SpfR5qGy">
+        <div class="card-top">
+          <div class="card-icon"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M10 2.5 16.5 5v5c0 4-2.8 6.6-6.5 7.5C6.3 16.6 3.5 14 3.5 10V5L10 2.5z" stroke-linejoin="round"/><path d="M7.3 10 9 11.7l3.7-3.9" stroke-linecap="round" stroke-linejoin="round"/></svg></div>
+          <div class="kicker">Governança</div>
+        </div>
+        <h2>Código de Conduta</h2>
+        <p>Pilares, processos, matriz de consequências e níveis de complexidade que todo agente segue.</p>
+      </a>
+      <a class="art-card" style="--card-c:var(--c3)" href="https://claude.ai/artifact/6qy1GomQLhaESVdnfazNqj">
+        <div class="card-top">
+          <div class="card-icon"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6"><circle cx="10" cy="10" r="2.6"/><path d="M10 3v2M10 15v2M17 10h-2M5 10H3M14.9 5.1l-1.4 1.4M6.5 13.5l-1.4 1.4M14.9 14.9l-1.4-1.4M6.5 6.5 5.1 5.1" stroke-linecap="round"/></svg></div>
+          <div class="kicker">Manutenção</div>
+        </div>
+        <h2>Configurações</h2>
+        <p>Proponha novos agentes a partir de repositórios, e novas fontes de conhecimento — livros, documentos, arquivos.</p>
+      </a>
+      <a class="art-card" style="--card-c:var(--c6)" href="https://claude.ai/artifact/TvUcpQ6be7wj88STgYmTcq">
+        <div class="card-top">
+          <div class="card-icon"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M4 16V9M10 16V4M16 16v-6" stroke-linecap="round"/><path d="M2.5 16.5h15" stroke-linecap="round"/></svg></div>
+          <div class="kicker">Resultado</div>
+        </div>
+        <h2>Análises</h2>
+        <p>Diagnóstico completo de cada demanda resolvida — métricas, ganhos, perdas e a linha do tempo de Aprendizado e Evolução.</p>
+      </a>
+    </div>
+  </section>
+
+  <section style="padding-top:0">
+    <h2 style="font-size:19px; font-family:'Space Grotesk',sans-serif; margin-bottom:6px">Como o fluxo funciona</h2>
+    <p style="margin-bottom:18px">A ordem natural de uso, de ponta a ponta.</p>
+    <div class="order-list">
+      <div class="order-item">
+        <div class="order-num"></div>
+        <div class="order-body"><h3>Registrar a demanda</h3><p>Título, descrição, categoria, prioridade e referências — em <a href="https://claude.ai/artifact/TvUcpQ6be7wj88STgYmTcq">Fila de Demandas</a>.</p></div>
+      </div>
+      <div class="order-item">
+        <div class="order-num"></div>
+        <div class="order-body"><h3>Gestores classificam a complexidade</h3><p>Nível 1 a 4 define quantos agentes entram — regra no <a href="https://claude.ai/artifact/4cCPGEFezkxGC8SpfR5qGy">Código de Conduta</a>.</p></div>
+      </div>
+      <div class="order-item">
+        <div class="order-num"></div>
+        <div class="order-body"><h3>A categoria responsável executa</h3><p>Consulte quem faz o quê no <a href="https://claude.ai/artifact/KnqZpBUkSBusLFxTAzLmVN">Organograma</a> ou no <a href="https://claude.ai/artifact/8rdeRj8exFa6pUYZ6nJYMe">Conector de Inteligência</a>.</p></div>
+      </div>
+      <div class="order-item">
+        <div class="order-num"></div>
+        <div class="order-body"><h3>O gerente final registra o diagnóstico</h3><p>Fontes, métricas, ganhos, perdas e aprendizado — em <a href="https://claude.ai/artifact/TvUcpQ6be7wj88STgYmTcq">Análises</a>.</p></div>
+      </div>
+      <div class="order-item">
+        <div class="order-num"></div>
+        <div class="order-body"><h3>Precisa de um novo agente ou fonte?</h3><p>Proponha em <a href="https://claude.ai/artifact/6qy1GomQLhaESVdnfazNqj">Configurações</a> — Claude integra na próxima sessão.</p></div>
+      </div>
+    </div>
+  </section>
+</div>
+
+<footer>
+  <div class="wrap"><p>Os seis artefatos compartilham a mesma identidade visual e se referenciam entre si — este painel é o ponto de partida recomendado.</p></div>
+</footer>

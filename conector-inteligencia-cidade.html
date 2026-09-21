@@ -1,0 +1,1567 @@
+<title>Conector de Inteligência</title>
+<style>
+  :root{
+    --bg:#F5F6F8; --surface:#FFFFFF; --surface-2:#ECEFF3; --border:#DBE0E7;
+    --text:#161B22; --text-dim:#5B6472; --text-faint:#8891A0;
+    --accent:#0F6E64; --accent-soft:#DFF1EE;
+    --gestor:#C9942F; --gestor-soft:#F8E9D3;
+    --native:#3B4656; --native-soft:#E7EAEF;
+    --ecc:#0F6E64; --ecc-soft:#DFF1EE;
+    --ruflo:#6650C4; --ruflo-soft:#EAE5FA;
+    --od:#C9942F; --od-soft:#F8E9D3;
+    --frota:#C2255C; --frota-soft:#FBE0EA;
+    --danger:#B3261E; --danger-soft:#F8E1DF;
+    --l-leva:#3B82F6; --l-apoia:#9333EA; --l-aplica:#059669; --l-exige:#DC2626;
+    --panel-w:340px; --side-w:270px; --opmode:#8B5CF6; --opmode-soft:#EFE7FE;
+  }
+  @media (prefers-color-scheme: dark){
+    :root:not([data-theme="light"]){
+      --bg:#0B0F14; --surface:#121821; --surface-2:#182029;
+      --border:#28323E; --text:#E8ECF1; --text-dim:#9AA6B4; --text-faint:#6C7784;
+      --accent:#4FBDB0; --accent-soft:#14332F;
+      --gestor:#E3B65A; --gestor-soft:#3A2A12;
+      --native:#AEB8C4; --native-soft:#1E252D;
+      --ecc:#4FBDB0; --ecc-soft:#14332F;
+      --ruflo:#B3A2F2; --ruflo-soft:#241C40;
+      --od:#E3B65A; --od-soft:#3A2A12;
+      --frota:#F06BA0; --frota-soft:#3A1826;
+      --danger:#E4877E; --danger-soft:#3A1F1D;
+      --opmode:#A78BFA; --opmode-soft:#2B1B45;
+    }
+  }
+  :root[data-theme="dark"]{
+    --bg:#0B0F14; --surface:#121821; --surface-2:#182029;
+    --border:#28323E; --text:#E8ECF1; --text-dim:#9AA6B4; --text-faint:#6C7784;
+    --accent:#4FBDB0; --accent-soft:#14332F;
+    --gestor:#E3B65A; --gestor-soft:#3A2A12;
+    --native:#AEB8C4; --native-soft:#1E252D;
+    --ecc:#4FBDB0; --ecc-soft:#14332F;
+    --ruflo:#B3A2F2; --ruflo-soft:#241C40;
+    --od:#E3B65A; --od-soft:#3A2A12;
+    --frota:#F06BA0; --frota-soft:#3A1826;
+    --danger:#E4877E; --danger-soft:#3A1F1D;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;padding:0;height:100%;overflow:hidden}
+  body{
+    background:var(--bg); color:var(--text);
+    font-family:"Public Sans","Segoe UI",system-ui,sans-serif; font-size:13.5px;
+  }
+  code,.mono{font-family:"IBM Plex Mono",ui-monospace,monospace}
+  h1,h2,h3,h4{font-family:"Space Grotesk",sans-serif; font-weight:700; margin:0 0 6px; text-wrap:balance}
+  p{margin:0 0 8px}
+  button{font-family:inherit; cursor:pointer}
+  a{color:var(--accent)}
+
+  #app{display:flex; flex-direction:column; height:100%}
+
+  header{
+    display:flex; align-items:center; gap:14px; padding:10px 16px;
+    border-bottom:1px solid var(--border); background:var(--surface); z-index:30; flex:none;
+    flex-wrap:wrap;
+  }
+  header h1{font-size:17px; margin:0; white-space:nowrap}
+  header .tag{font-size:10.5px; color:var(--text-faint); font-family:"IBM Plex Mono",monospace; text-transform:uppercase; letter-spacing:0.08em}
+  .modebtn{
+    display:flex; border:1px solid var(--border); border-radius:999px; overflow:hidden; margin-left:auto;
+  }
+  .modebtn button{
+    background:var(--surface); color:var(--text-dim); border:none; padding:7px 14px; font-size:12.5px; font-weight:600;
+  }
+  .modebtn button.active{background:var(--accent); color:#fff}
+  .toolbtn{
+    background:var(--surface); border:1px solid var(--border); border-radius:999px;
+    padding:7px 14px; font-size:12.5px; font-weight:600; color:var(--text-dim);
+  }
+  .toolbtn.active{background:var(--accent); color:#fff; border-color:var(--accent)}
+  #opBanner{
+    position:absolute; top:14px; left:14px; z-index:15;
+    background:var(--surface); border:1px solid var(--opmode); border-radius:999px;
+    padding:6px 14px; font-size:11px; font-family:"IBM Plex Mono",monospace; font-weight:700;
+    color:var(--opmode); align-items:center; gap:8px; display:none;
+  }
+  #opBanner.active{display:inline-flex}
+  #opBanner .op-dot{width:7px; height:7px; border-radius:50%; background:var(--opmode); animation:opPulse2 1.8s ease-in-out infinite}
+  @keyframes opPulse2{0%,100%{opacity:1} 50%{opacity:.3}}
+  .op-tooltip{
+    display:none; position:absolute; top:calc(100% + 6px); left:0; z-index:50; text-align:left;
+    background:var(--surface); border:1px solid var(--opmode); border-radius:10px; padding:10px 12px;
+    min-width:220px; max-width:320px; box-shadow:0 10px 28px rgba(0,0,0,.22);
+    font-family:"Public Sans",sans-serif; text-transform:none; letter-spacing:normal; font-weight:400;
+  }
+  #opBanner:hover .op-tooltip, #opBanner:focus-within .op-tooltip{display:block}
+  .op-tooltip .ot-row{padding:6px 0; border-top:1px dashed var(--border); font-size:11.5px; color:var(--text-dim)}
+  .op-tooltip .ot-row:first-child{border-top:none; padding-top:0}
+  .op-tooltip .ot-setor{font-family:"IBM Plex Mono",monospace; font-size:10px; font-weight:700; color:var(--opmode); text-transform:uppercase; display:block; margin-bottom:2px}
+  .artrail{
+    position:fixed; top:50%; right:0; transform:translateY(-50%);
+    display:flex; flex-direction:column; gap:1px;
+    background:var(--surface); border:1px solid var(--border); border-right:none;
+    border-radius:14px 0 0 14px; padding:8px 0; box-shadow:-4px 0 16px rgba(0,0,0,0.10);
+    z-index:400; overflow:hidden; width:46px;
+    transition:width .3s cubic-bezier(.22,.8,.32,1);
+  }
+  .artrail:hover, .artrail:focus-within{ width:min(236px,84vw); }
+  .artrail-item{
+    display:flex; align-items:center; gap:12px; padding:9px 13px; text-decoration:none;
+    white-space:nowrap; color:var(--text-dim);
+  }
+  .artrail-item:hover{background:var(--surface-2); color:var(--accent)}
+  .artrail-icon{
+    flex:none; width:26px; height:26px; border-radius:7px; background:var(--surface-2);
+    display:flex; align-items:center; justify-content:center; color:var(--text-dim);
+    transition:background .2s ease, color .2s ease;
+  }
+  .artrail-icon svg{width:15px; height:15px; display:block}
+  .artrail-item:hover .artrail-icon{background:var(--accent); color:#fff}
+  .artrail-item.hub .artrail-icon{background:var(--gestor-soft,#F8E9D3); color:var(--gestor,#A8640C)}
+  .artrail-item.hub:hover .artrail-icon{background:var(--gestor,#A8640C); color:#fff}
+  .artrail-item.current{background:var(--surface-2); pointer-events:none}
+  .artrail-item.current .artrail-icon{background:var(--accent); color:#fff}
+  .artrail-item.current .artrail-label{color:var(--text); font-weight:700}
+  .artrail-label{
+    font-size:12.8px; font-weight:600; opacity:0; transform:translateX(-6px);
+    transition:opacity .2s ease .06s, transform .2s ease .06s;
+  }
+  .artrail:hover .artrail-label, .artrail:focus-within .artrail-label{opacity:1; transform:translateX(0)}
+
+  .theme-toggle{
+    position:fixed; top:16px; right:16px; z-index:410; width:36px; height:36px; border-radius:50%;
+    background:var(--surface); border:1px solid var(--border); display:flex; align-items:center; justify-content:center;
+    cursor:pointer; color:var(--text-dim); padding:0;
+  }
+  .theme-toggle:hover{border-color:var(--accent); color:var(--accent)}
+  .theme-toggle svg{width:17px; height:17px; display:block}
+  .theme-toggle .tt-moon{display:block}
+  .theme-toggle .tt-sun{display:none}
+  :root[data-theme="dark"] .theme-toggle .tt-moon{display:none}
+  :root[data-theme="dark"] .theme-toggle .tt-sun{display:block}
+  @media (prefers-color-scheme: dark){
+    :root:not([data-theme="light"]) .theme-toggle .tt-moon{display:none}
+    :root:not([data-theme="light"]) .theme-toggle .tt-sun{display:block}
+  }
+  #sidebarToggle{
+    background:var(--surface-2); border:1px solid var(--border); border-radius:8px; padding:6px 10px; font-size:12px;
+    color:var(--text); display:none;
+  }
+
+  #main{flex:1; display:flex; min-height:0; position:relative}
+
+  #sidebar{
+    width:var(--side-w); flex:none; border-right:1px solid var(--border); background:var(--surface);
+    display:flex; flex-direction:column; overflow:hidden; z-index:20;
+  }
+  #sidebar.collapsed{display:none}
+  #search{
+    margin:10px; padding:8px 10px; border-radius:8px; border:1px solid var(--border);
+    background:var(--surface-2); color:var(--text); font-size:12.5px;
+  }
+  #tree{flex:1; overflow-y:auto; padding:0 8px 12px}
+  .blockrow{
+    display:flex; align-items:center; gap:6px; padding:6px 6px; font-size:11.5px; font-weight:700;
+    text-transform:uppercase; letter-spacing:0.04em; color:var(--text-dim); cursor:pointer; border-radius:6px;
+  }
+  .blockrow:hover{background:var(--surface-2)}
+  .blockdot{width:8px;height:8px;border-radius:50%;flex:none}
+  .agentrow{
+    padding:5px 8px 5px 22px; font-size:12.5px; border-radius:6px; cursor:pointer; color:var(--text);
+    display:flex; justify-content:space-between; gap:6px; align-items:center;
+  }
+  .agentrow:hover{background:var(--accent-soft)}
+  .agentrow .tierdot{font-size:9px; color:var(--text-faint); font-family:"IBM Plex Mono",monospace}
+  .agentlist{display:block}
+  .agentlist.hidden{display:none}
+
+  #viewport{flex:1; position:relative; min-width:0}
+  #three-canvas{position:absolute; inset:0; display:block; width:100%; height:100%}
+  #tooltip{
+    position:absolute; pointer-events:none; background:rgba(10,14,18,0.92); color:#fff; padding:5px 9px;
+    border-radius:6px; font-size:11.5px; font-family:"IBM Plex Mono",monospace; display:none; z-index:15;
+    transform:translate(12px,12px);
+  }
+
+  #legend{
+    position:absolute; left:14px; bottom:14px; background:var(--surface); border:1px solid var(--border);
+    border-radius:12px; padding:12px 14px; font-size:11.5px; color:var(--text-dim); max-width:250px; z-index:15;
+  }
+  #legend h4{font-size:12px; margin-bottom:8px}
+  .leg-row{display:flex; align-items:center; gap:7px; padding:3px 0; cursor:pointer; user-select:none}
+  .leg-line{width:16px; height:2px; border-radius:2px; flex:none}
+  .leg-row input{margin:0}
+  .leg-sep{border-top:1px solid var(--border); margin:8px 0}
+
+  #camhint{
+    position:absolute; right:14px; bottom:14px; background:var(--surface); border:1px solid var(--border);
+    border-radius:12px; padding:10px 13px; font-size:11px; color:var(--text-faint); z-index:15; max-width:200px;
+  }
+
+  #panel{
+    width:var(--panel-w); flex:none; border-left:1px solid var(--border); background:var(--surface);
+    overflow-y:auto; z-index:20; padding:18px 18px 40px; display:none;
+  }
+  #panel.open{display:block}
+  #panel .pclose{
+    float:right; background:none; border:none; color:var(--text-faint); font-size:18px; line-height:1; padding:2px 6px;
+  }
+  .badge{
+    display:inline-flex; align-items:center; font-family:"IBM Plex Mono",monospace; font-size:10px; font-weight:700;
+    padding:2px 7px; border-radius:5px; margin-right:4px; margin-bottom:4px;
+  }
+  .b-native{background:var(--native-soft); color:var(--native)}
+  .b-ecc{background:var(--ecc-soft); color:var(--ecc)}
+  .b-ruflo{background:var(--ruflo-soft); color:var(--ruflo)}
+  .b-od{background:var(--od-soft); color:var(--od)}
+  .b-frota{background:var(--frota-soft); color:var(--frota)}
+  .b-tier{background:var(--surface-2); color:var(--text-dim); border:1px solid var(--border)}
+  #panel .blockname{font-size:11.5px; color:var(--text-faint); margin-bottom:2px}
+  #panel h2{font-size:19px; margin:2px 0 8px}
+  .layer{margin-top:14px}
+  .layer h5{
+    font-size:10.5px; text-transform:uppercase; letter-spacing:0.06em; color:var(--text-faint);
+    margin:0 0 5px; font-weight:700;
+  }
+  .layer ul{margin:0; padding-left:16px}
+  .layer li{font-size:12.5px; color:var(--text-dim); margin-bottom:3px; line-height:1.4}
+  .conn-item{
+    display:flex; flex-direction:column; gap:2px; padding:8px 9px; margin-bottom:6px; border-radius:8px;
+    background:var(--surface-2); cursor:pointer; font-size:11.8px;
+  }
+  .conn-item:hover{outline:1px solid var(--accent)}
+  .conn-type{font-family:"IBM Plex Mono",monospace; font-size:9.5px; font-weight:700; text-transform:uppercase}
+  .conn-target{color:var(--text); font-weight:600}
+  .conn-label{color:var(--text-faint); font-size:11px}
+
+  #stats{
+    position:absolute; top:10px; left:50%; transform:translateX(-50%); display:flex; gap:16px;
+    background:var(--surface); border:1px solid var(--border); border-radius:999px; padding:6px 18px; z-index:15;
+    font-size:11px; color:var(--text-dim); font-family:"IBM Plex Mono",monospace;
+  }
+  #stats b{color:var(--text)}
+
+  @media (max-width:860px){
+    :root{--side-w:220px; --panel-w:100%}
+    #sidebar{position:absolute; inset:0 0 0 0; height:100%}
+    #sidebarToggle{display:inline-block}
+    #panel{position:absolute; inset:auto 0 0 0; height:60%; border-left:none; border-top:1px solid var(--border)}
+    #legend{max-width:170px; font-size:10.5px}
+    #camhint{display:none}
+    #stats{display:none}
+  }
+</style>
+
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=Public+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@500;600&display=swap" rel="stylesheet">
+
+<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/build/three.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
+
+<div id="app">
+  <header>
+    <button id="sidebarToggle">☰</button>
+    <div>
+      <h1>Conector de Inteligência</h1>
+      <span class="tag">Visualização 3D · Agentes · Análise em Grafos</span>
+    </div>
+    <div class="modebtn">
+      <button id="modeCity" class="active">Cidade</button>
+      <button id="modeGraph">Grafo</button>
+    </div>
+    <button id="autoRotateBtn" class="toolbtn">Girar</button>
+  </header>
+  <button type="button" class="theme-toggle" id="themeToggle" aria-label="Alternar tema claro/escuro" title="Alternar tema">
+    <svg class="tt-sun" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6"><circle cx="10" cy="10" r="3.4"/><path d="M10 2v2M10 16v2M18 10h-2M4 10H2M15.5 4.5l-1.4 1.4M5.9 14.1l-1.4 1.4M15.5 15.5l-1.4-1.4M5.9 5.9 4.5 4.5" stroke-linecap="round"/></svg>
+    <svg class="tt-moon" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M16.5 12.3A7 7 0 1 1 7.7 3.5a5.6 5.6 0 0 0 8.8 8.8z" stroke-linejoin="round"/></svg>
+  </button>
+  <nav class="artrail" aria-label="Artefatos">
+    <a class="artrail-item hub" href="https://claude.ai/artifact/1jJhYzXznLSE3rSThzoSsR">
+      <span class="artrail-icon"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6"><rect x="2.5" y="2.5" width="6" height="6" rx="1"/><rect x="11.5" y="2.5" width="6" height="6" rx="1"/><rect x="2.5" y="11.5" width="6" height="6" rx="1"/><rect x="11.5" y="11.5" width="6" height="6" rx="1"/></svg></span>
+      <span class="artrail-label">Painel Geral</span>
+    </a>
+    <a class="artrail-item" href="https://claude.ai/artifact/TvUcpQ6be7wj88STgYmTcq">
+      <span class="artrail-icon"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M3 5h14M3 10h14M3 15h9" stroke-linecap="round"/></svg></span>
+      <span class="artrail-label">Fila de Demandas</span>
+    </a>
+    <a class="artrail-item current" href="#">
+      <span class="artrail-icon"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6"><circle cx="4" cy="15" r="2"/><circle cx="16" cy="15" r="2"/><circle cx="10" cy="4" r="2"/><path d="M10 6v4M8.3 9.3 5.5 13.2M11.7 9.3l2.8 3.9" stroke-linecap="round"/></svg></span>
+      <span class="artrail-label">Conector de Inteligência</span>
+    </a>
+    <a class="artrail-item" href="https://claude.ai/artifact/KnqZpBUkSBusLFxTAzLmVN">
+      <span class="artrail-icon"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6"><rect x="7" y="2.5" width="6" height="4" rx="1"/><rect x="2" y="13.5" width="6" height="4" rx="1"/><rect x="12" y="13.5" width="6" height="4" rx="1"/><path d="M10 6.5v3M5 13.5v-3h10v3" stroke-linecap="round" stroke-linejoin="round"/></svg></span>
+      <span class="artrail-label">Organograma</span>
+    </a>
+    <a class="artrail-item" href="https://claude.ai/artifact/4cCPGEFezkxGC8SpfR5qGy">
+      <span class="artrail-icon"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M10 2.5 16.5 5v5c0 4-2.8 6.6-6.5 7.5C6.3 16.6 3.5 14 3.5 10V5L10 2.5z" stroke-linejoin="round"/><path d="M7.3 10 9 11.7l3.7-3.9" stroke-linecap="round" stroke-linejoin="round"/></svg></span>
+      <span class="artrail-label">Código de Conduta</span>
+    </a>
+    <a class="artrail-item" href="https://claude.ai/artifact/6qy1GomQLhaESVdnfazNqj">
+      <span class="artrail-icon"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6"><circle cx="10" cy="10" r="2.6"/><path d="M10 3v2M10 15v2M17 10h-2M5 10H3M14.9 5.1l-1.4 1.4M6.5 13.5l-1.4 1.4M14.9 14.9l-1.4-1.4M6.5 6.5 5.1 5.1" stroke-linecap="round"/></svg></span>
+      <span class="artrail-label">Configurações</span>
+    </a>
+    <a class="artrail-item" href="https://claude.ai/artifact/TvUcpQ6be7wj88STgYmTcq">
+      <span class="artrail-icon"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M4 16V9M10 16V4M16 16v-6" stroke-linecap="round"/><path d="M2.5 16.5h15" stroke-linecap="round"/></svg></span>
+      <span class="artrail-label">Análises</span>
+    </a>
+  </nav>
+  <script>
+  (function(){
+    var root = document.documentElement, btn = document.getElementById('themeToggle'), KEY = 'artifact-theme-pref';
+    var stored = null;
+    try{ stored = localStorage.getItem(KEY); }catch(e){}
+    if(stored === 'light' || stored === 'dark') root.setAttribute('data-theme', stored);
+    btn.addEventListener('click', function(){
+      var current = root.getAttribute('data-theme');
+      var isDark = current === 'dark' || (!current && window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches);
+      var next = isDark ? 'light' : 'dark';
+      root.setAttribute('data-theme', next);
+      try{ localStorage.setItem(KEY, next); }catch(e){}
+    });
+  })();
+  </script>
+
+  <div id="main">
+    <div id="sidebar">
+      <input id="search" type="text" placeholder="Buscar agente ou categoria…">
+      <div id="tree"></div>
+    </div>
+
+    <div id="viewport">
+      <canvas id="three-canvas"></canvas>
+      <div id="tooltip"></div>
+      <div id="stats"></div>
+      <div id="opBanner"><span class="op-dot"></span><span id="opBannerText">Modo Operação ativo</span><div class="op-tooltip" id="opTooltip"></div></div>
+      <div id="legend">
+        <h4>Conectores</h4>
+        <label class="leg-row"><input type="checkbox" data-type="leva_a" checked><span class="leg-line" style="background:#3B82F6"></span>Leva à</label>
+        <label class="leg-row"><input type="checkbox" data-type="apoia_se_em" checked><span class="leg-line" style="background:#9333EA"></span>Apoia-se em</label>
+        <label class="leg-row"><input type="checkbox" data-type="aplica" checked><span class="leg-line" style="background:#059669"></span>Aplica</label>
+        <label class="leg-row"><input type="checkbox" data-type="exige" checked><span class="leg-line" style="background:#DC2626"></span>Exige</label>
+        <div class="leg-sep"></div>
+        <label class="leg-row"><input type="checkbox" id="toggleIntra">Mostrar conexões internas (136)</label>
+        <div class="leg-sep"></div>
+        <label class="leg-row"><input type="checkbox" data-src="native" checked><span class="leg-line" style="background:#3B4656;height:8px;border-radius:50%;width:8px"></span>Nativo</label>
+        <label class="leg-row"><input type="checkbox" data-src="ecc" checked><span class="leg-line" style="background:#0F6E64;height:8px;border-radius:50%;width:8px"></span>ECC</label>
+        <label class="leg-row"><input type="checkbox" data-src="ruflo" checked><span class="leg-line" style="background:#6650C4;height:8px;border-radius:50%;width:8px"></span>Ruflo</label>
+        <label class="leg-row"><input type="checkbox" data-src="od" checked><span class="leg-line" style="background:#C9942F;height:8px;border-radius:50%;width:8px"></span>OpenDesign</label>
+        <label class="leg-row"><input type="checkbox" data-src="frota" checked><span class="leg-line" style="background:#C2255C;height:8px;border-radius:50%;width:8px"></span>Frota (novo)</label>
+      </div>
+      <div id="camhint">Arraste para girar · scroll para zoom · botão direito para mover. Clique numa barra para abrir a ficha.</div>
+    </div>
+
+    <div id="panel">
+      <button class="pclose" id="panelClose">✕</button>
+      <div id="panelBody"></div>
+    </div>
+  </div>
+</div>
+
+<script>
+/* =========================================================
+   DADOS — Categorias (quarteirões), Barras (agentes/conhecimento),
+   Salas (temas) e Conectores.
+   ========================================================= */
+
+var TIER_LABEL = {gestor:'GESTOR', coord:'COORDENADOR', colab:'COLABORADOR'};
+var SRC_LABEL = {native:'nativo', ecc:'ecc', ruflo:'ruflo', od:'opendesign', frota:'frota'};
+var SRC_COLOR = {native:0x8891A0, ecc:0x2FBFAE, ruflo:0xA98CF0, od:0xE3B65A, frota:0xEC5C93};
+
+function A(id,n,t,s,c,ap){ return {id:id,n:n,t:t,s:s,c:c,ap:ap}; }
+
+var BLOCKS = [
+  {
+    id:'gestores', name:'Gestores · Praça Central', color:0xC9942F, plaza:true,
+    estrutura:'Recebe pedido → decompõe em fases → aloca coordenador de cada área',
+    regras:'Nunca implementa direto — sempre delega a um coordenador ou colaborador',
+    metricas:'Nº de fases entregues no prazo · taxa de replanejamento',
+    agents:[
+      A('claude','claude','coord','native','Generalista de fallback — assume pedido sem agente específico e decide se delega.','Assumir tarefa complexa sozinho em vez de delegar a um especialista.'),
+      A('Plan','Plan','coord','native','Arquiteto de planos — desenha a estratégia antes de qualquer código ser tocado.','Pular direto para o código sem desenhar o plano.'),
+      A('general-purpose','general-purpose','coord','native','Executor multi-etapa — pesquisa ampla e tarefas que não cabem em um único especialista.','Pesquisa rasa que ignora múltiplas fontes.'),
+      A('ecc:planner','ecc:planner','gestor','ecc','Decompõe tarefas complexas, mapeia dependências e aloca qual agente cuida de cada fase.','Decompor tarefa sem mapear dependências entre fases.'),
+      A('ruflo:planner','ruflo:planner','coord','ruflo','Planejamento com autoaprendizado (ReasoningBank/HNSW) — reaproveita padrões de projetos anteriores.','Replanejar do zero ignorando padrões de projetos anteriores.'),
+      A('od:amr','od:amr','coord','od','Roteador de modelos — escolhe qual dos 25 modelos/CLIs conectados atende cada tarefa.','Rotear para o modelo mais caro quando um mais barato resolve.'),
+      A('claude-code-guide','claude-code-guide','colab','native','Suporte interno — dúvidas sobre o próprio Claude Code, Agent SDK e API.','Responder sobre a ferramenta com base em memória desatualizada.'),
+      A('statusline-setup','statusline-setup','colab','native','Configuração da status line do Claude Code.','Sobrescrever configuração existente do usuário sem confirmar.')
+    ]
+  },
+  {
+    id:'d1', name:'Arquitetura & Sistema', color:0x4C6FFF,
+    estrutura:'Requisito → especificação → desenho de componentes → validação de escala',
+    regras:'Toda decisão de arquitetura registra alternativas consideradas e trade-offs',
+    metricas:'Acoplamento entre módulos · nº de decisões revertidas depois',
+    agents:[
+      A('ecc:architect','ecc:architect','coord','ecc','Decisões de arquitetura de sistema, escalabilidade e stack técnico.','Acoplamento forte entre componentes que deveriam ser independentes.'),
+      A('ecc:code-architect','ecc:code-architect','colab','ecc','Blueprint de implementação a partir de padrões já existentes no código.','Propor blueprint que ignora padrões já usados no repositório.'),
+      A('ruflo:specification','ruflo:specification','colab','ruflo','Fase SPARC-S: requisitos, critérios de aceite, escopo.','Requisito ambíguo sem critério de aceite testável.'),
+      A('ruflo:pseudocode','ruflo:pseudocode','colab','ruflo','Fase SPARC-P: design de algoritmos e estruturas de dados.','Pseudocódigo amarrado à sintaxe de uma linguagem específica.'),
+      A('ruflo:architecture','ruflo:architecture','colab','ruflo','Fase SPARC-A: componentes, APIs, dados, infraestrutura.','Desenhar para uma escala que o produto nunca vai atingir.'),
+      A('ruflo:refinement','ruflo:refinement','colab','ruflo','Fase SPARC-R: TDD e otimização, dual-hat com Testes.','Refatorar sem manter os testes verdes o tempo todo.')
+    ]
+  },
+  {
+    id:'d2', name:'Pesquisa & Descoberta', color:0x22A6B3,
+    estrutura:'Pergunta → varredura do código/repositório → mapa de caminhos e dependências',
+    regras:'Não modifica nada — apenas lê e relata (read-only)',
+    metricas:'Cobertura da busca · tempo até localizar o ponto certo',
+    agents:[
+      A('ecc:code-explorer','ecc:code-explorer','coord','ecc','Traça caminhos de execução e mapeia dependências de uma feature existente.','Mapear só o caminho feliz e ignorar edge cases.'),
+      A('Explore','Explore','colab','native','Busca rápida read-only por arquivo, símbolo ou palavra-chave no código.','Buscar em um só padrão de nome e parar.')
+    ]
+  },
+  {
+    id:'d3', name:'Qualidade & Revisão', color:0x2E9E5B,
+    estrutura:'Recebe diff → aplica checklist da linguagem/stack → retorna veredito por severidade',
+    regras:'CRITICAL bloqueia merge · HIGH exige justificativa para seguir',
+    metricas:'Findings por severidade · nº de bugs que escapam para produção',
+    agents:[
+      A('ecc:code-reviewer','ecc:code-reviewer','coord','ecc','Consolida o veredito geral de qualidade antes do merge.','Aprovar PR grande sem revisar módulo por módulo.'),
+      A('ecc:typescript-reviewer','ecc:typescript-reviewer','colab','ecc','TypeScript/JavaScript — tipos, async, segurança web/Node.','Uso de "any" para calar o compilador.'),
+      A('ecc:python-reviewer','ecc:python-reviewer','colab','ecc','Python — PEP 8, type hints, idiomas pythônicos.','Mutable default argument em definição de função.'),
+      A('ecc:go-reviewer','ecc:go-reviewer','colab','ecc','Go — concorrência e tratamento de erro idiomático.','Ignorar erro retornado (err != nil sem tratamento).'),
+      A('ecc:rust-reviewer','ecc:rust-reviewer','colab','ecc','Rust — ownership, lifetimes, uso de unsafe.','Uso de unsafe sem justificativa documentada.'),
+      A('ecc:java-reviewer','ecc:java-reviewer','colab','ecc','Java (Spring/Quarkus) — camadas, JPA, concorrência.','Lógica de negócio dentro do controller.'),
+      A('ecc:csharp-reviewer','ecc:csharp-reviewer','colab','ecc','C#/.NET — async, nullable types, segurança.','async void fora de handler de evento.'),
+      A('ecc:cpp-reviewer','ecc:cpp-reviewer','colab','ecc','C++ — segurança de memória, idiomas modernos.','Gerenciamento manual de memória sem RAII.'),
+      A('ecc:php-reviewer','ecc:php-reviewer','colab','ecc','PHP — PSR-12, Eloquent, tipagem.','Query SQL montada por concatenação de string.'),
+      A('ecc:swift-reviewer','ecc:swift-reviewer','colab','ecc','Swift — ARC, concorrência estruturada, protocolos.','Closure forte retendo self e vazando memória.'),
+      A('ecc:kotlin-reviewer','ecc:kotlin-reviewer','colab','ecc','Kotlin/Android/KMP — coroutines, Compose, null-safety.','Chamada bloqueante dentro de coroutine sem dispatcher correto.'),
+      A('ecc:flutter-reviewer','ecc:flutter-reviewer','colab','ecc','Flutter/Dart — widgets, estado, performance.','Rebuild de árvore inteira por falta de const.'),
+      A('ecc:fsharp-reviewer','ecc:fsharp-reviewer','colab','ecc','F# — idiomas funcionais, pattern matching.','Mutação de estado onde imutabilidade era natural.'),
+      A('ecc:react-reviewer','ecc:react-reviewer','colab','ecc','React/JSX — hooks, performance de render, a11y.','Efeito colateral sem array de dependências correto.'),
+      A('ecc:vue-reviewer','ecc:vue-reviewer','colab','ecc','Vue — Composition API, reatividade, Pinia/Router.','Mutar prop diretamente em vez de emitir evento.'),
+      A('ecc:django-reviewer','ecc:django-reviewer','colab','ecc','Django — ORM, migrations, segurança DRF.','Query N+1 dentro de loop de template.'),
+      A('ecc:fastapi-reviewer','ecc:fastapi-reviewer','colab','ecc','FastAPI — async, Pydantic, OpenAPI.','Endpoint síncrono bloqueando o event loop.'),
+      A('ecc:database-reviewer','ecc:database-reviewer','colab','ecc','PostgreSQL — queries, schema, performance.','Query sem índice em coluna de alto volume.'),
+      A('ecc:healthcare-reviewer','ecc:healthcare-reviewer','colab','ecc','Dados clínicos/PHI — segurança e compliance. Dual-hat com Segurança.','Log de dado clínico identificável em texto plano.'),
+      A('ecc:mle-reviewer','ecc:mle-reviewer','colab','ecc','Pipelines de ML — dados, treino, serving, monitoramento.','Treinar e avaliar com o mesmo conjunto de dados.'),
+      A('ecc:rag-pipeline-reviewer','ecc:rag-pipeline-reviewer','colab','ecc','RAG — retrieval, chunking, embeddings.','Chunking sem overlap perdendo contexto na borda.')
+    ]
+  },
+  {
+    id:'d4', name:'Segurança', color:0xC23B3B,
+    estrutura:'Varre código/config → classifica risco (OWASP) → aprova ou bloqueia',
+    regras:'Nenhum CRITICAL de segurança passa sem correção',
+    metricas:'Vulnerabilidades encontradas antes vs. depois do deploy',
+    agents:[
+      A('ecc:security-reviewer','ecc:security-reviewer','coord','ecc','Vulnerabilidades OWASP Top 10, segredos expostos, injeção, SSRF.','Validar entrada só no client, nunca no servidor.')
+    ]
+  },
+  {
+    id:'d5', name:'Build & CI/CD', color:0xE08E29,
+    estrutura:'Lê log de erro → diagnostica causa → aplica correção mínima e cirúrgica',
+    regras:'Mudança mínima necessária — nunca refatoração arquitetural durante o fix',
+    metricas:'Tempo até build verde · nº de tentativas até resolver',
+    agents:[
+      A('ecc:build-error-resolver','ecc:build-error-resolver','coord','ecc','Erros genéricos de build/TypeScript, primeira linha de triagem.','Silenciar erro de tipo com supressão em massa.'),
+      A('ecc:cpp-build-resolver','ecc:cpp-build-resolver','colab','ecc','CMake, linker, template errors.','Desabilitar warning em vez de corrigir a causa.'),
+      A('ecc:dart-build-resolver','ecc:dart-build-resolver','colab','ecc','dart analyze, Flutter build, pub conflicts.','Fixar versão de pacote sem entender o conflito.'),
+      A('ecc:django-build-resolver','ecc:django-build-resolver','colab','ecc','pip/Poetry, migrations, config Django.','Rodar migration destrutiva sem backup.'),
+      A('ecc:go-build-resolver','ecc:go-build-resolver','colab','ecc','go vet, erros de compilação, linter.','Ignorar go vet porque "sempre foi assim".'),
+      A('ecc:java-build-resolver','ecc:java-build-resolver','colab','ecc','Maven/Gradle, detecta Spring Boot/Quarkus.','Misturar Maven e Gradle no mesmo módulo.'),
+      A('ecc:kotlin-build-resolver','ecc:kotlin-build-resolver','colab','ecc','Gradle/Kotlin compiler.','Downgrade de plugin do Gradle sem checar changelog.'),
+      A('ecc:pytorch-build-resolver','ecc:pytorch-build-resolver','colab','ecc','Shape mismatch, CUDA, gradientes, DataLoader.','Mover tensor entre devices sem checar disponibilidade.'),
+      A('ecc:react-build-resolver','ecc:react-build-resolver','colab','ecc','Vite/webpack/Next.js, JSX/TSX, hydration.','Importar módulo Node em componente client-side.'),
+      A('ecc:rust-build-resolver','ecc:rust-build-resolver','colab','ecc','Cargo, borrow checker, Cargo.toml.','Usar .clone() para escapar do borrow checker.'),
+      A('ecc:swift-build-resolver','ecc:swift-build-resolver','colab','ecc','Xcode, SPM, code signing.','Assinar build manualmente ignorando o provisioning automático.'),
+      A('ecc:harmonyos-app-resolver','ecc:harmonyos-app-resolver','colab','ecc','ArkTS/ArkUI — build e conformidade V2.','Gerenciar estado fora do modelo V2 recomendado.')
+    ]
+  },
+  {
+    id:'d6', name:'Testes & Validação', color:0x3FA7A0,
+    estrutura:'RED (teste falha) → GREEN (implementa) → REFACTOR (mantém verde)',
+    regras:'Cobertura mínima de 80% · zero mock em caminho de produção',
+    metricas:'% de cobertura · taxa de testes flaky',
+    agents:[
+      A('ecc:tdd-guide','ecc:tdd-guide','coord','ecc','Impõe RED→GREEN→REFACTOR e cobertura mínima de 80%.','Escrever o teste depois da implementação, não antes.'),
+      A('ecc:e2e-runner','ecc:e2e-runner','colab','ecc','Testes E2E de fluxos críticos de usuário.','Teste E2E dependente de dado fixo em produção.'),
+      A('ecc:pr-test-analyzer','ecc:pr-test-analyzer','colab','ecc','Qualidade e cobertura comportamental de testes em PRs.','Cobertura alta com asserts fracos ("não lançou erro").'),
+      A('ruflo:production-validator','ruflo:production-validator','colab','ruflo','Confirma ausência de mocks/stubs, valida contra sistemas reais.','Aprovar release com mock ainda ligado em produção.'),
+      A('ruflo:tdd-london-swarm','ruflo:tdd-london-swarm','colab','ruflo','TDD "London School" — mock-driven, outside-in, verificação de comportamento.','Mockar tanto que o teste não valida nada real.')
+    ]
+  },
+  {
+    id:'d7', name:'Infra Distribuída / Swarm', color:0x7D5FE0,
+    estrutura:'Define topologia → distribui papéis entre nós → monitora consenso',
+    regras:'Tolera até f<n/3 nós falhos sem perder consistência',
+    metricas:'Tempo de convergência · disponibilidade sob partição de rede',
+    agents:[
+      A('ruflo:hierarchical-coordinator','ruflo:hierarchical-coordinator','coord','ruflo','"Queen" — decompõe objetivo e delega a workers especializados.','Delegar sem contexto suficiente para o worker.'),
+      A('ruflo:mesh-coordinator','ruflo:mesh-coordinator','colab','ruflo','Coordenação peer-to-peer tolerante a falhas.','Acoplar todos os nós num único ponto de falha.'),
+      A('ruflo:adaptive-coordinator','ruflo:adaptive-coordinator','colab','ruflo','Troca de topologia em tempo real conforme carga.','Trocar de topologia sem medir o ganho real.'),
+      A('ruflo:raft-manager','ruflo:raft-manager','colab','ruflo','Eleição de líder e replicação de log (Raft).','Eleição sem timeout randomizado (split vote constante).'),
+      A('ruflo:quorum-manager','ruflo:quorum-manager','colab','ruflo','Ajuste dinâmico de quorum e membership.','Quorum fixo que não sobrevive a partição de rede.'),
+      A('ruflo:gossip-coordinator','ruflo:gossip-coordinator','colab','ruflo','Disseminação epidêmica de estado entre nós.','Fanout tão alto que satura a rede.'),
+      A('ruflo:crdt-synchronizer','ruflo:crdt-synchronizer','colab','ruflo','Consistência eventual via CRDTs (G-Counter, OR-Set, LWW, RGA).','Merge não-determinístico entre réplicas.'),
+      A('ruflo:performance-benchmarker','ruflo:performance-benchmarker','colab','ruflo','Benchmark de throughput/latência entre protocolos. Dual-hat com Performance.','Medir throughput sem medir cauda de latência (p99).'),
+      A('ruflo:byzantine-coordinator','ruflo:byzantine-coordinator','colab','ruflo','Consenso Byzantine, detecção de nós maliciosos. Dual-hat com Segurança.','Assumir que todo nó é honesto por padrão.'),
+      A('ruflo:security-manager','ruflo:security-manager','colab','ruflo','Criptografia e defesa do consenso. Dual-hat com Segurança.','Reusar chave sem rotação após suspeita de exposição.')
+    ]
+  },
+  {
+    id:'d8', name:'Documentação & Conhecimento', color:0x5B8DEF,
+    estrutura:'Detecta mudança → atualiza doc/codemap correspondente → valida contra o código',
+    regras:'Documentação nunca descreve comportamento que o código não tem',
+    metricas:'% de docs desatualizados · tempo até doc refletir mudança',
+    agents:[
+      A('ecc:doc-updater','ecc:doc-updater','coord','ecc','Atualiza codemaps, READMEs e guias após mudanças.','Doc desatualizada apontando para API que já mudou.'),
+      A('ecc:docs-lookup','ecc:docs-lookup','colab','ecc','Busca docs atualizadas de bibliotecas via Context7. Dual-hat com Pesquisa.','Citar versão de biblioteca sem checar a atual.'),
+      A('ecc:comment-analyzer','ecc:comment-analyzer','colab','ecc','Precisão, completude e risco de obsolescência de comentários.','Comentário que descreve o quê em vez do porquê.'),
+      A('ecc:spec-miner','ecc:spec-miner','colab','ecc','Extrai specs comportamentais de código legado (OpenSpec).','Spec extraída sem âncora de teste que a valide.')
+    ]
+  },
+  {
+    id:'d9', name:'Limpeza & Manutenção', color:0x6FBF5E,
+    estrutura:'Roda análise estática → identifica alvo → remove/simplifica com verificação pós-mudança',
+    regras:'Toda remoção é verificada com teste antes de confirmar',
+    metricas:'Linhas de código morto removidas · complexidade ciclomática média',
+    agents:[
+      A('ecc:refactor-cleaner','ecc:refactor-cleaner','coord','ecc','Roda knip/depcheck/ts-prune e remove código morto com segurança.','Remover código "morto" sem checar uso dinâmico/reflection.'),
+      A('ecc:code-simplifier','ecc:code-simplifier','colab','ecc','Simplifica mantendo comportamento idêntico.','Simplificar mudando comportamento junto.'),
+      A('ecc:type-design-analyzer','ecc:type-design-analyzer','colab','ecc','Encapsulamento e invariantes de tipos.','Tipo que permite estado inválido ser representado.'),
+      A('ecc:silent-failure-hunter','ecc:silent-failure-hunter','colab','ecc','Erros engolidos, fallbacks ruins, propagação ausente.','Catch vazio engolindo a exceção.')
+    ]
+  },
+  {
+    id:'d10', name:'Performance & Otimização', color:0xE0B429,
+    estrutura:'Mede baseline → identifica gargalo → otimiza → mede novamente',
+    regras:'Nenhuma otimização entra sem medição de antes/depois',
+    metricas:'Latência p95/p99 · uso de memória/CPU',
+    agents:[
+      A('ecc:performance-optimizer','ecc:performance-optimizer','coord','ecc','Profiling, otimização de runtime, redução de bundle.','Otimizar sem medir o antes/depois.'),
+      A('ecc:harness-optimizer','ecc:harness-optimizer','colab','ecc','Confiabilidade e custo do próprio harness de agentes (pass@k). Dual-hat com Meta.','Adicionar agente ao fluxo sem medir custo/ganho.')
+    ]
+  },
+  {
+    id:'d11', name:'Design & Produto', color:0xE0629C,
+    estrutura:'Recebe briefing → escolhe modelo/skill → gera artefato de design ou código',
+    regras:'Sempre usa tokens do design system, nunca valor hardcoded',
+    metricas:'Consistência com design system · tempo de handoff dev↔design',
+    agents:[
+      A('od:byok-opencode','od:byok-opencode','coord','od','Executa geração de código a partir do design (chave própria do usuário).','Gerar código do design sem usar os tokens do design system.')
+    ]
+  },
+  {
+    id:'d12', name:'Release Open Source', color:0x4FBDB0,
+    estrutura:'Fork → sanitização de segredos/PII → empacotamento com docs de release',
+    regras:'PASS obrigatório do sanitizador antes de qualquer publicação',
+    metricas:'Nº de segredos encontrados · tempo até release liberado',
+    agents:[
+      A('ecc:opensource-sanitizer','ecc:opensource-sanitizer','coord','ecc','Verifica PASS/FAIL de segredos, PII e referências internas antes do release.','Aprovar release sem varrer histórico de commits.'),
+      A('ecc:opensource-forker','ecc:opensource-forker','colab','ecc','Copia arquivos e remove credenciais/segredos (20+ padrões).','Copiar repositório mantendo .env com valores reais.'),
+      A('ecc:opensource-packager','ecc:opensource-packager','colab','ecc','Gera CLAUDE.md, README, LICENSE, CONTRIBUTING.','Publicar sem LICENSE ou com licença incompatível.')
+    ]
+  },
+  {
+    id:'d13', name:'Loop Generativo (GAN)', color:0x9B59D0,
+    estrutura:'Spec → geração → avaliação com rubrica → nova iteração até convergir',
+    regras:'Nº máximo de iterações definido antes de começar o loop',
+    metricas:'Pontuação da rubrica por rodada · nº de rodadas até convergência',
+    agents:[
+      A('ecc:gan-planner','ecc:gan-planner','coord','ecc','Expande um prompt em spec de produto com sprints e critérios.','Spec vaga demais para o generator implementar.'),
+      A('ecc:gan-generator','ecc:gan-generator','colab','ecc','Implementa conforme a spec, itera sobre feedback.','Ignorar o feedback do evaluator na próxima iteração.'),
+      A('ecc:gan-evaluator','ecc:gan-evaluator','colab','ecc','Testa o app rodando via Playwright e pontua contra rubrica.','Avaliar só a aparência, nunca o comportamento real.')
+    ]
+  },
+  {
+    id:'d14', name:'Automação Web', color:0x3BAFDA,
+    estrutura:'Snapshot da página → identifica elemento → interage → confirma resultado',
+    regras:'Nunca submete formulário sensível sem confirmação explícita do usuário',
+    metricas:'Taxa de sucesso da automação · tempo por fluxo',
+    agents:[
+      A('ruflo:browser-agent','ruflo:browser-agent','coord','ruflo','Navegação, login, scraping e submissão de formulários via snapshots de IA.','Preencher formulário sensível sem confirmação do usuário.')
+    ]
+  },
+  {
+    id:'d15', name:'Rede & Infraestrutura', color:0x5D7A99,
+    estrutura:'Levanta requisitos → desenha topologia → valida config → documenta rollback',
+    regras:'Toda mudança de config tem plano de rollback documentado antes de aplicar',
+    metricas:'Uptime · tempo médio de diagnóstico',
+    agents:[
+      A('ecc:network-architect','ecc:network-architect','coord','ecc','Arquitetura de rede multi-site a partir de requisitos.','Desenhar rede sem plano de recuperação de desastre.'),
+      A('ecc:network-config-reviewer','ecc:network-config-reviewer','colab','ecc','Revisa configs de router/switch — segurança e comandos arriscados.','Regra de firewall liberando "any/any" por conveniência.'),
+      A('ecc:network-troubleshooter','ecc:network-troubleshooter','colab','ecc','Diagnóstico read-only por camada OSI.','Alterar configuração em produção antes de diagnosticar.'),
+      A('ecc:homelab-architect','ecc:homelab-architect','colab','ecc','Planos de rede doméstica com rollback seguro.','Mudança sem rollback documentado.')
+    ]
+  },
+  {
+    id:'d16', name:'Growth & Marketing', color:0xE0764A,
+    estrutura:'Define audiência/hipótese → cria material → mede resposta real',
+    regras:'Nenhuma campanha sem métrica de sucesso definida antes do lançamento',
+    metricas:'Taxa de conversão · posição em busca (SEO)',
+    agents:[
+      A('ecc:marketing-agent','ecc:marketing-agent','coord','ecc','Posicionamento, copy e planejamento de campanha/lançamento.','Campanha sem hipótese testável de audiência.'),
+      A('ecc:seo-specialist','ecc:seo-specialist','colab','ecc','Auditoria técnica de SEO, schema markup, Core Web Vitals.','Keyword stuffing que piora a experiência de leitura.'),
+      A('ecc:a11y-architect','ecc:a11y-architect','colab','ecc','Conformidade WCAG 2.2 em componentes e design systems.','Contraste de cor abaixo do mínimo WCAG.')
+    ]
+  },
+  {
+    id:'d17', name:'Meta / Processo', color:0x8892A6,
+    estrutura:'Coleta resultado da esteira → avalia em rubrica → devolve aprendizado',
+    regras:'Toda avaliação cita evidência concreta, nunca opinião solta · Auditoria de encerramento é obrigatória ao final de cada demanda',
+    metricas:'Score médio de qualidade · nº de padrões aprendidos por ciclo',
+    agents:[
+      A('ecc:agent-evaluator','ecc:agent-evaluator','coord','ecc','Agente Auditor da Frota — ao final de cada demanda audita o processo completo de todos os agentes envolvidos (não só o resultado) e comunica o veredito ao Coordenador do processo.','Avaliar só a saída final, ignorando o processo.'),
+      A('ecc:conversation-analyzer','ecc:conversation-analyzer','colab','ecc','Analisa transcripts para encontrar comportamentos a evitar via hooks.','Criar hook baseado em um único caso isolado.'),
+      A('ecc:loop-operator','ecc:loop-operator','colab','ecc','Opera e intervém em loops autônomos travados.','Deixar loop travado rodando sem intervenção.'),
+      A('frota:metricas','frota:metricas','colab','frota','Diagnosticador de Métricas — sempre que o Auditor confirma sucesso, transforma o Relatório de Operação num placar quantitativo (taxas, tempos, contagens, índices).','Reportar sucesso sem nenhum número que sustente a afirmação.')
+    ]
+  },
+  {
+    id:'d18', name:'Comunicação & Triagem', color:0xD4A24C,
+    estrutura:'Recebe mensagem → classifica tier (skip/info/reunião/ação) → rascunha resposta',
+    regras:'Nunca envia resposta automática sem revisão para itens de ação',
+    metricas:'Tempo de triagem · taxa de classificação correta',
+    agents:[
+      A('ecc:chief-of-staff','ecc:chief-of-staff','coord','ecc','Triagem de e-mail/Slack/LINE/Messenger em 4 níveis, gera rascunhos de resposta.','Responder automaticamente sem confirmar itens de ação.')
+    ]
+  }
+];
+
+// Regra de processo: todo Coordenador (gerente do setor) emite um Relatório de
+// Operação ao concluir uma demanda — ver Código de Conduta para o detalhamento.
+BLOCKS.forEach(function(block){
+  if(!block.plaza) block.estrutura += ' → Coordenador emite Relatório de Operação';
+});
+
+var RESERVA = [
+  {id:'r-claude-code',n:'Claude Code CLI',fam:'Anthropic'},
+  {id:'r-codex',n:'Codex CLI',fam:'OpenAI'},
+  {id:'r-copilot',n:'GitHub Copilot CLI',fam:'OpenAI'},
+  {id:'r-grok-build',n:'Grok Build',fam:'xAI'},
+  {id:'r-hermes',n:'Hermes',fam:'xAI'},
+  {id:'r-antigravity',n:'Antigravity',fam:'Google'},
+  {id:'r-qwen',n:'Qwen Code',fam:'China'},
+  {id:'r-kimi',n:'Kimi CLI',fam:'China'},
+  {id:'r-deepseek-tui',n:'DeepSeek TUI',fam:'China'},
+  {id:'r-deepseek-harness',n:'DeepSeek Harness',fam:'China'},
+  {id:'r-deepseek-reasonix',n:'DeepSeek Reasonix',fam:'China'},
+  {id:'r-mimo',n:'MiMo Code',fam:'China'},
+  {id:'r-codebuddy',n:'Codebuddy Code',fam:'China'},
+  {id:'r-atomcode',n:'AtomCode CLI',fam:'China'},
+  {id:'r-trae',n:'Trae CLI',fam:'China'},
+  {id:'r-qoder',n:'Qoder CLI',fam:'China'},
+  {id:'r-opencode',n:'OpenCode',fam:'Multi-modelo'},
+  {id:'r-cursor',n:'Cursor Agent',fam:'Multi-modelo'},
+  {id:'r-pi',n:'Pi',fam:'Multi-modelo'},
+  {id:'r-amp',n:'Amp',fam:'Multi-modelo'},
+  {id:'r-aider',n:'Aider',fam:'Multi-modelo'},
+  {id:'r-devin',n:'Devin for Terminal',fam:'Multi-modelo'},
+  {id:'r-kiro',n:'Kiro CLI',fam:'Multi-modelo'},
+  {id:'r-kilo',n:'Kilo',fam:'Multi-modelo'},
+  {id:'r-vibe',n:'Mistral Vibe CLI',fam:'Multi-modelo'}
+];
+
+function E(f,t,ty,l){ return {from:f,to:t,type:ty,label:l}; }
+
+var SPECIAL_EDGES = [
+  E('ecc:architect','ecc:code-reviewer','leva_a','Entrega especificação/arquitetura para revisão'),
+  E('ecc:architect','ecc:build-error-resolver','leva_a','Entrega arquitetura para o squad de build'),
+  E('ecc:architect','od:byok-opencode','leva_a','Entrega arquitetura quando há UI'),
+  E('ecc:code-explorer','ecc:architect','leva_a','Entrega contexto de pesquisa para arquitetura'),
+  E('ecc:code-explorer','ecc:code-reviewer','apoia_se_em','Contexto de pesquisa fundamenta a revisão'),
+  E('ecc:code-reviewer','ecc:build-error-resolver','exige','Aciona build ao achar erro de compilação'),
+  E('ecc:code-reviewer','ecc:security-reviewer','exige','Aciona segurança ao achar risco'),
+  E('ecc:code-reviewer','ecc:refactor-cleaner','leva_a','Entrega veredito para limpeza'),
+  E('ecc:code-reviewer','ecc:tdd-guide','leva_a','Entrega veredito para testes'),
+  E('ecc:build-error-resolver','ecc:tdd-guide','leva_a','Devolve build verde para testes'),
+  E('ecc:tdd-guide','ecc:security-reviewer','exige','Aciona segurança para gate final'),
+  E('ecc:tdd-guide','ecc:performance-optimizer','leva_a','Entrega para performance'),
+  E('ecc:tdd-guide','ecc:doc-updater','leva_a','Entrega para documentação'),
+  E('ruflo:hierarchical-coordinator','ecc:security-reviewer','apoia_se_em','Reporta risco de consenso para segurança'),
+  E('ruflo:hierarchical-coordinator','ecc:performance-optimizer','apoia_se_em','Métricas de protocolo alimentam performance'),
+  E('ecc:architect','ruflo:hierarchical-coordinator','leva_a','Ativa infra distribuída quando o design exige múltiplos nós'),
+  E('ecc:refactor-cleaner','ecc:doc-updater','leva_a','Entrega código final para documentação'),
+  E('ecc:refactor-cleaner','ecc:performance-optimizer','leva_a','Entrega código limpo para performance'),
+  E('ecc:performance-optimizer','ecc:doc-updater','leva_a','Entrega relatório de performance para documentação'),
+  E('ecc:performance-optimizer','ecc:agent-evaluator','leva_a','Entrega métricas para avaliação do processo'),
+  E('ecc:security-reviewer','ecc:opensource-sanitizer','exige','Bloqueia release até aprovação de segurança'),
+  E('ecc:doc-updater','ecc:opensource-sanitizer','leva_a','Entrega documentação para o pacote de release'),
+  E('ecc:doc-updater','ecc:marketing-agent','leva_a','Entrega documentação para growth'),
+  E('ecc:opensource-sanitizer','ecc:marketing-agent','leva_a','Entrega release para divulgação'),
+  E('od:byok-opencode','ecc:code-reviewer','leva_a','Entrega handoff visual para revisão de front-end'),
+  E('od:byok-opencode','ecc:marketing-agent','leva_a','Entrega material visual para growth'),
+  E('ecc:code-explorer','ruflo:browser-agent','leva_a','Aciona automação web para coletar dados externos'),
+  E('ecc:marketing-agent','ruflo:browser-agent','leva_a','Aciona automação web para pesquisa de mercado'),
+  E('ruflo:hierarchical-coordinator','ecc:network-architect','leva_a','Ativa rede/infra quando a topologia toca hardware real'),
+  E('ecc:network-architect','ruflo:hierarchical-coordinator','apoia_se_em','Infra distribuída se apoia na topologia de rede definida'),
+  E('ecc:gan-planner','ecc:tdd-guide','leva_a','Entrega resultado do loop generativo para testes'),
+  E('ecc:gan-planner','ecc:code-reviewer','leva_a','Entrega resultado do loop generativo para revisão'),
+  E('ecc:doc-updater','ecc:agent-evaluator','apoia_se_em','Documentação registra decisões avaliadas pelo processo'),
+  E('frota:metricas','ecc:planner','leva_a','Placar quantitativo alimenta o próximo ciclo de planejamento')
+];
+
+var GESTORES_EDGES = (function(){
+  var out = [];
+  var coordByBlock = {
+    d1:'ecc:architect', d2:'ecc:code-explorer', d3:'ecc:code-reviewer', d4:'ecc:security-reviewer',
+    d5:'ecc:build-error-resolver', d6:'ecc:tdd-guide', d7:'ruflo:hierarchical-coordinator',
+    d8:'ecc:doc-updater', d9:'ecc:refactor-cleaner', d10:'ecc:performance-optimizer',
+    d11:'od:byok-opencode', d12:'ecc:opensource-sanitizer', d13:'ecc:gan-planner',
+    d14:'ruflo:browser-agent', d15:'ecc:network-architect', d16:'ecc:marketing-agent',
+    d17:'ecc:agent-evaluator', d18:'ecc:chief-of-staff'
+  };
+  for(var k in coordByBlock){
+    out.push(E('ecc:planner', coordByBlock[k], 'leva_a', 'Aloca esta área para a fase atual do projeto'));
+  }
+  out.push(E('ecc:agent-evaluator','ecc:planner','leva_a','Devolve aprendizado, fechando o ciclo'));
+  out.push(E('ecc:agent-evaluator','ruflo:planner','leva_a','Devolve aprendizado, fechando o ciclo'));
+  out.push(E('ecc:chief-of-staff','ecc:planner','leva_a','Pedido externo vira novo projeto'));
+  out.push(E('od:amr','od:byok-opencode','leva_a','Roteia tarefa de design/código para o modelo certo'));
+  return out;
+})();
+
+/* =========================================================
+   MONTAGEM DO GRAFO
+   ========================================================= */
+var NODES = {};      // id -> node
+var EDGES = [];       // {from,to,type,label,intra}
+var BLOCK_BY_ID = {};
+
+BLOCKS.forEach(function(block){
+  BLOCK_BY_ID[block.id] = block;
+  var coord = null;
+  block.agents.forEach(function(a){ if(a.t==='coord'||a.t==='gestor') coord = a; });
+  block.agents.forEach(function(agent){
+    NODES[agent.id] = {
+      id:agent.id, name:agent.n, tier:agent.t, source:agent.s,
+      conceito:agent.c, antipadrao:agent.ap, block:block,
+      cityPos:new THREE.Vector3(), graphPos:new THREE.Vector3(),
+      curPos:new THREE.Vector3(), curScale:1, height:0, mesh:null, beacon:null
+    };
+  });
+  if(coord && block.agents.length>1){
+    block.agents.forEach(function(agent){
+      if(agent.id===coord.id) return;
+      EDGES.push({from:coord.id, to:agent.id, type:'exige', label:'Requer contribuição de '+agent.n, intra:true});
+      EDGES.push({from:agent.id, to:coord.id, type:'aplica', label:'Aplica o padrão definido por '+coord.n, intra:true});
+    });
+  }
+});
+SPECIAL_EDGES.forEach(function(e){ EDGES.push({from:e.from,to:e.to,type:e.type,label:e.label,intra:false}); });
+GESTORES_EDGES.forEach(function(e){ EDGES.push({from:e.from,to:e.to,type:e.type,label:e.label,intra:false}); });
+
+// adjacência para o painel de detalhes
+var ADJ = {};
+Object.keys(NODES).forEach(function(id){ ADJ[id]=[]; });
+EDGES.forEach(function(e){
+  if(ADJ[e.from]) ADJ[e.from].push({dir:'out',other:e.to,type:e.type,label:e.label});
+  if(ADJ[e.to]) ADJ[e.to].push({dir:'in',other:e.from,type:e.type,label:e.label});
+});
+
+// importância (grau) -> altura extra dos prédios
+var DEGREE = {};
+Object.keys(NODES).forEach(function(id){ DEGREE[id]=0; });
+EDGES.forEach(function(e){ DEGREE[e.from]=(DEGREE[e.from]||0)+1; DEGREE[e.to]=(DEGREE[e.to]||0)+1; });
+
+/* ---- layout da cidade (quarteirões em anel ao redor da praça) ---- */
+(function layoutCity(){
+  var ring = BLOCKS.filter(function(b){ return !b.plaza; });
+  var n = ring.length;
+  var baseRadius = 118;
+  ring.forEach(function(block, i){
+    var angle = (i/n) * Math.PI*2 - Math.PI/2;
+    block.footprint = Math.max(15, Math.min(46, 9 + Math.sqrt(block.agents.length)*8.4));
+    block.center = new THREE.Vector3(Math.cos(angle)*baseRadius, 0, Math.sin(angle)*baseRadius);
+    block.angle = angle;
+  });
+  var plaza = BLOCKS.filter(function(b){return b.plaza})[0];
+  plaza.footprint = 46;
+  plaza.center = new THREE.Vector3(0,0,0);
+
+  BLOCKS.forEach(function(block){
+    var cols = Math.max(1, Math.ceil(Math.sqrt(block.agents.length)));
+    var spacing = block.footprint / (cols+0.6);
+    block.agents.forEach(function(agentDef, i){
+      var node = NODES[agentDef.id];
+      var row = Math.floor(i/cols), col = i%cols;
+      var lx = (col - (cols-1)/2) * spacing;
+      var lz = (row - (cols-1)/2) * spacing;
+      node.cityPos.set(block.center.x + lx, 0, block.center.z + lz);
+      var TIER_H = {gestor:24, coord:15, colab:7.5};
+      node.height = (TIER_H[node.tier]||7) + Math.min(DEGREE[node.id]||0, 12)*0.7;
+    });
+  });
+})();
+
+/* ---- layout de grafo (força dirigida simples, calculada uma vez) ---- */
+(function computeForceLayout(){
+  var ids = Object.keys(NODES);
+  var pos = {}, disp = {};
+  ids.forEach(function(id){
+    var a = Math.random()*Math.PI*2, r = 40+Math.random()*60;
+    pos[id] = new THREE.Vector3(Math.cos(a)*r, (Math.random()-0.5)*40, Math.sin(a)*r);
+  });
+  var k = 24;
+  var iterations = 180;
+  for(var iter=0; iter<iterations; iter++){
+    ids.forEach(function(id){ disp[id] = new THREE.Vector3(); });
+    for(var i=0;i<ids.length;i++){
+      for(var j=i+1;j<ids.length;j++){
+        var a=ids[i], b=ids[j];
+        var delta = pos[a].clone().sub(pos[b]);
+        var dist = Math.max(delta.length(), 0.05);
+        var force = (k*k)/dist;
+        delta.multiplyScalar(force/dist);
+        disp[a].add(delta);
+        disp[b].sub(delta);
+      }
+    }
+    EDGES.forEach(function(e){
+      if(!pos[e.from] || !pos[e.to]) return;
+      var delta = pos[e.from].clone().sub(pos[e.to]);
+      var dist = Math.max(delta.length(), 0.05);
+      var force = (dist*dist)/(k*5.2);
+      delta.multiplyScalar(force/dist);
+      pos[e.from].sub(delta.clone().multiplyScalar(0.5));
+      pos[e.to].add(delta.clone().multiplyScalar(0.5));
+    });
+    var temp = Math.max(0.6, 26*(1-iter/iterations));
+    ids.forEach(function(id){
+      var d = disp[id];
+      var len = Math.max(d.length(), 0.001);
+      d.multiplyScalar(Math.min(len,temp)/len);
+      pos[id].add(d);
+      pos[id].y *= 0.92;
+      // saneamento: qualquer posição corrompida (NaN/Infinity) é reiniciada nesta iteração
+      if(!isFinite(pos[id].x) || !isFinite(pos[id].y) || !isFinite(pos[id].z)){
+        var a2 = Math.random()*Math.PI*2, r2 = 40+Math.random()*60;
+        pos[id].set(Math.cos(a2)*r2, (Math.random()-0.5)*40, Math.sin(a2)*r2);
+      }
+    });
+  }
+  ids.forEach(function(id){
+    var p = pos[id];
+    if(!isFinite(p.x) || !isFinite(p.y) || !isFinite(p.z)) p.set(0,0,0);
+    NODES[id].graphPos.copy(p);
+  });
+
+  var centroid = new THREE.Vector3();
+  ids.forEach(function(id){ centroid.add(NODES[id].graphPos); });
+  centroid.divideScalar(ids.length);
+  if(!isFinite(centroid.x) || !isFinite(centroid.y) || !isFinite(centroid.z)) centroid.set(0,0,0);
+  var maxDist = 0;
+  ids.forEach(function(id){
+    var d = NODES[id].graphPos.distanceTo(centroid);
+    if(isFinite(d)) maxDist = Math.max(maxDist, d);
+  });
+  window.GRAPH_CENTROID = centroid;
+  window.GRAPH_RADIUS = maxDist || 120;
+})();
+
+/* saneamento final — garante que nenhuma posição usada pela cena fique NaN,
+   qualquer que seja a causa (ex.: aquecimento do motor JS no primeiro load) */
+function sanitizeVec3(v, fallback){
+  if(!isFinite(v.x) || !isFinite(v.y) || !isFinite(v.z)) v.copy(fallback);
+  return v;
+}
+Object.keys(NODES).forEach(function(id){
+  var node = NODES[id];
+  sanitizeVec3(node.cityPos, new THREE.Vector3(0,0,0));
+  sanitizeVec3(node.graphPos, new THREE.Vector3(0,0,0));
+});
+
+Object.keys(NODES).forEach(function(id){ NODES[id].curPos.copy(NODES[id].cityPos); });
+
+/* =========================================================
+   THREE.JS — CENA
+   ========================================================= */
+var canvas = document.getElementById('three-canvas');
+var renderer = new THREE.WebGLRenderer({canvas:canvas, antialias:true, alpha:false});
+renderer.setPixelRatio(Math.min(window.devicePixelRatio||1, 2));
+
+var scene = new THREE.Scene();
+scene.background = new THREE.Color(0x070A10);
+scene.fog = new THREE.FogExp2(0x070A10, 0.0021);
+
+var camera = new THREE.PerspectiveCamera(52, 1, 0.5, 4000);
+camera.position.set(180, 150, 220);
+
+var controls = new THREE.OrbitControls(camera, renderer.domElement);
+controls.enableDamping = true;
+controls.dampingFactor = 0.08;
+controls.maxPolarAngle = Math.PI*0.49;
+controls.minDistance = 20;
+controls.maxDistance = 900;
+controls.target.set(0,10,0);
+controls.autoRotate = false;
+controls.autoRotateSpeed = 0.55;
+
+document.getElementById('autoRotateBtn').addEventListener('click', function(){
+  controls.autoRotate = !controls.autoRotate;
+  this.classList.toggle('active', controls.autoRotate);
+});
+canvas.addEventListener('pointerdown', function(){
+  if(controls.autoRotate){ controls.autoRotate = false; document.getElementById('autoRotateBtn').classList.remove('active'); }
+});
+
+scene.add(new THREE.AmbientLight(0x8fa3c8, 0.55));
+var sun = new THREE.DirectionalLight(0xfff2d8, 1.05);
+sun.position.set(140,220,90);
+scene.add(sun);
+var rim = new THREE.DirectionalLight(0x4a6cff, 0.35);
+rim.position.set(-160,80,-140);
+scene.add(rim);
+
+// chão base
+var groundMat = new THREE.MeshStandardMaterial({color:0x0B0F16, roughness:1, metalness:0});
+var ground = new THREE.Mesh(new THREE.CircleGeometry(340, 64), groundMat);
+ground.rotation.x = -Math.PI/2;
+ground.position.y = -0.05;
+scene.add(ground);
+
+var gridHelper = new THREE.GridHelper(680, 68, 0x1B2634, 0x121A24);
+gridHelper.position.y = -0.03;
+scene.add(gridHelper);
+
+function makeLabelSprite(text, sizePx, color){
+  var cv = document.createElement('canvas');
+  var pad = 24;
+  var ctx = cv.getContext('2d');
+  ctx.font = '700 40px "Public Sans", sans-serif';
+  var w = Math.ceil(ctx.measureText(text).width) + pad*2;
+  cv.width = w; cv.height = 64;
+  ctx = cv.getContext('2d');
+  ctx.font = '700 40px "Public Sans", sans-serif';
+  ctx.fillStyle = 'rgba(7,10,16,0.72)';
+  ctx.fillRect(0,0,cv.width,cv.height);
+  ctx.fillStyle = color || '#EAF0F6';
+  ctx.textBaseline = 'middle';
+  ctx.fillText(text, pad, 34);
+  var tex = new THREE.CanvasTexture(cv);
+  tex.minFilter = THREE.LinearFilter;
+  var mat = new THREE.SpriteMaterial({map:tex, transparent:true, depthWrite:false});
+  var spr = new THREE.Sprite(mat);
+  var scale = sizePx/64;
+  spr.scale.set(cv.width/64*scale, scale, 1);
+  return spr;
+}
+
+var buildingGroup = new THREE.Group(); scene.add(buildingGroup);
+var groundGroup = new THREE.Group(); scene.add(groundGroup);
+var labelGroup = new THREE.Group(); scene.add(labelGroup);
+var edgeGroup = new THREE.Group(); scene.add(edgeGroup);
+var reservaGroup = new THREE.Group(); scene.add(reservaGroup);
+var beaconGroup = new THREE.Group(); scene.add(beaconGroup);
+
+// quarteirões (chão colorido) + rótulo
+BLOCKS.forEach(function(block){
+  var mat = new THREE.MeshStandardMaterial({
+    color: block.color, transparent:true, opacity: block.plaza?0.22:0.16, roughness:1
+  });
+  var plate = new THREE.Mesh(new THREE.CylinderGeometry(block.footprint*0.72, block.footprint*0.72, 0.4, 28), mat);
+  plate.position.set(block.center.x, 0.15, block.center.z);
+  plate.userData.blockId = block.id;
+  groundGroup.add(plate);
+  block.plate = plate;
+
+  var ring = new THREE.Mesh(
+    new THREE.RingGeometry(block.footprint*0.72-0.4, block.footprint*0.72, 40),
+    new THREE.MeshBasicMaterial({color:block.color, transparent:true, opacity:0.55, side:THREE.DoubleSide})
+  );
+  ring.rotation.x = -Math.PI/2;
+  ring.position.set(block.center.x, 0.18, block.center.z);
+  groundGroup.add(ring);
+
+  var label = makeLabelSprite((block.plaza?'':'') + block.name, 8.5, '#'+block.color.toString(16).padStart(6,'0'));
+  label.position.set(block.center.x, block.plaza?30:19, block.center.z);
+  labelGroup.add(label);
+  block.label = label;
+});
+
+/* Halo do "modo operação": anel roxo pulsante sobre o setor com demanda ativa
+   (dados vindos de estado/operacao, escrito pela tarefa autônoma que processa
+   a fila em Operação — este artifact só lê seu próprio banco, nunca o de outro). */
+var OP_COLOR = 0xA855F7;
+var opHaloGroup = new THREE.Group(); scene.add(opHaloGroup);
+BLOCKS.forEach(function(block){
+  var haloGeo = new THREE.RingGeometry(block.footprint*0.78, block.footprint*0.88, 40);
+  var haloMat = new THREE.MeshBasicMaterial({color:OP_COLOR, transparent:true, opacity:0, side:THREE.DoubleSide});
+  var halo = new THREE.Mesh(haloGeo, haloMat);
+  halo.rotation.x = -Math.PI/2;
+  halo.position.set(block.center.x, 0.24, block.center.z);
+  opHaloGroup.add(halo);
+  block.opHalo = halo;
+});
+
+// prédios
+Object.keys(NODES).forEach(function(id){
+  var node = NODES[id];
+  var w = node.tier==='gestor'?7.2:(node.tier==='coord'?5.6:3.6);
+  var geo = new THREE.BoxGeometry(w, node.height, w);
+  var mat = new THREE.MeshStandardMaterial({
+    color: node.block.color, roughness:0.55, metalness:0.18,
+    emissive: node.block.color, emissiveIntensity:0.12
+  });
+  var mesh = new THREE.Mesh(geo, mat);
+  mesh.position.copy(node.cityPos); mesh.position.y = node.height/2;
+  mesh.userData.nodeId = id;
+  buildingGroup.add(mesh);
+  node.mesh = mesh;
+  node.baseW = w;
+
+  var beaconGeo = new THREE.SphereGeometry(w*0.34, 12, 12);
+  var beaconMat = new THREE.MeshBasicMaterial({color: SRC_COLOR[node.source]});
+  var beacon = new THREE.Mesh(beaconGeo, beaconMat);
+  beacon.position.copy(node.cityPos); beacon.position.y = node.height + w*0.4;
+  beaconGroup.add(beacon);
+  node.beacon = beacon;
+  node.beaconPhase = Math.random()*Math.PI*2;
+  node.hoverGlow = 0;
+});
+
+// reserva externa — anel exterior, prédios simples cinza
+(function(){
+  var n = RESERVA.length;
+  var radius = 205;
+  RESERVA.forEach(function(r, i){
+    var angle = (i/n)*Math.PI*2;
+    var x = Math.cos(angle)*radius, z = Math.sin(angle)*radius;
+    var h = 4 + (i%3)*1.6;
+    var geo = new THREE.BoxGeometry(2.6, h, 2.6);
+    var mat = new THREE.MeshStandardMaterial({color:0x3A4452, roughness:0.9, transparent:true, opacity:0.55});
+    var mesh = new THREE.Mesh(geo, mat);
+    mesh.position.set(x, h/2, z);
+    mesh.userData.reservaId = r.id;
+    reservaGroup.add(mesh);
+    r.mesh = mesh;
+  });
+  var outLabel = makeLabelSprite('Reserva Externa (25 CLIs)', 9, '#8891A0');
+  outLabel.position.set(0, 4, -radius-14);
+  labelGroup.add(outLabel);
+})();
+
+/* ---- arestas (linhas curvas coloridas por tipo) ---- */
+var TYPE_COLOR = {leva_a:0x3B82F6, apoia_se_em:0x9333EA, aplica:0x059669, exige:0xDC2626};
+var typeVisible = {leva_a:true, apoia_se_em:true, aplica:true, exige:true};
+var showIntra = false;
+var srcVisible = {native:true, ecc:true, ruflo:true, od:true, frota:true};
+
+EDGES.forEach(function(e){
+  var a = NODES[e.from], b = NODES[e.to];
+  if(!a || !b) return;
+  var mat = new THREE.LineBasicMaterial({color:TYPE_COLOR[e.type], transparent:true, opacity: e.intra?0.28:0.75});
+  var geo = new THREE.BufferGeometry();
+  var line = new THREE.Line(geo, mat);
+  line.userData.edge = e;
+  edgeGroup.add(line);
+  e.line = line;
+});
+
+function buildCurve(p1, h1, p2, h2){
+  var start = new THREE.Vector3(p1.x, h1, p1.z);
+  var end = new THREE.Vector3(p2.x, h2, p2.z);
+  var mid = start.clone().add(end).multiplyScalar(0.5);
+  var dist = start.distanceTo(end);
+  mid.y += Math.max(6, dist*0.22);
+  return new THREE.QuadraticBezierCurve3(start, mid, end);
+}
+
+function updateEdgeGeometry(e){
+  var a = NODES[e.from], b = NODES[e.to];
+  var curve = buildCurve(a.curPos, a.height*a.curScale+1.5, b.curPos, b.height*b.curScale+1.5);
+  e.curve = curve;
+  e.line.geometry.setFromPoints(curve.getPoints(16));
+}
+EDGES.forEach(updateEdgeGeometry);
+
+/* =========================================================
+   ANIMAÇÃO — partículas de fluxo de dados ao longo dos conectores
+   ========================================================= */
+var PARTICLES_PER_EDGE = 2;
+var particles = [];
+EDGES.forEach(function(e){
+  for(var k=0;k<PARTICLES_PER_EDGE;k++){
+    particles.push({edge:e, phase:(k/PARTICLES_PER_EDGE)+Math.random()*0.15, speed:0.16+Math.random()*0.10});
+  }
+});
+var particleGeo = new THREE.BufferGeometry();
+var particlePos = new Float32Array(particles.length*3);
+var particleCol = new Float32Array(particles.length*3);
+particleGeo.setAttribute('position', new THREE.BufferAttribute(particlePos,3));
+particleGeo.setAttribute('color', new THREE.BufferAttribute(particleCol,3));
+var particleMat = new THREE.PointsMaterial({
+  size:1.7, vertexColors:true, transparent:true, opacity:0.95,
+  depthWrite:false, blending:THREE.AdditiveBlending, sizeAttenuation:true
+});
+var particleSystem = new THREE.Points(particleGeo, particleMat);
+scene.add(particleSystem);
+var tmpColor = new THREE.Color();
+
+/* Quando o modo operação tem alguma demanda em andamento, só os fios ligados
+   ao setor ativo continuam fluindo (mais rápido, em roxo) — os demais entram
+   em "suspensão": param no lugar e ficam esmaecidos. Sem atividade nenhuma,
+   todos os fios fluem normalmente, como sempre foi. */
+function edgeIsOpActive(e){
+  if(!opState) return false;
+  /* Handoff real e recente entre dois agentes nomeados — pulso de destaque
+     nessa aresta específica por até 90s após o handoff ser registrado. */
+  if(opState.ultimoHandoff && opState.ultimoHandoff.from===e.from && opState.ultimoHandoff.to===e.to){
+    var age = (Date.now() - new Date(opState.ultimoHandoff.quando).getTime()) / 1000;
+    if(age >= 0 && age < 90) return true;
+  }
+  if(!opState.porSetor) return false;
+  var a = NODES[e.from], b = NODES[e.to];
+  var aOn = a && a.block && opState.porSetor[a.block.id] && opState.porSetor[a.block.id].emAndamento > 0;
+  var bOn = b && b.block && opState.porSetor[b.block.id] && opState.porSetor[b.block.id].emAndamento > 0;
+  return !!(aOn || bOn);
+}
+
+function updateParticles(elapsed, dt){
+  var opActive = !!(opState && opState.ativo);
+  for(var i=0;i<particles.length;i++){
+    var p = particles[i];
+    var e = p.edge;
+    var idx3 = i*3;
+    if(!e.line.visible || !e.curve){
+      particlePos[idx3]=0; particlePos[idx3+1]=-9999; particlePos[idx3+2]=0;
+      continue;
+    }
+    if(p.t == null) p.t = p.phase % 1;
+    var isOpEdge = opActive && edgeIsOpActive(e);
+    var suspended = opActive && !isOpEdge;
+    if(!suspended){
+      var speedMul = isOpEdge ? 2.6 : 1;
+      p.t = (p.t + (dt||0)*p.speed*speedMul) % 1;
+      if(p.t<0) p.t += 1;
+    }
+    var pt = e.curve.getPointAt(Math.min(0.999, Math.max(0.001, p.t)));
+    particlePos[idx3]=pt.x; particlePos[idx3+1]=pt.y; particlePos[idx3+2]=pt.z;
+    tmpColor.setHex(isOpEdge ? OP_COLOR : TYPE_COLOR[e.type]);
+    if(suspended) tmpColor.multiplyScalar(0.3);
+    particleCol[idx3]=tmpColor.r; particleCol[idx3+1]=tmpColor.g; particleCol[idx3+2]=tmpColor.b;
+  }
+  particleGeo.attributes.position.needsUpdate = true;
+  particleGeo.attributes.color.needsUpdate = true;
+}
+
+function applyEdgeVisibility(){
+  EDGES.forEach(function(e){
+    var visType = typeVisible[e.type];
+    var visGranularity = e.intra ? showIntra : true;
+    var visSrc = srcVisible[NODES[e.from].source] && srcVisible[NODES[e.to].source];
+    e.line.visible = visType && visGranularity && visSrc;
+  });
+}
+applyEdgeVisibility();
+
+function applyNodeVisibility(){
+  Object.keys(NODES).forEach(function(id){
+    var node = NODES[id];
+    var vis = srcVisible[node.source];
+    node.mesh.visible = vis;
+    node.beacon.visible = vis;
+  });
+}
+applyNodeVisibility();
+
+/* =========================================================
+   MODO CIDADE / GRAFO
+   ========================================================= */
+var mode = 'city';
+var transitionT = 1;
+var TRANSITION_DUR = 1.0;
+
+function setMode(next){
+  if(next===mode) return;
+  mode = next;
+  transitionT = 0;
+  document.getElementById('modeCity').classList.toggle('active', mode==='city');
+  document.getElementById('modeGraph').classList.toggle('active', mode==='graph');
+  reservaGroup.visible = (mode==='city');
+
+  if(mode==='city'){
+    camAnim = {
+      t:0, dur:1.1,
+      fromCam:camera.position.clone(), toCam:new THREE.Vector3(180,150,220),
+      fromTarget:controls.target.clone(), toTarget:new THREE.Vector3(0,10,0)
+    };
+  } else {
+    var c = window.GRAPH_CENTROID || new THREE.Vector3();
+    var r = Math.max(60, window.GRAPH_RADIUS || 120);
+    var dir = new THREE.Vector3(0.55,0.5,0.65).normalize();
+    camAnim = {
+      t:0, dur:1.1,
+      fromCam:camera.position.clone(), toCam:c.clone().add(dir.multiplyScalar(r*1.7)),
+      fromTarget:controls.target.clone(), toTarget:c.clone()
+    };
+  }
+}
+
+document.getElementById('modeCity').addEventListener('click', function(){ setMode('city'); });
+document.getElementById('modeGraph').addEventListener('click', function(){ setMode('graph'); });
+
+/* =========================================================
+   INTERAÇÃO — clique, hover, painel
+   ========================================================= */
+var raycaster = new THREE.Raycaster();
+var mouse = new THREE.Vector2();
+var tooltip = document.getElementById('tooltip');
+var selectedId = null;
+var hoveredId = null;
+
+function meshList(){ return Object.keys(NODES).map(function(id){return NODES[id].mesh;}); }
+
+function onPointerMove(ev){
+  var rect = canvas.getBoundingClientRect();
+  mouse.x = ((ev.clientX-rect.left)/rect.width)*2-1;
+  mouse.y = -((ev.clientY-rect.top)/rect.height)*2+1;
+  raycaster.setFromCamera(mouse, camera);
+  var hits = raycaster.intersectObjects(meshList());
+  if(hits.length){
+    var id = hits[0].object.userData.nodeId;
+    hoveredId = id;
+    tooltip.style.display='block';
+    tooltip.style.left = (ev.clientX - rect.left)+'px';
+    tooltip.style.top = (ev.clientY - rect.top)+'px';
+    tooltip.textContent = NODES[id].name + ' · ' + NODES[id].block.name;
+    canvas.style.cursor='pointer';
+  } else {
+    hoveredId = null;
+    tooltip.style.display='none';
+    canvas.style.cursor='grab';
+  }
+}
+canvas.addEventListener('pointermove', onPointerMove);
+
+function onClick(ev){
+  var rect = canvas.getBoundingClientRect();
+  mouse.x = ((ev.clientX-rect.left)/rect.width)*2-1;
+  mouse.y = -((ev.clientY-rect.top)/rect.height)*2+1;
+  raycaster.setFromCamera(mouse, camera);
+  var hits = raycaster.intersectObjects(meshList());
+  if(hits.length){
+    selectNode(hits[0].object.userData.nodeId);
+  }
+}
+canvas.addEventListener('click', onClick);
+
+function typeLabel(t){
+  return {leva_a:'Leva à', apoia_se_em:'Apoia-se em', aplica:'Aplica', exige:'Exige'}[t] || t;
+}
+function typeColorHex(t){ return '#'+TYPE_COLOR[t].toString(16).padStart(6,'0'); }
+function srcClass(s){ return 'b-'+s; }
+
+function selectNode(id){
+  selectedId = id;
+  var node = NODES[id];
+  var panel = document.getElementById('panel');
+  var body = document.getElementById('panelBody');
+  var conns = (ADJ[id]||[]).slice().sort(function(a,b){ return a.type.localeCompare(b.type); });
+
+  var html = '';
+  html += '<div class="blockname">'+node.block.name+'</div>';
+  html += '<h2 class="mono">'+node.name+'</h2>';
+  html += '<div>';
+  html += '<span class="badge '+srcClass(node.source)+'">'+SRC_LABEL[node.source]+'</span>';
+  html += '<span class="badge b-tier">'+TIER_LABEL[node.tier]+'</span>';
+  html += '</div>';
+
+  html += '<div class="layer"><h5>Conceito</h5><ul><li>'+node.conceito+'</li></ul></div>';
+  html += '<div class="layer"><h5>Antipadrão</h5><ul><li>'+node.antipadrao+'</li></ul></div>';
+  html += '<div class="layer"><h5>Estrutura</h5><ul><li>'+node.block.estrutura+'</li></ul></div>';
+  html += '<div class="layer"><h5>Regras</h5><ul><li>'+node.block.regras+'</li></ul></div>';
+  html += '<div class="layer"><h5>Métricas</h5><ul><li>'+node.block.metricas+'</li></ul></div>';
+
+  html += '<div class="layer"><h5>Conexões ('+conns.length+')</h5>';
+  conns.forEach(function(c){
+    var other = NODES[c.other];
+    if(!other) return;
+    var arrow = c.dir==='out' ? '→' : '←';
+    html += '<div class="conn-item" data-goto="'+c.other+'">';
+    html += '<span class="conn-type" style="color:'+typeColorHex(c.type)+'">'+typeLabel(c.type)+' '+arrow+'</span>';
+    html += '<span class="conn-target">'+other.name+' <span style="color:var(--text-faint);font-weight:400">('+other.block.name+')</span></span>';
+    html += '<span class="conn-label">'+c.label+'</span>';
+    html += '</div>';
+  });
+  html += '</div>';
+
+  body.innerHTML = html;
+  panel.classList.add('open');
+
+  body.querySelectorAll('.conn-item').forEach(function(el){
+    el.addEventListener('click', function(){ selectNode(el.getAttribute('data-goto')); });
+  });
+}
+
+document.getElementById('panelClose').addEventListener('click', function(){
+  document.getElementById('panel').classList.remove('open');
+  selectedId = null;
+});
+
+/* =========================================================
+   BARRA LATERAL — árvore + busca
+   ========================================================= */
+(function buildTree(){
+  var tree = document.getElementById('tree');
+  BLOCKS.forEach(function(block){
+    var row = document.createElement('div');
+    row.className = 'blockrow';
+    row.innerHTML = '<span class="blockdot" style="background:#'+block.color.toString(16).padStart(6,'0')+'"></span>'+block.name;
+    var list = document.createElement('div');
+    list.className = 'agentlist';
+    block.agents.forEach(function(a){
+      var ar = document.createElement('div');
+      ar.className = 'agentrow';
+      ar.innerHTML = '<span>'+a.n+'</span><span class="tierdot">'+a.t+'</span>';
+      ar.addEventListener('click', function(){ selectNode(a.id); focusCamera(a.id); });
+      list.appendChild(ar);
+    });
+    row.addEventListener('click', function(){ list.classList.toggle('hidden'); });
+    tree.appendChild(row);
+    tree.appendChild(list);
+  });
+})();
+
+document.getElementById('search').addEventListener('input', function(ev){
+  var q = ev.target.value.toLowerCase();
+  var blockRows = document.querySelectorAll('#tree .blockrow');
+  var lists = document.querySelectorAll('#tree .agentlist');
+  lists.forEach(function(list, idx){
+    var block = BLOCKS[idx];
+    var blockMatch = block.name.toLowerCase().indexOf(q) !== -1;
+    var any = false;
+    Array.prototype.forEach.call(list.children, function(row, i){
+      var a = block.agents[i];
+      var match = q==='' || blockMatch || a.n.toLowerCase().indexOf(q)!==-1 || a.c.toLowerCase().indexOf(q)!==-1;
+      row.style.display = match ? '' : 'none';
+      if(match) any = true;
+    });
+    if(q===''){ list.classList.add('hidden'); blockRows[idx].style.display=''; }
+    else { list.classList.toggle('hidden', !any); blockRows[idx].style.display = any?'':'none'; }
+  });
+});
+
+document.getElementById('sidebarToggle').addEventListener('click', function(){
+  document.getElementById('sidebar').classList.toggle('collapsed');
+});
+
+/* =========================================================
+   CÂMERA — foco suave num prédio
+   ========================================================= */
+var camAnim = null;
+function focusCamera(id){
+  var node = NODES[id];
+  if(!node) return;
+  var targetPos = node.mesh.position.clone();
+  var dist = 34;
+  var dir = new THREE.Vector3(0.6,0.55,0.6).normalize();
+  var camTarget = targetPos.clone().add(dir.multiplyScalar(dist));
+  camAnim = {
+    t:0, dur:0.9,
+    fromCam:camera.position.clone(), toCam:camTarget,
+    fromTarget:controls.target.clone(), toTarget:targetPos.clone()
+  };
+}
+
+/* =========================================================
+   LEGENDA — filtros
+   ========================================================= */
+document.querySelectorAll('#legend input[data-type]').forEach(function(inp){
+  inp.addEventListener('change', function(){
+    typeVisible[inp.getAttribute('data-type')] = inp.checked;
+    applyEdgeVisibility();
+  });
+});
+document.getElementById('toggleIntra').addEventListener('change', function(ev){
+  showIntra = ev.target.checked;
+  applyEdgeVisibility();
+});
+document.querySelectorAll('#legend input[data-src]').forEach(function(inp){
+  inp.addEventListener('change', function(){
+    srcVisible[inp.getAttribute('data-src')] = inp.checked;
+    applyNodeVisibility();
+    applyEdgeVisibility();
+  });
+});
+
+/* =========================================================
+   STATS
+   ========================================================= */
+(function(){
+  var totalNodes = Object.keys(NODES).length;
+  var totalEdges = EDGES.length;
+  document.getElementById('stats').innerHTML =
+    '<span><b>'+totalNodes+'</b> barras</span>'+
+    '<span><b>'+BLOCKS.length+'</b> categorias</span>'+
+    '<span><b>'+totalEdges+'</b> conexões</span>'+
+    '<span><b>'+RESERVA.length+'</b> reserva</span>';
+})();
+
+/* =========================================================
+   MODO OPERAÇÃO — lê o estado escrito pela tarefa autônoma
+   ========================================================= */
+var opState = null;
+function updateOpBanner(){
+  var el = document.getElementById('opBanner');
+  if(!el) return;
+  if(opState && opState.ativo){
+    el.classList.add('active');
+    var count = 0;
+    if(opState.porSetor){
+      Object.keys(opState.porSetor).forEach(function(k){ count += (opState.porSetor[k].emAndamento || 0); });
+    }
+    document.getElementById('opBannerText').textContent =
+      count>0 ? (count + (count===1 ? ' demanda em andamento' : ' demandas em andamento')) : 'Modo Operação ativo';
+    var tip = document.getElementById('opTooltip');
+    if(tip){
+      var rows = [];
+      if(opState.porSetor){
+        Object.keys(opState.porSetor).forEach(function(k){
+          var s = opState.porSetor[k];
+          if(s.emAndamento > 0){
+            var etapa = (s.atual && s.atual.etapa) ? s.atual.etapa : 'Em andamento';
+            var quem = (s.atual && s.atual.agente) ? s.atual.agente : k;
+            var tit = (s.atual && s.atual.titulo) ? escapeHtml(s.atual.titulo) + ' — ' : '';
+            rows.push('<div class="ot-row"><span class="ot-setor">' + escapeHtml(quem) + '</span>' + tit + escapeHtml(etapa) + '</div>');
+          }
+        });
+      }
+      tip.innerHTML = rows.length ? rows.join('') : '<div class="ot-row">Sem detalhes de etapa no momento.</div>';
+    }
+  }else{
+    el.classList.remove('active');
+  }
+}
+
+/* Rótulo flutuante com a etapa atual de cada setor ativo — mostra o que o
+   agente autônomo está fazendo agora (checkpoints escritos por ele mesmo em
+   estado/operacao), não uma animação genérica. Só reconstrói o sprite quando
+   o texto muda de fato. */
+var opLabelGroup = new THREE.Group(); scene.add(opLabelGroup);
+function updateOpLabels(){
+  BLOCKS.forEach(function(block){
+    var setorState = opState && opState.porSetor && opState.porSetor[block.id];
+    var atual = setorState && setorState.atual;
+    var text = atual && atual.etapa ? ('⚙ ' + atual.etapa) : null;
+    if(text === (block.opLabelText || null)) return;
+    block.opLabelText = text;
+    if(block.opLabel){ opLabelGroup.remove(block.opLabel); block.opLabel = null; }
+    if(text){
+      var lbl = makeLabelSprite(text, 7, '#D8B4FE');
+      lbl.position.set(block.center.x, (block.plaza ? 30 : 19) + 6, block.center.z);
+      opLabelGroup.add(lbl);
+      block.opLabel = lbl;
+    }
+  });
+}
+
+(async function initOpState(){
+  var claudeApi = window.claude;
+  if(!claudeApi) return;
+  var db = await claudeApi.use('db');
+  if(!db) return;
+  db.doc('estado/operacao').onSnapshot(function(snap){
+    opState = snap.exists ? snap.data() : null;
+    updateOpBanner();
+    updateOpLabels();
+  }, function(){});
+})();
+
+/* =========================================================
+   LOOP DE RENDER
+   ========================================================= */
+var clock = new THREE.Clock();
+
+function easeInOut(t){ return t<0.5 ? 2*t*t : 1-Math.pow(-2*t+2,2)/2; }
+
+function animate(){
+  requestAnimationFrame(animate);
+  var dt = clock.getDelta();
+
+  if(transitionT < 1){
+    transitionT = Math.min(1, transitionT + dt/TRANSITION_DUR);
+    var e = easeInOut(transitionT);
+    Object.keys(NODES).forEach(function(id){
+      var node = NODES[id];
+      var from = mode==='city' ? node.graphPos : node.cityPos;
+      var to = mode==='city' ? node.cityPos : node.graphPos;
+      node.curPos.copy(from).lerp(to, e);
+      if(!isFinite(node.curPos.x) || !isFinite(node.curPos.y) || !isFinite(node.curPos.z)) node.curPos.copy(to);
+      node.curScale = mode==='city' ? (0.55 + 0.45*e) : (1 - 0.45*e);
+      node.mesh.position.copy(node.curPos);
+      node.mesh.position.y = node.height*node.curScale/2;
+      node.mesh.scale.set(node.curScale, node.curScale, node.curScale);
+      node.beacon.position.copy(node.curPos);
+      node.beacon.position.y = node.height*node.curScale + node.baseW*0.4*node.curScale;
+    });
+    groundGroup.children.forEach(function(m){
+      var baseOp = (m.userData.blockId===BLOCKS[0].id) ? 0.22 : 0.16;
+      if(m.material && m.material.transparent) m.material.opacity = (mode==='city'? e : 1-e) * baseOp;
+    });
+    labelGroup.children.forEach(function(s){ s.material.opacity = mode==='city'? e : 1-e; });
+    EDGES.forEach(updateEdgeGeometry);
+  }
+
+  var elapsed = clock.elapsedTime;
+
+  // pulso dos beacons (luz do telhado) + destaque de seleção/hover — sempre ativo
+  Object.keys(NODES).forEach(function(id){
+    var node = NODES[id];
+    var pulse = 1 + 0.16*Math.sin(elapsed*1.7 + node.beaconPhase);
+    node.beacon.scale.setScalar(pulse);
+
+    /* Agente nomeado realmente ativo agora (checkpoint escrito pelo orquestrador
+       ao invocar esse agente de verdade via ferramenta Agent) — prédio brilha
+       roxo, mais forte que seleção/hover normais. */
+    var isOpAgent = false;
+    if(opState && opState.porSetor && node.block){
+      var ss = opState.porSetor[node.block.id];
+      if(ss && ss.atual && ss.atual.agente === id) isOpAgent = true;
+    }
+
+    var targetGlow;
+    if(id===selectedId) targetGlow = 0.55 + 0.35*Math.sin(elapsed*4.2);
+    else if(isOpAgent) targetGlow = 0.65 + 0.3*Math.sin(elapsed*3.4);
+    else if(id===hoveredId) targetGlow = 0.42;
+    else targetGlow = 0.12;
+    node.mesh.material.emissiveIntensity += (targetGlow - node.mesh.material.emissiveIntensity)*0.18;
+    node.mesh.material.emissive.setHex(isOpAgent ? OP_COLOR : node.block.color);
+  });
+
+  // halo roxo do modo operação — pulsa sobre setores com demanda em andamento
+  BLOCKS.forEach(function(block){
+    var setorState = opState && opState.porSetor && opState.porSetor[block.id];
+    var isActive = !!(setorState && setorState.emAndamento > 0);
+    var targetOpacity = isActive ? (0.35 + 0.3*Math.sin(elapsed*2.2)) : 0;
+    block.opHalo.material.opacity += (targetOpacity - block.opHalo.material.opacity) * 0.12;
+    var scalePulse = isActive ? 1 + 0.05*Math.sin(elapsed*2.2) : 1;
+    block.opHalo.scale.setScalar(scalePulse);
+  });
+
+  updateParticles(elapsed, dt);
+
+  if(camAnim){
+    camAnim.t = Math.min(1, camAnim.t + dt/camAnim.dur);
+    var e2 = easeInOut(camAnim.t);
+    camera.position.lerpVectors(camAnim.fromCam, camAnim.toCam, e2);
+    controls.target.lerpVectors(camAnim.fromTarget, camAnim.toTarget, e2);
+    // saneamento: se a origem estava corrompida (NaN), o lerp nunca se recupera sozinho —
+    // então, ao concluir, garante que a câmera pouse exatamente no destino válido
+    if(camAnim.t>=1){
+      if(!isFinite(camera.position.x)) camera.position.copy(camAnim.toCam);
+      if(!isFinite(controls.target.x)) controls.target.copy(camAnim.toTarget);
+      camAnim=null;
+    }
+  }
+  if(!isFinite(camera.position.x) || !isFinite(camera.position.y) || !isFinite(camera.position.z)){
+    camera.position.set(180,150,220);
+  }
+  if(!isFinite(controls.target.x) || !isFinite(controls.target.y) || !isFinite(controls.target.z)){
+    controls.target.set(0,10,0);
+  }
+
+  controls.update();
+  renderer.render(scene, camera);
+}
+
+function resize(){
+  var vp = document.getElementById('viewport');
+  var w = vp.clientWidth, h = vp.clientHeight;
+  renderer.setSize(w,h,false);
+  camera.aspect = w/h;
+  camera.updateProjectionMatrix();
+}
+window.addEventListener('resize', resize);
+resize();
+animate();
+</script>

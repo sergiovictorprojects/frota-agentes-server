@@ -1,0 +1,725 @@
+<title>Análises</title>
+<style>
+  :root{
+    --bg:#F5F6F8; --surface:#FFFFFF; --surface-2:#ECEFF3; --border:#DBE0E7;
+    --text:#161B22; --text-dim:#5B6472; --text-faint:#8891A0;
+    --accent:#0F6E64; --accent-soft:#DFF1EE;
+    --gestor:#A8640C;
+    --frota:#7A3B69; --frota-soft:#F1E4EE;
+    --n1:#0F6E64; --n1-soft:#DFF1EE;
+    --n2:#1D4ED8; --n2-soft:#DBE7FB;
+    --n3:#B45309; --n3-soft:#FBEBD6;
+    --n4:#B3261E; --n4-soft:#F8E1DF;
+  }
+  @media (prefers-color-scheme: dark){
+    :root:not([data-theme="light"]){
+      --bg:#0C1116; --surface:#121821; --surface-2:#182029;
+      --border:#28323E; --text:#E8ECF1; --text-dim:#9AA6B4; --text-faint:#6C7784;
+      --accent:#4FBDB0; --accent-soft:#14332F;
+      --gestor:#E3B65A;
+      --frota:#C98AB8; --frota-soft:#2E2130;
+      --n1:#4FBDB0; --n1-soft:#14332F;
+      --n2:#7FA6F5; --n2-soft:#1B2740;
+      --n3:#E3A857; --n3-soft:#3A2A12;
+      --n4:#E4877E; --n4-soft:#3A1F1D;
+    }
+  }
+  :root[data-theme="dark"]{
+    --bg:#0C1116; --surface:#121821; --surface-2:#182029;
+    --border:#28323E; --text:#E8ECF1; --text-dim:#9AA6B4; --text-faint:#6C7784;
+    --accent:#4FBDB0; --accent-soft:#14332F;
+    --gestor:#E3B65A;
+    --frota:#C98AB8; --frota-soft:#2E2130;
+    --n1:#4FBDB0; --n1-soft:#14332F;
+    --n2:#7FA6F5; --n2-soft:#1B2740;
+    --n3:#E3A857; --n3-soft:#3A2A12;
+    --n4:#E4877E; --n4-soft:#3A1F1D;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;padding:0}
+  body{background:var(--bg); color:var(--text); font-family:"Public Sans","Segoe UI",system-ui,sans-serif; font-size:14px; line-height:1.55}
+  code{font-family:"IBM Plex Mono",ui-monospace,monospace; font-size:0.87em}
+  a{color:var(--accent)}
+  .wrap{max-width:960px; margin:0 auto; padding-inline:20px}
+  h1,h2,h3{font-family:"Space Grotesk",sans-serif; font-weight:700; text-wrap:balance; margin:0 0 8px}
+  h1{font-size:clamp(24px,4.5vw,32px)}
+  h2{font-size:17px; margin-top:0}
+  h4{font-family:"Public Sans",sans-serif; font-size:12.5px; text-transform:uppercase; letter-spacing:0.04em; color:var(--text-faint); margin:0 0 6px}
+  p{margin:0 0 10px; max-width:70ch}
+  label{display:block; font-size:11.5px; font-weight:600; color:var(--text-dim); margin-bottom:5px; text-transform:uppercase; letter-spacing:0.04em}
+  input,select,textarea{
+    width:100%; font-family:inherit; font-size:13.5px; padding:9px 11px; border-radius:6px;
+    border:1px solid var(--border); background:var(--surface); color:var(--text);
+  }
+  textarea{resize:vertical; min-height:56px}
+  input:focus,select:focus,textarea:focus{outline:2px solid var(--accent); outline-offset:-1px}
+  .field{margin-bottom:14px}
+  .row2{display:grid; grid-template-columns:1fr 1fr; gap:14px}
+  .row3{display:grid; grid-template-columns:1fr 1fr 1fr; gap:14px}
+  @media (max-width:640px){ .row2,.row3{grid-template-columns:1fr} }
+
+  .hero{background:var(--surface); border-bottom:1px solid var(--border); padding-block:34px 22px}
+  .eyebrow{font-family:"IBM Plex Mono",monospace; text-transform:uppercase; letter-spacing:0.12em; font-size:10.5px; color:var(--text-faint); margin:0 0 8px; font-weight:600}
+  .lede{color:var(--text-dim); font-size:14px}
+  .artrail{
+    position:fixed; top:50%; right:0; transform:translateY(-50%);
+    display:flex; flex-direction:column; gap:1px;
+    background:var(--surface); border:1px solid var(--border); border-right:none;
+    border-radius:14px 0 0 14px; padding:8px 0; box-shadow:-4px 0 16px rgba(0,0,0,0.10);
+    z-index:400; overflow:hidden; width:46px;
+    transition:width .3s cubic-bezier(.22,.8,.32,1);
+  }
+  .artrail:hover, .artrail:focus-within{ width:min(236px,84vw); }
+  .artrail-item{
+    display:flex; align-items:center; gap:12px; padding:9px 13px; text-decoration:none;
+    white-space:nowrap; color:var(--text-dim);
+  }
+  .artrail-item:hover{background:var(--surface-2); color:var(--accent)}
+  .artrail-icon{
+    flex:none; width:26px; height:26px; border-radius:7px; background:var(--surface-2);
+    display:flex; align-items:center; justify-content:center; color:var(--text-dim);
+    transition:background .2s ease, color .2s ease;
+  }
+  .artrail-icon svg{width:15px; height:15px; display:block}
+  .artrail-item:hover .artrail-icon{background:var(--accent); color:#fff}
+  .artrail-item.hub .artrail-icon{background:var(--gestor-soft,#F8E9D3); color:var(--gestor,#A8640C)}
+  .artrail-item.hub:hover .artrail-icon{background:var(--gestor,#A8640C); color:#fff}
+  .artrail-item.current{background:var(--surface-2); pointer-events:none}
+  .artrail-item.current .artrail-icon{background:var(--accent); color:#fff}
+  .artrail-item.current .artrail-label{color:var(--text); font-weight:700}
+  .artrail-label{
+    font-size:12.8px; font-weight:600; opacity:0; transform:translateX(-6px);
+    transition:opacity .2s ease .06s, transform .2s ease .06s;
+  }
+  .artrail:hover .artrail-label, .artrail:focus-within .artrail-label{opacity:1; transform:translateX(0)}
+
+  .theme-toggle{
+    position:fixed; top:16px; right:16px; z-index:410; width:36px; height:36px; border-radius:50%;
+    background:var(--surface); border:1px solid var(--border); display:flex; align-items:center; justify-content:center;
+    cursor:pointer; color:var(--text-dim); padding:0;
+  }
+  .theme-toggle:hover{border-color:var(--accent); color:var(--accent)}
+  .theme-toggle svg{width:17px; height:17px; display:block}
+  .theme-toggle .tt-moon{display:block}
+  .theme-toggle .tt-sun{display:none}
+  :root[data-theme="dark"] .theme-toggle .tt-moon{display:none}
+  :root[data-theme="dark"] .theme-toggle .tt-sun{display:block}
+  @media (prefers-color-scheme: dark){
+    :root:not([data-theme="light"]) .theme-toggle .tt-moon{display:none}
+    :root:not([data-theme="light"]) .theme-toggle .tt-sun{display:block}
+  }
+
+  section{padding-block:26px; border-top:1px solid var(--border)}
+  section:first-of-type{border-top:none}
+  .panel{background:var(--surface); border:1px solid var(--border); border-radius:10px; padding:20px 22px}
+  .panel .kicker{font-family:"IBM Plex Mono",monospace; font-size:10.5px; color:var(--frota); font-weight:700; letter-spacing:0.06em; margin-bottom:4px; text-transform:uppercase}
+
+  .checkgrid{display:grid; grid-template-columns:repeat(auto-fill,minmax(190px,1fr)); gap:6px; margin-top:4px}
+  .checkgrid label{
+    display:flex; align-items:center; gap:6px; font-size:12px; font-weight:500; text-transform:none;
+    letter-spacing:0; color:var(--text-dim); cursor:pointer;
+  }
+  .checkgrid input{width:auto}
+
+  .weight-row{display:grid; grid-template-columns:1fr 2fr auto; gap:8px; margin-bottom:6px; align-items:center}
+  @media (max-width:640px){ .weight-row{grid-template-columns:1fr} }
+  .weight-row button{background:none; border:1px solid var(--border); border-radius:6px; color:var(--n4); cursor:pointer; padding:8px 10px; font-family:inherit; font-size:12px}
+  #addWeightBtn{background:var(--surface-2); border:1px solid var(--border); border-radius:6px; padding:7px 13px; font-size:12px; cursor:pointer; font-family:inherit; color:var(--text); margin-bottom:12px}
+  .paste-btn{background:var(--surface-2); border:1px solid var(--border); border-radius:6px; padding:6px 11px; font-size:11.5px; cursor:pointer; font-family:inherit; color:var(--accent); margin-top:6px}
+
+  button.primary{
+    background:var(--accent); color:#fff; border:none; border-radius:6px; padding:10px 20px;
+    font-size:13px; font-weight:700; cursor:pointer; font-family:inherit;
+  }
+  button.primary:disabled{opacity:0.5; cursor:not-allowed}
+  .status-msg{font-size:12.3px; margin-top:10px; min-height:16px}
+  .status-msg.ok{color:var(--n1)}
+  .status-msg.err{color:var(--n4)}
+
+  /* Cartão fixo de Aprendizado e Evolução */
+  .learn-card{
+    background:var(--frota-soft); border:1px solid var(--frota); border-radius:10px; padding:18px 20px; margin-bottom:24px;
+  }
+  .learn-card h2{color:var(--frota); margin-bottom:4px}
+  .learn-card .sub{font-size:12.5px; color:var(--text-dim); margin-bottom:12px}
+  .learn-stats{display:flex; gap:20px; flex-wrap:wrap; margin-bottom:12px}
+  .learn-stat b{display:block; font-family:"Space Grotesk",sans-serif; font-size:22px}
+  .learn-stat span{font-size:11px; color:var(--text-faint); text-transform:uppercase; letter-spacing:0.03em}
+  .learn-toggle{background:none; border:1px solid var(--frota); color:var(--frota); border-radius:6px; padding:7px 14px; font-size:12px; font-weight:700; cursor:pointer; font-family:inherit}
+  .learn-timeline{margin-top:14px; max-height:340px; overflow-y:auto; display:none}
+  .learn-timeline.open{display:block}
+  .learn-entry{border-left:2px solid var(--frota); padding:4px 0 10px 14px; margin-bottom:6px}
+  .learn-entry .le-date{font-size:10.5px; color:var(--text-faint); font-family:"IBM Plex Mono",monospace}
+  .learn-entry .le-title{font-size:12.8px; font-weight:700; margin:2px 0}
+  .learn-entry .le-text{font-size:12.5px; color:var(--text-dim)}
+
+  .tabs{display:flex; gap:6px; flex-wrap:wrap; margin-bottom:16px}
+  .tabs button{
+    background:var(--surface); border:1px solid var(--border); border-radius:4px; padding:6px 13px;
+    font-size:11.5px; font-weight:600; color:var(--text-dim); cursor:pointer; font-family:inherit;
+  }
+  .tabs button.active{background:var(--accent); color:#fff; border-color:var(--accent)}
+
+  .card{background:var(--surface); border:1px solid var(--border); border-radius:8px; padding:16px 18px; margin-bottom:12px; cursor:pointer}
+  .card-head{display:flex; justify-content:space-between; align-items:flex-start; gap:10px; flex-wrap:wrap}
+  .badge{display:inline-flex; font-family:"IBM Plex Mono",monospace; font-size:10px; font-weight:700; padding:3px 8px; border-radius:4px; letter-spacing:0.03em}
+  .card h3{font-size:15px; margin:4px 0 4px; font-family:"Public Sans",sans-serif; font-weight:700}
+  .score{font-family:"Space Grotesk",sans-serif; font-size:26px; font-weight:700}
+  .card-meta{display:flex; flex-wrap:wrap; gap:8px; font-size:11px; color:var(--text-faint); margin-top:8px}
+  .chip{background:var(--surface-2); border-radius:4px; padding:2px 8px; font-size:10.5px; color:var(--text-dim)}
+
+  .detail{display:none; margin-top:14px; padding-top:14px; border-top:1px dashed var(--border)}
+  .detail.open{display:block}
+  .detail .dg{display:grid; grid-template-columns:1fr 1fr; gap:14px; margin-bottom:10px}
+  @media (max-width:640px){ .detail .dg{grid-template-columns:1fr} }
+  .detail .dblock{font-size:12.6px; color:var(--text-dim)}
+  .detail .dblock b{display:block; color:var(--text); font-size:11px; text-transform:uppercase; letter-spacing:0.03em; margin-bottom:3px}
+  .weight-list{font-size:12.3px; color:var(--text-dim)}
+  .weight-list li{margin-bottom:3px}
+
+  .metrics-panel{margin-bottom:24px}
+  .metric-stats{display:grid; grid-template-columns:repeat(auto-fit,minmax(130px,1fr)); gap:12px; margin-bottom:8px}
+  .metric-stat{background:var(--surface-2); border-radius:8px; padding:12px 14px}
+  .metric-stat b{display:block; font-family:"Space Grotesk",sans-serif; font-size:22px; font-variant-numeric:tabular-nums}
+  .metric-stat span{font-size:10.5px; color:var(--text-faint); text-transform:uppercase; letter-spacing:0.03em}
+  .metric-grid{display:grid; grid-template-columns:1fr 1fr; gap:24px; margin-top:6px}
+  @media (max-width:640px){ .metric-grid{grid-template-columns:1fr} }
+  .bar-row{display:flex; align-items:center; gap:8px; margin-bottom:7px; font-size:11.8px}
+  .bar-row .bl{width:150px; flex:none; color:var(--text-dim); overflow:hidden; text-overflow:ellipsis; white-space:nowrap}
+  .bar-track{flex:1; height:8px; background:var(--surface-2); border-radius:99px; overflow:hidden}
+  .bar-fill{height:100%; border-radius:99px; background:var(--accent)}
+  .bar-row .bv{width:22px; flex:none; text-align:right; font-family:"IBM Plex Mono",monospace; font-size:10.5px; color:var(--text-faint)}
+  .trend-row{display:flex; align-items:flex-end; gap:5px; height:64px; margin-top:10px; padding-top:18px}
+  .trend-bar{flex:1; background:var(--accent); border-radius:3px 3px 0 0; min-width:6px; position:relative}
+  .trend-bar .tv{position:absolute; top:-16px; left:50%; transform:translateX(-50%); font-size:9.5px; color:var(--text-faint); font-family:"IBM Plex Mono",monospace; white-space:nowrap}
+
+  .empty{text-align:center; padding:36px 20px; color:var(--text-faint); font-size:13px}
+  footer{padding-block:20px 50px; text-align:center}
+  footer p{color:var(--text-faint); font-size:11px}
+</style>
+
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=Public+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@500;600&display=swap" rel="stylesheet">
+
+<button type="button" class="theme-toggle" id="themeToggle" aria-label="Alternar tema claro/escuro" title="Alternar tema">
+  <svg class="tt-sun" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6"><circle cx="10" cy="10" r="3.4"/><path d="M10 2v2M10 16v2M18 10h-2M4 10H2M15.5 4.5l-1.4 1.4M5.9 14.1l-1.4 1.4M15.5 15.5l-1.4-1.4M5.9 5.9 4.5 4.5" stroke-linecap="round"/></svg>
+  <svg class="tt-moon" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M16.5 12.3A7 7 0 1 1 7.7 3.5a5.6 5.6 0 0 0 8.8 8.8z" stroke-linejoin="round"/></svg>
+</button>
+<script>
+(function(){
+  var root = document.documentElement, btn = document.getElementById('themeToggle'), KEY = 'artifact-theme-pref';
+  var stored = null;
+  try{ stored = localStorage.getItem(KEY); }catch(e){}
+  if(stored === 'light' || stored === 'dark') root.setAttribute('data-theme', stored);
+  btn.addEventListener('click', function(){
+    var current = root.getAttribute('data-theme');
+    var isDark = current === 'dark' || (!current && window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches);
+    var next = isDark ? 'light' : 'dark';
+    root.setAttribute('data-theme', next);
+    try{ localStorage.setItem(KEY, next); }catch(e){}
+  });
+})();
+</script>
+<nav class="artrail" aria-label="Artefatos">
+  <a class="artrail-item hub" href="https://claude.ai/artifact/1jJhYzXznLSE3rSThzoSsR">
+    <span class="artrail-icon"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6"><rect x="2.5" y="2.5" width="6" height="6" rx="1"/><rect x="11.5" y="2.5" width="6" height="6" rx="1"/><rect x="2.5" y="11.5" width="6" height="6" rx="1"/><rect x="11.5" y="11.5" width="6" height="6" rx="1"/></svg></span>
+    <span class="artrail-label">Painel Geral</span>
+  </a>
+  <a class="artrail-item" href="https://claude.ai/artifact/Q2qdTThuCd2NV15yBsv4pE">
+    <span class="artrail-icon"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M3 5h14M3 10h14M3 15h9" stroke-linecap="round"/></svg></span>
+    <span class="artrail-label">Fila de Demandas</span>
+  </a>
+  <a class="artrail-item" href="https://claude.ai/artifact/8rdeRj8exFa6pUYZ6nJYMe">
+    <span class="artrail-icon"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6"><circle cx="4" cy="15" r="2"/><circle cx="16" cy="15" r="2"/><circle cx="10" cy="4" r="2"/><path d="M10 6v4M8.3 9.3 5.5 13.2M11.7 9.3l2.8 3.9" stroke-linecap="round"/></svg></span>
+    <span class="artrail-label">Conector de Inteligência</span>
+  </a>
+  <a class="artrail-item" href="https://claude.ai/artifact/KnqZpBUkSBusLFxTAzLmVN">
+    <span class="artrail-icon"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6"><rect x="7" y="2.5" width="6" height="4" rx="1"/><rect x="2" y="13.5" width="6" height="4" rx="1"/><rect x="12" y="13.5" width="6" height="4" rx="1"/><path d="M10 6.5v3M5 13.5v-3h10v3" stroke-linecap="round" stroke-linejoin="round"/></svg></span>
+    <span class="artrail-label">Organograma</span>
+  </a>
+  <a class="artrail-item" href="https://claude.ai/artifact/4cCPGEFezkxGC8SpfR5qGy">
+    <span class="artrail-icon"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M10 2.5 16.5 5v5c0 4-2.8 6.6-6.5 7.5C6.3 16.6 3.5 14 3.5 10V5L10 2.5z" stroke-linejoin="round"/><path d="M7.3 10 9 11.7l3.7-3.9" stroke-linecap="round" stroke-linejoin="round"/></svg></span>
+    <span class="artrail-label">Código de Conduta</span>
+  </a>
+  <a class="artrail-item" href="https://claude.ai/artifact/6qy1GomQLhaESVdnfazNqj">
+    <span class="artrail-icon"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6"><circle cx="10" cy="10" r="2.6"/><path d="M10 3v2M10 15v2M17 10h-2M5 10H3M14.9 5.1l-1.4 1.4M6.5 13.5l-1.4 1.4M14.9 14.9l-1.4-1.4M6.5 6.5 5.1 5.1" stroke-linecap="round"/></svg></span>
+    <span class="artrail-label">Configurações</span>
+  </a>
+  <a class="artrail-item current" href="#">
+    <span class="artrail-icon"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M4 16V9M10 16V4M16 16v-6" stroke-linecap="round"/><path d="M2.5 16.5h15" stroke-linecap="round"/></svg></span>
+    <span class="artrail-label">Análises</span>
+  </a>
+</nav>
+
+<header class="hero">
+  <div class="wrap">
+    <p class="eyebrow">Portal</p>
+    <h1>Análises</h1>
+    <p class="lede">Diagnóstico completo de cada demanda resolvida — fontes, métricas, ganhos, perdas e aprendizado, apresentado pelo gerente final do processo (o Coordenador ou os Gestores, conforme o nível de complexidade).</p>
+  </div>
+</header>
+
+<div class="wrap">
+  <section>
+    <div class="learn-card">
+      <h2>Aprendizado e Evolução</h2>
+      <div class="sub">Demanda permanente — alimentada ao final de cada processo resolvido. Mede a evolução da frota ao longo do tempo.</div>
+      <div class="learn-stats">
+        <div class="learn-stat"><b id="learnCount">0</b><span>Registros</span></div>
+        <div class="learn-stat"><b id="learnAvg">—</b><span>Índice médio</span></div>
+        <div class="learn-stat"><b id="learnLast">—</b><span>Último registro</span></div>
+      </div>
+      <button class="learn-toggle" id="learnToggle">Ver histórico completo</button>
+      <div class="learn-timeline" id="learnTimeline"></div>
+    </div>
+
+    <div class="panel metrics-panel">
+      <div class="kicker">Métricas da operação</div>
+      <h2>Indicadores agregados</h2>
+      <p class="sub" style="font-size:12.5px;color:var(--text-dim);margin-bottom:16px">Recalculado automaticamente a cada demanda finalizada e registrada abaixo — sem passo manual.</p>
+      <div class="metric-stats" id="opStats"></div>
+      <div class="metric-grid">
+        <div>
+          <h4 style="margin-top:16px">Por nível de complexidade</h4>
+          <div id="metricsNivel"></div>
+        </div>
+        <div>
+          <h4 style="margin-top:16px">Setores mais acionados</h4>
+          <div id="metricsSetores"></div>
+        </div>
+      </div>
+      <h4 style="margin-top:18px">Índice geral — últimas demandas (ordem cronológica)</h4>
+      <div id="metricsTrend"></div>
+    </div>
+
+    <div class="panel">
+      <div class="kicker">Novo diagnóstico</div>
+      <h2>Registrar resultado de demanda resolvida</h2>
+      <form id="reportForm">
+        <div class="row2">
+          <div class="field">
+            <label for="rTitulo">Demanda (título de referência)</label>
+            <input id="rTitulo" type="text" required placeholder="Cole o título exato da Fila de Demandas">
+            <button type="button" id="pasteHandoffBtn" class="paste-btn">Colar da Fila de Demandas</button>
+          </div>
+          <div class="field">
+            <label for="rGerente">Gerente final do processo</label>
+            <input id="rGerente" type="text" required placeholder="Ex.: ecc:code-reviewer, ou seu nome">
+          </div>
+        </div>
+        <div class="field">
+          <label for="rNivel">Nível de complexidade</label>
+          <select id="rNivel">
+            <option value="1">1 · Simples</option>
+            <option value="2" selected>2 · Moderada</option>
+            <option value="3">3 · Complexa</option>
+            <option value="4">4 · Crítica / Estratégica</option>
+          </select>
+        </div>
+        <div class="field">
+          <label>Setores envolvidos</label>
+          <div class="checkgrid" id="setoresGrid"></div>
+        </div>
+        <div class="field">
+          <label for="rFontes">Fontes utilizadas</label>
+          <textarea id="rFontes" placeholder="Documentação, skills, repositórios, referências consultadas"></textarea>
+        </div>
+
+        <h4 style="margin-top:18px">Métricas (o placar em números)</h4>
+        <div class="row3">
+          <div class="field"><label for="mAcoes">Ações realizadas</label><input id="mAcoes" type="text" placeholder="Ex.: 8 etapas"></div>
+          <div class="field"><label for="mTempo">Tempo total</label><input id="mTempo" type="text" placeholder="Ex.: 2h30"></div>
+          <div class="field"><label for="mIndice">Índice geral (0-100)</label><input id="mIndice" type="number" min="0" max="100" placeholder="Ex.: 92"></div>
+        </div>
+        <div class="row2">
+          <div class="field"><label for="mAntipadroes">Antipadrões observados</label><input id="mAntipadroes" type="number" min="0" placeholder="Ex.: 1"></div>
+          <div class="field"><label for="mRegras">Regras cumpridas (%)</label><input id="mRegras" type="number" min="0" max="100" placeholder="Ex.: 100"></div>
+        </div>
+
+        <h4 style="margin-top:18px">Resultado</h4>
+        <div class="field"><label for="rGanhos">Ganhos</label><textarea id="rGanhos" placeholder="O que foi ganho — tempo, qualidade, clareza"></textarea></div>
+        <div class="field"><label for="rPerdas">Perdas (se houve)</label><textarea id="rPerdas" placeholder="Retrabalho, atraso, custo — ou 'nenhuma'"></textarea></div>
+        <div class="field"><label for="rAprendizado">Aprendizado</label><textarea id="rAprendizado" required placeholder="O que essa demanda ensinou para a frota — alimenta Aprendizado e Evolução"></textarea></div>
+
+        <h4 style="margin-top:18px">Ponderações por setor</h4>
+        <p class="note" style="font-size:11.5px;color:var(--text-faint);margin-bottom:8px">Observações relevantes de cada área envolvida em relação ao processo final.</p>
+        <div id="weightList"></div>
+        <button type="button" id="addWeightBtn">+ Adicionar ponderação</button>
+
+        <div><button class="primary" type="submit" id="reportSubmit">Enviar diagnóstico para Análises</button></div>
+        <div class="status-msg" id="reportMsg"></div>
+      </form>
+    </div>
+  </section>
+
+  <section>
+    <h2 style="margin-bottom:14px">Diagnósticos registrados</h2>
+    <div class="tabs" id="levelTabs">
+      <button data-l="all" class="active">Todos os níveis</button>
+      <button data-l="1">Nível 1</button>
+      <button data-l="2">Nível 2</button>
+      <button data-l="3">Nível 3</button>
+      <button data-l="4">Nível 4</button>
+    </div>
+    <div id="reportList"><div class="empty">Carregando</div></div>
+  </section>
+</div>
+
+<footer>
+  <div class="wrap"><p>Dados guardados no banco deste artifact. Clique em um diagnóstico para abrir o detalhamento completo.</p></div>
+</footer>
+
+<script>
+var CATEGORIAS = [
+  {id:'d1', nome:'D1 · Arquitetura & Sistema'}, {id:'d2', nome:'D2 · Pesquisa & Descoberta'},
+  {id:'d3', nome:'D3 · Qualidade & Revisão'}, {id:'d4', nome:'D4 · Segurança'},
+  {id:'d5', nome:'D5 · Build & CI/CD'}, {id:'d6', nome:'D6 · Testes & Validação'},
+  {id:'d7', nome:'D7 · Infra Distribuída / Swarm'}, {id:'d8', nome:'D8 · Documentação & Conhecimento'},
+  {id:'d9', nome:'D9 · Limpeza & Manutenção'}, {id:'d10', nome:'D10 · Performance & Otimização'},
+  {id:'d11', nome:'D11 · Design & Produto'}, {id:'d12', nome:'D12 · Release Open Source'},
+  {id:'d13', nome:'D13 · Loop Generativo (GAN)'}, {id:'d14', nome:'D14 · Automação Web'},
+  {id:'d15', nome:'D15 · Rede & Infraestrutura'}, {id:'d16', nome:'D16 · Growth & Marketing'},
+  {id:'d17', nome:'D17 · Meta / Processo'}, {id:'d18', nome:'D18 · Comunicação & Triagem'}
+];
+var NIVEL_STYLE = {
+  1:{bg:'var(--n1-soft)', fg:'var(--n1)', label:'Nível 1 · Simples'},
+  2:{bg:'var(--n2-soft)', fg:'var(--n2)', label:'Nível 2 · Moderada'},
+  3:{bg:'var(--n3-soft)', fg:'var(--n3)', label:'Nível 3 · Complexa'},
+  4:{bg:'var(--n4-soft)', fg:'var(--n4)', label:'Nível 4 · Crítica'}
+};
+
+function catNome(id){ var c = CATEGORIAS.filter(function(x){return x.id===id;})[0]; return c ? c.nome : id; }
+function escapeHtml(s){
+  return String(s==null?'':s).replace(/[&<>"']/g, function(c){
+    return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c];
+  });
+}
+function fmtDate(iso){
+  if(!iso) return '';
+  try{ return new Date(iso).toLocaleDateString('pt-BR', {day:'2-digit', month:'short', year:'numeric', hour:'2-digit', minute:'2-digit'}); }
+  catch(e){ return iso; }
+}
+function setMsg(text, kind){
+  var el = document.getElementById('reportMsg');
+  el.textContent = text;
+  el.className = 'status-msg' + (kind ? ' ' + kind : '');
+}
+
+/* Checkboxes de setor */
+var setoresGrid = document.getElementById('setoresGrid');
+CATEGORIAS.forEach(function(c){
+  var lab = document.createElement('label');
+  var chk = document.createElement('input');
+  chk.type = 'checkbox'; chk.value = c.id; chk.className = 'setor-chk';
+  lab.appendChild(chk);
+  lab.appendChild(document.createTextNode(c.nome));
+  setoresGrid.appendChild(lab);
+});
+
+/* Automação: o botão "Finalizar e registrar relatório" da Fila de Demandas copia os dados
+   para a área de transferência do sistema (artifacts rodam em iframes de origem isolada,
+   então não dá pra ler a URL nem o estado de outro artifact — só a clipboard cruza essa
+   fronteira). Este botão lê o que foi copiado e preenche o formulário. */
+document.getElementById('pasteHandoffBtn').addEventListener('click', async function(){
+  if(!navigator.clipboard || !navigator.clipboard.readText){
+    setMsg('Este navegador não permite colar automaticamente — copie na Fila de Demandas e cole (Ctrl+V) direto no campo do título.', 'err');
+    return;
+  }
+  try{
+    var text = await navigator.clipboard.readText();
+    var lines = text.split(/\r?\n/);
+    if(!lines[0] || lines[0].indexOf('FROTA-HANDOFF') === -1){
+      setMsg('Nada da Fila de Demandas na área de transferência — clique em "Finalizar" lá primeiro.', 'err');
+      return;
+    }
+    var titulo, categoria;
+    lines.forEach(function(line){
+      if(line.indexOf('titulo=') === 0) titulo = line.slice(7);
+      if(line.indexOf('categoria=') === 0) categoria = line.slice(10);
+    });
+    if(titulo) document.getElementById('rTitulo').value = titulo;
+    if(categoria){
+      var chk = setoresGrid.querySelector('.setor-chk[value="' + categoria + '"]');
+      if(chk) chk.checked = true;
+    }
+    setMsg('Preenchido a partir da Fila de Demandas — confira os campos e complete o diagnóstico.', 'ok');
+  }catch(e){
+    setMsg('Não foi possível ler a área de transferência (permissão negada pelo navegador) — cole manualmente com Ctrl+V no campo do título.', 'err');
+  }
+});
+
+/* Ponderações dinâmicas por setor */
+function addWeightRow(setor, nota){
+  var row = document.createElement('div');
+  row.className = 'weight-row';
+  var sel = document.createElement('select');
+  CATEGORIAS.forEach(function(c){
+    var o = document.createElement('option'); o.value = c.id; o.textContent = c.nome;
+    if(c.id === setor) o.selected = true;
+    sel.appendChild(o);
+  });
+  var inp = document.createElement('input');
+  inp.type = 'text'; inp.placeholder = 'Ponderação deste setor sobre o processo final';
+  inp.value = nota || '';
+  var btn = document.createElement('button');
+  btn.type = 'button'; btn.textContent = 'remover';
+  btn.addEventListener('click', function(){ row.remove(); });
+  row.appendChild(sel); row.appendChild(inp); row.appendChild(btn);
+  document.getElementById('weightList').appendChild(row);
+}
+document.getElementById('addWeightBtn').addEventListener('click', function(){ addWeightRow(); });
+addWeightRow();
+
+var dbReady = null;
+
+(async function init(){
+  var claudeApi = window.claude;
+  if(!claudeApi){
+    setMsg('Este formulário só funciona dentro do claude.ai.', 'err');
+    document.getElementById('reportList').innerHTML = '<div class="empty">Indisponível fora do claude.ai.</div>';
+    return;
+  }
+  dbReady = await claudeApi.use('db');
+  if(!dbReady){
+    document.getElementById('reportSubmit').disabled = true;
+    setMsg('Não foi possível conectar ao banco deste artifact.', 'err');
+    return;
+  }
+  subscribeReports();
+  subscribeLearning();
+})();
+
+/* Aprendizado e Evolução — doc singleton */
+function subscribeLearning(){
+  dbReady.doc('meta/aprendizado_evolucao').onSnapshot(function(snap){
+    var data = snap.exists ? snap.data() : {entries:[]};
+    var entries = data.entries || [];
+    document.getElementById('learnCount').textContent = entries.length;
+    if(entries.length){
+      var withScore = entries.filter(function(e){ return typeof e.indice === 'number'; });
+      var avg = withScore.length ? Math.round(withScore.reduce(function(a,e){return a+e.indice;},0)/withScore.length) : null;
+      document.getElementById('learnAvg').textContent = avg==null ? '—' : avg;
+      document.getElementById('learnLast').textContent = fmtDate(entries[entries.length-1].data);
+    }
+    renderLearningTimeline(entries.slice().reverse());
+  }, function(){});
+}
+function renderLearningTimeline(entries){
+  var box = document.getElementById('learnTimeline');
+  if(!entries.length){ box.innerHTML = '<div class="empty">Nenhum aprendizado registrado ainda.</div>'; return; }
+  box.innerHTML = entries.map(function(e){
+    return '<div class="learn-entry"><div class="le-date">' + fmtDate(e.data) +
+      (e.nivel ? ' · Nível ' + e.nivel : '') + '</div>' +
+      '<div class="le-title">' + escapeHtml(e.demanda) + '</div>' +
+      '<div class="le-text">' + escapeHtml(e.aprendizado) + '</div></div>';
+  }).join('');
+}
+document.getElementById('learnToggle').addEventListener('click', function(){
+  var box = document.getElementById('learnTimeline');
+  box.classList.toggle('open');
+  this.textContent = box.classList.contains('open') ? 'Ocultar histórico' : 'Ver histórico completo';
+});
+
+async function appendLearning(entry){
+  var ref = dbReady.doc('meta/aprendizado_evolucao');
+  var snap = await ref.get();
+  var entries = (snap.exists && snap.data().entries) || [];
+  entries.push(entry);
+  if(entries.length > 500) entries = entries.slice(entries.length - 500);
+  if(snap.exists){
+    await ref.update({entries: entries, totalRegistros: entries.length});
+  }else{
+    await ref.set({entries: entries, totalRegistros: entries.length, criadoEm: new Date().toISOString()});
+  }
+}
+
+/* Relatórios */
+var allReports = [];
+var currentLevel = 'all';
+var openId = null;
+
+function subscribeReports(){
+  dbReady.collection('relatorios').orderBy('criadoEm', 'desc').limit(200).onSnapshot(
+    function(snap){
+      allReports = snap.docs.map(function(d){ return Object.assign({_id:d.id}, d.data()); });
+      renderReports();
+      renderOpMetrics();
+    },
+    function(err){ document.getElementById('reportList').innerHTML = '<div class="empty">Erro ao carregar (' + escapeHtml(err.code) + ').</div>'; }
+  );
+}
+
+function metricStat(num, lbl){
+  return '<div class="metric-stat"><b>' + num + '</b><span>' + lbl + '</span></div>';
+}
+
+function renderOpMetrics(){
+  var statsBox = document.getElementById('opStats');
+  if(!statsBox) return;
+  var total = allReports.length;
+
+  var withIdx = allReports.filter(function(d){ return d.metricas && typeof d.metricas.indiceGeral === 'number'; });
+  var avgIdx = withIdx.length ? Math.round(withIdx.reduce(function(a,d){ return a + d.metricas.indiceGeral; }, 0) / withIdx.length) : null;
+
+  var withRegras = allReports.filter(function(d){ return d.metricas && typeof d.metricas.regrasCumpridasPercent === 'number'; });
+  var avgRegras = withRegras.length ? Math.round(withRegras.reduce(function(a,d){ return a + d.metricas.regrasCumpridasPercent; }, 0) / withRegras.length) : null;
+
+  var totalAntipadroes = allReports.reduce(function(a,d){ return a + ((d.metricas && d.metricas.antipadroesCount) || 0); }, 0);
+  var withAntipadroesField = allReports.filter(function(d){ return d.metricas && typeof d.metricas.antipadroesCount === 'number'; });
+  var zeroAntipadroes = withAntipadroesField.filter(function(d){ return d.metricas.antipadroesCount === 0; }).length;
+  var taxaLimpa = withAntipadroesField.length ? Math.round(zeroAntipadroes / withAntipadroesField.length * 100) : null;
+
+  statsBox.innerHTML =
+    metricStat(total, 'Demandas resolvidas') +
+    metricStat(avgIdx==null ? '—' : avgIdx, 'Índice médio geral') +
+    metricStat(avgRegras==null ? '—' : avgRegras + '%', 'Regras cumpridas (méd.)') +
+    metricStat(totalAntipadroes, 'Antipadrões observados') +
+    metricStat(taxaLimpa==null ? '—' : taxaLimpa + '%', 'Demandas sem antipadrão');
+
+  var nivelBox = document.getElementById('metricsNivel');
+  var nivelCounts = {1:0, 2:0, 3:0, 4:0};
+  allReports.forEach(function(d){ if(nivelCounts[d.nivelComplexidade] != null) nivelCounts[d.nivelComplexidade]++; });
+  var maxNivel = Math.max(1, nivelCounts[1], nivelCounts[2], nivelCounts[3], nivelCounts[4]);
+  nivelBox.innerHTML = [1,2,3,4].map(function(n){
+    var nv = NIVEL_STYLE[n];
+    var pct = Math.round(nivelCounts[n] / maxNivel * 100);
+    return '<div class="bar-row"><span class="bl">' + nv.label + '</span>' +
+      '<span class="bar-track"><span class="bar-fill" style="width:' + pct + '%;background:' + nv.fg + '"></span></span>' +
+      '<span class="bv">' + nivelCounts[n] + '</span></div>';
+  }).join('');
+
+  var setorBox = document.getElementById('metricsSetores');
+  var setorCounts = {};
+  allReports.forEach(function(d){ (d.setoresEnvolvidos || []).forEach(function(s){ setorCounts[s] = (setorCounts[s] || 0) + 1; }); });
+  var setorEntries = Object.keys(setorCounts).map(function(k){ return {id:k, n:setorCounts[k]}; })
+    .sort(function(a,b){ return b.n - a.n; }).slice(0, 6);
+  if(!setorEntries.length){
+    setorBox.innerHTML = '<div class="empty" style="padding:14px 4px">Sem dados ainda.</div>';
+  }else{
+    var maxSetor = setorEntries[0].n;
+    setorBox.innerHTML = setorEntries.map(function(e){
+      var pct = Math.round(e.n / maxSetor * 100);
+      return '<div class="bar-row"><span class="bl">' + escapeHtml(catNome(e.id)) + '</span>' +
+        '<span class="bar-track"><span class="bar-fill" style="width:' + pct + '%"></span></span>' +
+        '<span class="bv">' + e.n + '</span></div>';
+    }).join('');
+  }
+
+  var trendBox = document.getElementById('metricsTrend');
+  var chron = allReports.slice().reverse()
+    .filter(function(d){ return d.metricas && typeof d.metricas.indiceGeral === 'number'; })
+    .slice(-12);
+  if(!chron.length){
+    trendBox.innerHTML = '<div class="empty" style="padding:14px 4px">Sem dados ainda.</div>';
+  }else{
+    trendBox.innerHTML = '<div class="trend-row">' + chron.map(function(d){
+      var v = d.metricas.indiceGeral;
+      return '<div class="trend-bar" style="height:' + Math.max(4, v) + '%"><span class="tv">' + v + '</span></div>';
+    }).join('') + '</div>';
+  }
+}
+document.getElementById('levelTabs').addEventListener('click', function(ev){
+  var btn = ev.target.closest('button'); if(!btn) return;
+  currentLevel = btn.getAttribute('data-l');
+  document.querySelectorAll('#levelTabs button').forEach(function(b){ b.classList.toggle('active', b===btn); });
+  renderReports();
+});
+
+function renderReports(){
+  var list = document.getElementById('reportList');
+  var docs = currentLevel==='all' ? allReports : allReports.filter(function(d){ return String(d.nivelComplexidade)===currentLevel; });
+  if(!docs.length){ list.innerHTML = '<div class="empty">Nenhum diagnóstico registrado ' + (currentLevel==='all' ? 'ainda.' : 'neste nível.') + '</div>'; return; }
+  list.innerHTML = '';
+  docs.forEach(function(d){
+    var nv = NIVEL_STYLE[d.nivelComplexidade] || NIVEL_STYLE[2];
+    var card = document.createElement('div');
+    card.className = 'card';
+    var setoresHtml = (d.setoresEnvolvidos||[]).map(function(s){ return '<span class="chip">' + escapeHtml(catNome(s)) + '</span>'; }).join('');
+    var m = d.metricas || {};
+    card.innerHTML =
+      '<div class="card-head">' +
+        '<div><span class="badge" style="background:' + nv.bg + ';color:' + nv.fg + '">' + nv.label + '</span>' +
+        '<h3>' + escapeHtml(d.demandaTitulo) + '</h3></div>' +
+        '<div class="score" style="color:' + nv.fg + '">' + (m.indiceGeral!=null ? m.indiceGeral : '—') + '</div>' +
+      '</div>' +
+      '<div class="card-meta">' + setoresHtml + '<span class="chip">Gerente: ' + escapeHtml(d.gerente) + '</span><span class="chip">' + fmtDate(d.criadoEm) + '</span></div>' +
+      '<div class="detail" id="detail_' + d._id + '"></div>';
+    card.addEventListener('click', function(ev){
+      if(ev.target.tagName === 'A') return;
+      openId = (openId === d._id) ? null : d._id;
+      renderReports();
+    });
+    list.appendChild(card);
+    if(openId === d._id){
+      var det = card.querySelector('.detail');
+      det.classList.add('open');
+      det.innerHTML =
+        '<div class="dg">' +
+          '<div class="dblock"><b>Fontes utilizadas</b>' + escapeHtml(d.fontesUtilizadas || '—') + '</div>' +
+          '<div class="dblock"><b>Métricas</b>Ações: ' + escapeHtml(m.acoesRealizadas||'—') + ' · Tempo: ' + escapeHtml(m.tempoTotal||'—') +
+            ' · Antipadrões: ' + (m.antipadroesCount!=null?m.antipadroesCount:'—') + ' · Regras cumpridas: ' + (m.regrasCumpridasPercent!=null?m.regrasCumpridasPercent+'%':'—') + '</div>' +
+          '<div class="dblock"><b>Ganhos</b>' + escapeHtml(d.ganhos || '—') + '</div>' +
+          '<div class="dblock"><b>Perdas</b>' + escapeHtml(d.perdas || 'Nenhuma registrada') + '</div>' +
+        '</div>' +
+        '<div class="dblock" style="margin-bottom:10px"><b>Aprendizado</b>' + escapeHtml(d.aprendizado || '—') + '</div>' +
+        '<div class="dblock"><b>Ponderações por setor</b><ul class="weight-list">' +
+          (d.ponderacoes||[]).map(function(p){ return '<li><b style="display:inline;text-transform:none;font-size:12.3px">' + escapeHtml(catNome(p.setor)) + ':</b> ' + escapeHtml(p.nota) + '</li>'; }).join('') +
+        '</ul></div>';
+    }
+  });
+}
+
+document.getElementById('reportForm').addEventListener('submit', async function(ev){
+  ev.preventDefault();
+  if(!dbReady) return;
+  var titulo = document.getElementById('rTitulo').value.trim();
+  var gerente = document.getElementById('rGerente').value.trim();
+  var aprendizado = document.getElementById('rAprendizado').value.trim();
+  if(!titulo || !gerente || !aprendizado){ setMsg('Preencha demanda, gerente e aprendizado.', 'err'); return; }
+
+  var setores = Array.prototype.slice.call(document.querySelectorAll('.setor-chk:checked')).map(function(c){ return c.value; });
+  var ponderacoes = [];
+  document.querySelectorAll('#weightList .weight-row').forEach(function(row){
+    var sel = row.querySelector('select'), inp = row.querySelector('input');
+    if(inp.value.trim()) ponderacoes.push({setor: sel.value, nota: inp.value.trim()});
+  });
+
+  var nivel = parseInt(document.getElementById('rNivel').value, 10);
+  var indiceVal = document.getElementById('mIndice').value;
+  var metricas = {
+    acoesRealizadas: document.getElementById('mAcoes').value.trim() || null,
+    tempoTotal: document.getElementById('mTempo').value.trim() || null,
+    indiceGeral: indiceVal === '' ? null : Number(indiceVal),
+    antipadroesCount: document.getElementById('mAntipadroes').value === '' ? null : Number(document.getElementById('mAntipadroes').value),
+    regrasCumpridasPercent: document.getElementById('mRegras').value === '' ? null : Number(document.getElementById('mRegras').value)
+  };
+
+  var btn = document.getElementById('reportSubmit');
+  btn.disabled = true; setMsg('Enviando');
+
+  var criadoEm = new Date().toISOString();
+  try{
+    await dbReady.collection('relatorios').add({
+      demandaTitulo: titulo,
+      gerente: gerente,
+      nivelComplexidade: nivel,
+      setoresEnvolvidos: setores,
+      fontesUtilizadas: document.getElementById('rFontes').value.trim() || null,
+      metricas: metricas,
+      ganhos: document.getElementById('rGanhos').value.trim() || null,
+      perdas: document.getElementById('rPerdas').value.trim() || null,
+      aprendizado: aprendizado,
+      ponderacoes: ponderacoes,
+      criadoEm: criadoEm
+    });
+    await appendLearning({data: criadoEm, demanda: titulo, nivel: nivel, aprendizado: aprendizado, indice: metricas.indiceGeral});
+    setMsg('Diagnóstico registrado em Análises.', 'ok');
+    document.getElementById('reportForm').reset();
+    document.getElementById('weightList').innerHTML = '';
+    addWeightRow();
+  }catch(e){
+    setMsg('Falha ao registrar (' + (e && e.code ? e.code : 'erro') + ').', 'err');
+  }finally{ btn.disabled = false; }
+});
+</script>
