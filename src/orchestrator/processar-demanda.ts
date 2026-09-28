@@ -1,8 +1,9 @@
 import type pg from 'pg';
-import { agenteEstaAutorizado } from '../db/agentes.ts';
+import { agenteEstaAutorizado, obterAgentePorChave, papelDoSetor } from '../db/agentes.ts';
 import { atualizarDemanda, registrarTentativa, type Demanda } from '../db/demandas.ts';
 import { montarChaveIdempotencia, registrarEvento, type TipoEvento } from '../db/eventos.ts';
 import { adicionarMensagem, listarMensagens } from '../db/mensagens.ts';
+import { avaliarEregistrar, type EstagioPolitica, type OperacaoAvaliada } from '../db/politicas.ts';
 import { criarEntrega, registrarAprendizado, salvarRelatorio, type Metricas } from '../db/relatorios.ts';
 import { comTransacao } from '../db/tx.ts';
 import { CATEGORIAS, SETORES, type Categoria, type StatusDemanda } from '../domain/setores.ts';
@@ -99,6 +100,38 @@ interface Auditoria {
   interrupcao: Interrupcao | null;
 }
 
+// Fase 2 — Entrega 2 (Policy Engine, modo shadow): só observa e registra — nunca ramifica no resultado,
+// nunca altera o status da demanda. avaliarEregistrar já é fail-open por dentro (nunca lança), então
+// chamar isto nunca pode quebrar o processamento real.
+async function avaliarEstagio(
+  pool: pg.Pool,
+  agenteChave: string,
+  demanda: Demanda,
+  operacao: OperacaoAvaliada,
+  modelo: string,
+  estagio: EstagioPolitica,
+  runId: string,
+  tentativa: number | null,
+): Promise<void> {
+  const agente = await obterAgentePorChave(pool, agenteChave);
+  await avaliarEregistrar(pool, {
+    demandaId: demanda.id,
+    runId,
+    correlacaoId: runId,
+    tentativa,
+    estagio,
+    contexto: {
+      agente: agenteChave,
+      papel: agente?.papel ?? papelDoSetor(demanda.categoria),
+      categoria: demanda.categoria,
+      estado: agente?.estado ?? 'ativo',
+      modelo,
+      operacao,
+      prioridade: demanda.prioridade,
+    },
+  });
+}
+
 function criarCheckpoint(pool: pg.Pool, demanda: Demanda): Checkpoint {
   const setor = demanda.categoria === 'gestores' ? null : demanda.categoria;
   return async (texto, agente) => {
@@ -129,6 +162,8 @@ async function tratarPendencia(
   exec: ResultadoExecucao,
   checkpoint: Checkpoint,
   emitir: EmitirEvento,
+  runId: string,
+  tentativa: number,
 ): Promise<ResultadoDemanda | null> {
   const papel = SETORES[demanda.categoria].papel;
   const base = {
@@ -147,12 +182,14 @@ async function tratarPendencia(
     await checkpoint(`Ação humana necessária: ${exec.acaoHumana.motivo}${acoes}`, papel);
     await atualizarDemanda(d.pool, demanda.id, { status: 'Aguardando humano', bloqueioHumano: exec.acaoHumana });
     await emitir('pendencia_humana_registrada', papel, { totalAcoes: exec.acaoHumana.acoesNecessarias.length });
+    await avaliarEstagio(d.pool, papel, demanda, 'execucao', d.modeloTrabalho, 'post', runId, tentativa);
     return { ...base, statusFinal: 'Aguardando humano' };
   }
   if (exec.insumoCritico?.alternativa === 'B') {
     await checkpoint(`Insumo necessário (alternativa B): ${exec.insumoCritico.descricao}`, papel);
     await atualizarDemanda(d.pool, demanda.id, { status: 'Aguardando insumo', alternativaInsumo: 'B' });
     await emitir('pendencia_insumo_registrada', papel, { alternativa: 'B' });
+    await avaliarEstagio(d.pool, papel, demanda, 'execucao', d.modeloTrabalho, 'post', runId, tentativa);
     return { ...base, statusFinal: 'Aguardando insumo' };
   }
   return null;
@@ -198,8 +235,12 @@ async function auditar(
   checkpoint: Checkpoint,
   emitir: EmitirEvento,
   contexto: { runId: string; demandaId: string },
+  tentativa: number,
 ): Promise<Auditoria> {
   const regras = regrasDosSetores([demanda.categoria, ...exec.setoresEnvolvidos]);
+
+  // "during": antes da ação de auditoria em si — modo shadow, nunca bloqueia.
+  await avaliarEstagio(d.pool, PAPEL_AUDITOR, demanda, 'auditoria', d.modeloAuditoria, 'during', contexto.runId, tentativa);
 
   // O auditor também passa pela mesma checagem do catálogo que a execução: existe, está ativo e o
   // modelo bate com modelo_permitido. Se não, nenhuma chamada ao modelo de auditoria acontece — a
@@ -369,6 +410,9 @@ export async function processarDemanda(d: DependenciasDemanda, demanda: Demanda,
   await emitir('processamento_iniciado', setor.papel);
   await checkpoint(`Executando o trabalho com ${setor.papel} (${d.modeloTrabalho}).`, setor.papel);
 
+  // "pre": antes de iniciar a execução em si — modo shadow, nunca bloqueia.
+  await avaliarEstagio(d.pool, setor.papel, demanda, 'execucao', d.modeloTrabalho, 'pre', runId, tentativaAtual);
+
   let exec: ResultadoExecucao;
   try {
     // Fase 2 — Entrega 1 (catálogo de agentes): só valida que o agente solicitado existe no catálogo,
@@ -398,14 +442,16 @@ export async function processarDemanda(d: DependenciasDemanda, demanda: Demanda,
   });
   await checkpoint(`Plano: ${exec.plano}`, setor.papel);
 
-  const pendencia = await tratarPendencia(d, demanda, exec, checkpoint, emitir);
+  const pendencia = await tratarPendencia(d, demanda, exec, checkpoint, emitir, runId, tentativaAtual);
   if (pendencia) return pendencia;
 
   const entrega = await hospedarEntrega(d, demanda, exec, checkpoint, emitir);
-  const auditoria = await auditar(d, demanda, exec, entrega, checkpoint, emitir, contexto);
+  const auditoria = await auditar(d, demanda, exec, entrega, checkpoint, emitir, contexto, tentativaAtual);
   await checkpoint('Finalizando e registrando relatório.', null);
   const statusFinal = await registrarResultado(d, demanda, exec, entrega, auditoria, relogio() - inicio, emitir);
   await checkpoint(`Relatório registrado. Status: ${statusFinal}.`, null);
+  // "post": depois do resultado — modo shadow, nunca bloqueia.
+  await avaliarEstagio(d.pool, setor.papel, demanda, 'execucao', d.modeloTrabalho, 'post', runId, tentativaAtual);
 
   return {
     demandaId: demanda.id,

@@ -13,7 +13,12 @@ import { createTestDb, type TestDb } from '../helpers/db.ts';
 
 describe('migration 002_agent_events', () => {
   it('esta registrada e aplicada junto com as demais migrations', async () => {
-    expect(await listarMigracoesDisponiveis()).toEqual(['001_init.sql', '002_agent_events.sql', '003_agentes.sql']);
+    expect(await listarMigracoesDisponiveis()).toEqual([
+      '001_init.sql',
+      '002_agent_events.sql',
+      '003_agentes.sql',
+      '004_policy_engine.sql',
+    ]);
   });
 });
 

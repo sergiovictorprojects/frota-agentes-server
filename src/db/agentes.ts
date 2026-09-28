@@ -106,7 +106,7 @@ export async function agenteEstaAutorizado(pool: pg.Pool, chave: string, modelo:
   return agente?.estado === 'ativo' && agente.modeloPermitido === modelo;
 }
 
-function papelDoSetor(categoria: Categoria): PapelAgente {
+export function papelDoSetor(categoria: Categoria): PapelAgente {
   if (categoria === 'gestores') return 'coordenador';
   // d17 é literalmente o auditor da run: PAPEL_AUDITOR em processar-demanda.ts é SETORES.d17.papel
   // ("frota:agent-evaluator"), usado em toda chamada de auditoria, não só quando a demanda é da

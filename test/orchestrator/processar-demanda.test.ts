@@ -368,8 +368,8 @@ describe('processarDemanda', () => {
     // Nenhuma chamada ao modelo aconteceu: a checagem barra antes do llm.gerar, não muda prompt nenhum.
     expect(llm.pedidos).toHaveLength(0);
     const eventos = await listarEventosDaDemanda(db.pool, demanda.id);
-    expect(eventos.map((e) => e.tipoEvento)).toEqual(['processamento_iniciado', 'chamada_trabalho_falhou']);
-    expect(eventos[1]!.metadata).toEqual({ codigoErro: 'agente_nao_autorizado' });
+    expect(eventos.map((e) => e.tipoEvento)).toEqual(['processamento_iniciado', 'politica_avaliada', 'chamada_trabalho_falhou']);
+    expect(eventos[2]!.metadata).toEqual({ codigoErro: 'agente_nao_autorizado' });
 
     await atualizarAgente(db.pool, SETORES.d1.papel, 'teste', { estado: 'ativo' });
   });
@@ -384,8 +384,8 @@ describe('processarDemanda', () => {
 
     expect(llm.pedidos).toHaveLength(0);
     const eventos = await listarEventosDaDemanda(db.pool, demanda.id);
-    expect(eventos.map((e) => e.tipoEvento)).toEqual(['processamento_iniciado', 'chamada_trabalho_falhou']);
-    expect(eventos[1]!.metadata).toEqual({ codigoErro: 'agente_nao_autorizado' });
+    expect(eventos.map((e) => e.tipoEvento)).toEqual(['processamento_iniciado', 'politica_avaliada', 'chamada_trabalho_falhou']);
+    expect(eventos[2]!.metadata).toEqual({ codigoErro: 'agente_nao_autorizado' });
 
     await atualizarAgente(db.pool, SETORES.d1.papel, 'teste', { modeloPermitido: 'claude-sonnet-5' });
   });
@@ -405,10 +405,13 @@ describe('processarDemanda', () => {
     const eventos = await listarEventosDaDemanda(db.pool, demanda.id);
     expect(eventos.map((e) => e.tipoEvento)).toEqual([
       'processamento_iniciado',
+      'politica_avaliada',
       'chamada_trabalho_concluida',
       'entrega_criada',
+      'politica_avaliada',
       'auditoria_interrompida',
       'demanda_concluida',
+      'politica_avaliada',
     ]);
     const interrompida = eventos.find((e) => e.tipoEvento === 'auditoria_interrompida')!;
     expect(interrompida.metadata).toEqual({ codigoErro: 'agente_nao_autorizado' });
