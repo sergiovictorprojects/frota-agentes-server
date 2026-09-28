@@ -1,5 +1,6 @@
 import Anthropic from '@anthropic-ai/sdk';
 import type pg from 'pg';
+import { seedAgentesPadrao } from './db/agentes.ts';
 import { ConfigError, loadConfig, type Config } from './config/env.ts';
 import { migrate } from './db/migrate.ts';
 import { createPool } from './db/pool.ts';
@@ -52,6 +53,10 @@ async function main(): Promise<void> {
 
   const pool = createPool(config.DATABASE_URL);
   await migrate(pool);
+  // Idempotente (ON CONFLICT DO NOTHING): nunca duplica nem sobrescreve estado/versão já ajustados
+  // manualmente no catálogo. O auditor (d17) nasce com modelo_permitido = MODEL_AUDIT; todo o resto,
+  // com MODEL_WORK — o mesmo modelo que cada papel de fato chama. Ver src/db/agentes.ts.
+  await seedAgentesPadrao(pool, config.MODEL_WORK, config.MODEL_AUDIT);
 
   const depsFila = montarDependenciasDaFila(config, pool);
   const scheduler: Scheduler = await iniciarScheduler({
