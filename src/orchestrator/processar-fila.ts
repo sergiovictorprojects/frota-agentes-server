@@ -13,8 +13,8 @@ import { finalizarRun, iniciarRun, obterFlags, type StatusRun } from '../db/oper
 import { LlmError } from '../llm/llm.ts';
 import type { Notificador } from '../notify/notificador.ts';
 import { log, mensagemDeErro } from '../util/log.ts';
-import { ehParadaSistemica, statusDaInterrupcao } from './erros.ts';
-import { processarDemanda, type DependenciasDemanda, type ResultadoDemanda } from './processar-demanda.ts';
+import { codigoDoErro, ehParadaSistemica, statusDaInterrupcao } from './erros.ts';
+import { criarEmissor, processarDemanda, type DependenciasDemanda, type ResultadoDemanda } from './processar-demanda.ts';
 
 export interface DependenciasFila extends DependenciasDemanda {
   notificador: Notificador;
@@ -36,7 +36,7 @@ export interface ResumoRun {
   interrompidaPor: string | null;
 }
 
-async function registrarFalha(d: DependenciasFila, demanda: Demanda, erro: unknown): Promise<FalhaDemanda> {
+async function registrarFalha(d: DependenciasFila, demanda: Demanda, runId: string, erro: unknown): Promise<FalhaDemanda> {
   log('erro', 'erro_demanda', { demandaId: demanda.id, erro: mensagemDeErro(erro) });
   // Mensagens de LlmError são controladas por nós; qualquer outro erro pode carregar detalhes internos.
   const motivo = erro instanceof LlmError ? erro.message : 'Falha inesperada no processamento.';
@@ -53,6 +53,14 @@ async function registrarFalha(d: DependenciasFila, demanda: Demanda, erro: unkno
     }`,
   });
   await atualizarDemanda(d.pool, demanda.id, { status: statusFinal });
+
+  const codigoErro = erro instanceof LlmError ? codigoDoErro(erro) : 'falha_inesperada';
+  const emitir = criarEmissor(d.pool, demanda.id, { correlacaoId: runId, runId, tentativa: tentativas });
+  if (statusFinal === 'Falhou') {
+    await emitir('demanda_falhou', 'sistema', { codigoErro });
+  } else {
+    await emitir('demanda_devolvida_para_fila', 'sistema', { motivoDevolucao: 'falha_da_demanda', codigoErro });
+  }
   return { titulo: demanda.titulo, motivo, statusFinal };
 }
 
@@ -60,9 +68,20 @@ async function processarLote(d: DependenciasFila, runId: string, demandas: Deman
   const resumo: ResumoRun = { runId, status: 'ok', processadas: [], falhas: [], interrompidaPor: null };
 
   for (const demanda of demandas) {
+    // tentativa: null aqui — reivindicar não é executar. O número que essa tentativa teria, se chegar
+    // a começar, fica em metadata.tentativaPlanejada (informativo, nunca prova de execução).
+    const tentativaPlanejada = demanda.tentativas + 1;
+    const emitirReivindicacao = criarEmissor(d.pool, demanda.id, { correlacaoId: runId, runId, tentativa: null });
+    await emitirReivindicacao('demanda_reivindicada', 'sistema', { tentativaPlanejada });
+
     if (resumo.interrompidaPor) {
       // Nunca começou: devolve sem mexer nas tentativas.
       await devolverParaFila(d.pool, demanda.id);
+      await emitirReivindicacao('demanda_devolvida_para_fila', 'sistema', {
+        motivoDevolucao: 'nunca_iniciada',
+        codigoErro: null,
+        tentativaPlanejada,
+      });
       continue;
     }
     try {
@@ -78,8 +97,17 @@ async function processarLote(d: DependenciasFila, runId: string, demandas: Deman
         resumo.status = statusDaInterrupcao(erro);
         // Já tinha começado: essa tentativa não conta contra a demanda.
         await devolverParaFila(d.pool, demanda.id, true);
+        const emitirDevolucao = criarEmissor(d.pool, demanda.id, {
+          correlacaoId: runId,
+          runId,
+          tentativa: demanda.tentativas + 1,
+        });
+        await emitirDevolucao('demanda_devolvida_para_fila', 'sistema', {
+          motivoDevolucao: 'parada_sistemica',
+          codigoErro: codigoDoErro(erro),
+        });
       } else {
-        resumo.falhas.push(await registrarFalha(d, demanda, erro));
+        resumo.falhas.push(await registrarFalha(d, demanda, runId, erro));
       }
     }
   }
@@ -87,7 +115,9 @@ async function processarLote(d: DependenciasFila, runId: string, demandas: Deman
 }
 
 // Uma run que morreu no meio deixa demandas presas; ao recuperá-las, a linha do tempo explica o que houve.
-async function recuperarAbandonadas(d: DependenciasFila): Promise<void> {
+// runId aqui é o da run atual (o watchdog), não o da run abandonada — que já não existe mais como
+// identidade válida para correlacionar novos eventos.
+async function recuperarAbandonadas(d: DependenciasFila, runId: string): Promise<void> {
   const abandonadas = await liberarDemandasAbandonadas(d.pool, d.minutosAbandono);
   if (abandonadas.length > 0) log('aviso', 'demandas_abandonadas', { total: abandonadas.length });
   for (const a of abandonadas) {
@@ -96,6 +126,13 @@ async function recuperarAbandonadas(d: DependenciasFila): Promise<void> {
         ? 'A execução anterior foi interrompida e o limite de tentativas foi atingido: a demanda foi marcada como Falhou.'
         : 'A execução anterior foi interrompida antes de terminar: a demanda voltou para a fila.';
     await adicionarMensagem(d.pool, { demandaId: a.id, autor: 'agente', texto });
+
+    const emitir = criarEmissor(d.pool, a.id, { correlacaoId: runId, runId, tentativa: a.tentativas });
+    if (a.status === 'Falhou') {
+      await emitir('demanda_falhou', 'sistema', { codigoErro: 'claim_expirado' });
+    } else {
+      await emitir('demanda_devolvida_para_fila', 'sistema', { motivoDevolucao: 'watchdog', codigoErro: 'claim_expirado' });
+    }
   }
 }
 
@@ -134,7 +171,7 @@ function resumoVazio(runId: string, status: 'ok' | 'pausada'): ResumoRun {
 export async function processarFila(d: DependenciasFila, gatilho: 'cron' | 'manual' = 'cron'): Promise<ResumoRun> {
   const runId = await iniciarRun(d.pool, gatilho);
   try {
-    await recuperarAbandonadas(d);
+    await recuperarAbandonadas(d, runId);
 
     if ((await obterFlags(d.pool)).pausado) {
       await finalizarRun(d.pool, runId, { status: 'pausada', demandasProcessadas: 0 });

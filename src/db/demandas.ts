@@ -157,13 +157,13 @@ export async function liberarDemandasAbandonadas(
   db: Db,
   minutos: number,
   maxTentativas: number = MAX_TENTATIVAS,
-): Promise<{ id: string; status: StatusDemanda }[]> {
-  const { rows } = await db.query<{ id: string; status: StatusDemanda }>(
+): Promise<{ id: string; status: StatusDemanda; tentativas: number }[]> {
+  const { rows } = await db.query<{ id: string; status: StatusDemanda; tentativas: number }>(
     `UPDATE demandas
         SET status = CASE WHEN tentativas >= $2 THEN 'Falhou' ELSE 'Nova' END,
             claimed_by_run = NULL, claimed_at = NULL, atualizado_em = now()
       WHERE status = 'Em andamento' AND claimed_at < now() - make_interval(mins => $1::int)
-      RETURNING id, status`,
+      RETURNING id, status, tentativas`,
     [minutos, maxTentativas],
   );
   return rows;

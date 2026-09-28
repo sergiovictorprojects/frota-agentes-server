@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto';
 import type { FastifyInstance, FastifyReply } from 'fastify';
 import type pg from 'pg';
 import { z } from 'zod';
@@ -13,6 +14,7 @@ import { adicionarMensagem, listarMensagens } from '../../db/mensagens.ts';
 import { obterFlags, pausarFrota, retomarFrota, ultimaRun } from '../../db/operacao.ts';
 import { listarRelatorios, relatorioMaisRecente } from '../../db/relatorios.ts';
 import { CATEGORIAS, PRIORIDADES, STATUS } from '../../domain/setores.ts';
+import { criarEmissor } from '../../orchestrator/processar-demanda.ts';
 import { log } from '../../util/log.ts';
 import { credenciaisValidas, origemConfiavel } from '../auth.ts';
 import type { Bruto } from './html.ts';
@@ -160,6 +162,10 @@ function registrarCriacao(app: FastifyInstance, d: DependenciasUi, r: Respostas)
       return r.enviar(reply, 400, 'Nova demanda', 'nova', paginaNova({ valores, erros }));
     }
     const criada = await criarDemanda(d.pool, validado.data);
+    // Sem run: correlacaoId é gerado uma única vez para esta requisição, nunca reaproveitado.
+    // tentativa: null — criar uma demanda não é executá-la.
+    const emitir = criarEmissor(d.pool, criada.id, { correlacaoId: randomUUID(), runId: null, tentativa: null });
+    await emitir('demanda_criada', 'solicitante', { categoria: criada.categoria, prioridade: criada.prioridade });
     return reply.redirect(`/demandas/${criada.id}`, 303);
   });
 }
@@ -186,13 +192,20 @@ function registrarDetalheEAcoes(app: FastifyInstance, d: DependenciasUi, r: Resp
       setor: demanda.categoria === 'gestores' ? null : demanda.categoria,
       texto: validado.data.texto,
     });
-    await reabrirDemanda(d.pool, demanda.id);
+    const reabertaPorResposta = await reabrirDemanda(d.pool, demanda.id);
+    if (reabertaPorResposta) {
+      // tentativa: null — reabrir não é executar; reabrirDemanda já zera o contador real.
+      const emitir = criarEmissor(d.pool, demanda.id, { correlacaoId: randomUUID(), runId: null, tentativa: null });
+      await emitir('demanda_reaberta', 'solicitante', { origem: 'resposta' });
+    }
     return reply.redirect(`/demandas/${demanda.id}`, 303);
   });
 
   app.post<{ Params: { id: string } }>('/demandas/:id/reabrir', async (req, reply) => {
     const reaberta = UUID.test(req.params.id) ? await reabrirDemanda(d.pool, req.params.id) : null;
     if (!reaberta) return r.conflito(reply, 'Só é possível reabrir demandas que falharam ou estão esperando resposta.');
+    const emitir = criarEmissor(d.pool, reaberta.id, { correlacaoId: randomUUID(), runId: null, tentativa: null });
+    await emitir('demanda_reaberta', 'sistema', { origem: 'manual' });
     return reply.redirect(`/demandas/${reaberta.id}`, 303);
   });
 

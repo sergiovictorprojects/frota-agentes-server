@@ -1,5 +1,15 @@
 # Taxonomia de Eventos Operacionais
 
+> **Nota de implementação (Fase 1 — Entrega 1):** a primeira implementação real de `agent_events`
+> (migration `002_agent_events.sql`, repositório `src/db/eventos.ts`) diverge do rascunho SQL abaixo.
+> Ela usa um cursor global `id bigint GENERATED ALWAYS AS IDENTITY` como ordenação oficial de qualquer
+> consulta, mais uma sequência informativa por demanda (`sequencia_demanda`), em vez de um único campo
+> `sequence`; não há `agent_step_id`/`agent_id`; e os nomes de coluna são em português, para bater com o
+> resto do schema. Os detalhes e o porquê de cada decisão estão em
+> [`docs/adr/0002-ledger-eventos-operacionais.md`](adr/0002-ledger-eventos-operacionais.md). O SQL abaixo
+> continua sendo a referência conceitual da taxonomia (categorias, canais consumidores) — "não aplicar
+> este SQL sem comparar com as migrations atuais" continua valendo.
+
 ## Objetivo
 
 Eventos operacionais são o registro cronológico e append-only de fatos relevantes da plataforma. Eles alimentam:
@@ -115,12 +125,27 @@ Quando a etapa gerar material grande, grave:
 
 ## Ordem e consistência
 
-1. Sequence deve aumentar por run.
-2. Eventos do mesmo run devem ser consultáveis em ordem estável.
+1. Na implementação real (ver a nota de implementação no topo deste documento), quem cresce
+   monotonicamente é o cursor global `id` — nunca uma sequência por run. `sequencia_demanda` cresce por
+   demanda, também nunca por run (uma demanda pode ser processada por runs diferentes ao longo do tempo).
+2. Eventos da mesma demanda devem ser consultáveis em ordem estável — hoje, por `id` (ver
+   `listarEventosDaDemanda`/`listarEventosDaRun` em `src/db/eventos.ts`).
 3. Correções devem produzir novo evento, nunca alterar o evento anterior.
-4. Uma mudança de estado e o evento correspondente devem ser gravados na mesma transação quando possível.
+4. Uma mudança de estado e o evento correspondente devem ser gravados na mesma transação quando possível;
+   na implementação atual isso é uma exceção deliberada, não a regra — ver a advertência de consistência
+   em `registrarEvento` (`src/db/eventos.ts`): o ledger é observacional e degradável, dual-write fail-open,
+   em transação própria e separada da transação que grava o estado real.
 5. Se houver publicação assíncrona para SSE, publique somente após a persistência bem-sucedida.
-6. SSE deve suportar cursor de sequência e replay.
+6. SSE deve suportar cursor de sequência e replay. **Atenção:** `id` (cursor global, `GENERATED ALWAYS AS
+   IDENTITY`) é estável para leitura pontual — mesma ordem sempre, para o mesmo conjunto de linhas — mas
+   **não é**, por si só, um cursor sem perdas para consumo incremental (`WHERE id > cursor`) sob escritores
+   concorrentes: uma transação com `id` menor pode fazer `COMMIT` depois de uma com `id` maior (o valor da
+   sequência é reservado antes do commit), e um consumidor que já passou pelo `id` maior nunca voltaria
+   para pegar o menor. Isso é seguro para leitura direta da timeline de uma demanda (que já espera
+   consistência eventual), mas não é suficiente, sozinho, para um SSE sem perdas na Fase 5 — essa fase vai
+   exigir um outbox transacional (uma tabela de outbox gravada na mesma transação do estado real, com um
+   publicador que lê e apaga/marca de forma serializada) ou uma publicação serializada por um único
+   processo, não a leitura direta de `agent_events` por cursor de `id`.
 
 ## Exemplo de payload seguro
 
