@@ -59,9 +59,9 @@ Cada regra tem:
 
   | Campo | Domínio |
   |---|---|
-  | `agente` | a `chave` de um agente no catálogo (`agentes.chave`) — identificador `^[a-z0-9][a-z0-9._:-]{0,99}$`, nunca texto livre |
+  | `agente` | identificador validado `^[a-z0-9][a-z0-9._:-]{0,99}$` (normalmente a `chave` de um agente, `agentes.chave`), nunca texto livre — **não** é chave estrangeira obrigatória para `agentes` (ver "Agente fora do catálogo" abaixo) |
   | `papel` | `coordenador`, `executor`, `avaliador`, `auditor` |
-  | `categoria` | um dos 19 valores de `Categoria` (`gestores`, `d1`..`d18`) |
+  | `categoria` | um dos 19 valores de `Categoria` (`gestores`, `d1`..`d18`) — sempre a categoria **da demanda**, inclusive no estágio de auditoria (permite filtrar políticas de auditoria pelo tipo de demanda) |
   | `estado` | `ativo`, `suspenso`, `sob_demanda` (o estado do agente) ou `desconhecido` (agente fora do catálogo — ver abaixo) |
   | `modelo` | o modelo permitido/chamado — identificador no mesmo formato de `agente` |
   | `operacao` | `execucao` ou `auditoria` — os dois únicos pontos do fluxo real que chamam um modelo |
@@ -84,7 +84,11 @@ Cada regra tem:
   `estado: "desconhecido"` — nunca `ativo`. Assim uma regra com `estado: "ativo"` nunca casa com um agente
   inexistente, e uma política pode mirar `estado: "desconhecido"` explicitamente. `desconhecido` existe só
   no vocabulário de políticas: `agentes.estado` continua aceitando apenas `ativo`, `suspenso` e
-  `sob_demanda`.
+  `sob_demanda`. É exatamente por isso que `agente` é um identificador validado e não uma chave
+  estrangeira: `desconhecido` só faz sentido para uma chave ausente do catálogo (que hoje nasce vazio).
+  Nesse caso o `papel` vem do ponto do fluxo, não do catálogo: na execução, `papelDoSetor(categoria da
+  demanda)`; na auditoria, sempre `auditor`. Com o agente cadastrado, `papel` e `estado` vêm sempre do
+  catálogo.
 
 ### `avaliacoes_politica`
 

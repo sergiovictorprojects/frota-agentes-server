@@ -1,5 +1,5 @@
 import type pg from 'pg';
-import { agenteEstaAutorizado, obterAgentePorChave, papelDoSetor } from '../db/agentes.ts';
+import { agenteEstaAutorizado, obterAgentePorChave, papelDoSetor, type PapelAgente } from '../db/agentes.ts';
 import { atualizarDemanda, registrarTentativa, type Demanda } from '../db/demandas.ts';
 import { montarChaveIdempotencia, registrarEvento, type TipoEvento } from '../db/eventos.ts';
 import { adicionarMensagem, listarMensagens } from '../db/mensagens.ts';
@@ -105,9 +105,13 @@ interface Auditoria {
 // no catálogo acontece antes dela; por isso esta função inteira também é fail-open. Sem isso, uma falha
 // nessa leitura no estágio "post" (que roda depois de a demanda já estar Concluída) subiria até
 // processar-fila e devolveria a demanda para a fila, reprocessando algo já entregue.
+// papelEsperado é o papel que o ponto do fluxo exige (execução: papelDoSetor(categoria da demanda);
+// auditoria: "auditor") e só é usado quando o agente não está no catálogo — com o agente cadastrado,
+// vale sempre o papel do catálogo.
 async function avaliarEstagio(
   pool: pg.Pool,
   agenteChave: string,
+  papelEsperado: PapelAgente,
   demanda: Demanda,
   operacao: OperacaoAvaliada,
   modelo: string,
@@ -125,7 +129,9 @@ async function avaliarEstagio(
       estagio,
       contexto: {
         agente: agenteChave,
-        papel: agente?.papel ?? papelDoSetor(demanda.categoria),
+        papel: agente?.papel ?? papelEsperado,
+        // Sempre a categoria da demanda (também na auditoria): permite filtrar políticas de auditoria
+        // por tipo de demanda.
         categoria: demanda.categoria,
         // Agente fora do catálogo nunca é "ativo": vira o estado fechado "desconhecido".
         estado: agente?.estado ?? ESTADO_AGENTE_DESCONHECIDO,
@@ -189,14 +195,14 @@ async function tratarPendencia(
     await checkpoint(`Ação humana necessária: ${exec.acaoHumana.motivo}${acoes}`, papel);
     await atualizarDemanda(d.pool, demanda.id, { status: 'Aguardando humano', bloqueioHumano: exec.acaoHumana });
     await emitir('pendencia_humana_registrada', papel, { totalAcoes: exec.acaoHumana.acoesNecessarias.length });
-    await avaliarEstagio(d.pool, papel, demanda, 'execucao', d.modeloTrabalho, 'post', runId, tentativa);
+    await avaliarEstagio(d.pool, papel, papelDoSetor(demanda.categoria), demanda, 'execucao', d.modeloTrabalho, 'post', runId, tentativa);
     return { ...base, statusFinal: 'Aguardando humano' };
   }
   if (exec.insumoCritico?.alternativa === 'B') {
     await checkpoint(`Insumo necessário (alternativa B): ${exec.insumoCritico.descricao}`, papel);
     await atualizarDemanda(d.pool, demanda.id, { status: 'Aguardando insumo', alternativaInsumo: 'B' });
     await emitir('pendencia_insumo_registrada', papel, { alternativa: 'B' });
-    await avaliarEstagio(d.pool, papel, demanda, 'execucao', d.modeloTrabalho, 'post', runId, tentativa);
+    await avaliarEstagio(d.pool, papel, papelDoSetor(demanda.categoria), demanda, 'execucao', d.modeloTrabalho, 'post', runId, tentativa);
     return { ...base, statusFinal: 'Aguardando insumo' };
   }
   return null;
@@ -247,7 +253,7 @@ async function auditar(
   const regras = regrasDosSetores([demanda.categoria, ...exec.setoresEnvolvidos]);
 
   // "during": antes da ação de auditoria em si — modo shadow, nunca bloqueia.
-  await avaliarEstagio(d.pool, PAPEL_AUDITOR, demanda, 'auditoria', d.modeloAuditoria, 'during', contexto.runId, tentativa);
+  await avaliarEstagio(d.pool, PAPEL_AUDITOR, 'auditor', demanda, 'auditoria', d.modeloAuditoria, 'during', contexto.runId, tentativa);
 
   // O auditor também passa pela mesma checagem do catálogo que a execução: existe, está ativo e o
   // modelo bate com modelo_permitido. Se não, nenhuma chamada ao modelo de auditoria acontece — a
@@ -418,7 +424,7 @@ export async function processarDemanda(d: DependenciasDemanda, demanda: Demanda,
   await checkpoint(`Executando o trabalho com ${setor.papel} (${d.modeloTrabalho}).`, setor.papel);
 
   // "pre": antes de iniciar a execução em si — modo shadow, nunca bloqueia.
-  await avaliarEstagio(d.pool, setor.papel, demanda, 'execucao', d.modeloTrabalho, 'pre', runId, tentativaAtual);
+  await avaliarEstagio(d.pool, setor.papel, papelDoSetor(demanda.categoria), demanda, 'execucao', d.modeloTrabalho, 'pre', runId, tentativaAtual);
 
   let exec: ResultadoExecucao;
   try {
@@ -458,7 +464,7 @@ export async function processarDemanda(d: DependenciasDemanda, demanda: Demanda,
   const statusFinal = await registrarResultado(d, demanda, exec, entrega, auditoria, relogio() - inicio, emitir);
   await checkpoint(`Relatório registrado. Status: ${statusFinal}.`, null);
   // "post": depois do resultado — modo shadow, nunca bloqueia.
-  await avaliarEstagio(d.pool, setor.papel, demanda, 'execucao', d.modeloTrabalho, 'post', runId, tentativaAtual);
+  await avaliarEstagio(d.pool, setor.papel, papelDoSetor(demanda.categoria), demanda, 'execucao', d.modeloTrabalho, 'post', runId, tentativaAtual);
 
   return {
     demandaId: demanda.id,

@@ -112,4 +112,36 @@ describe('Policy Engine em modo shadow dentro do orquestrador', () => {
     expect(avaliacoes[0]).toMatchObject({ estagio: 'pre', decisao: 'warn' });
     expect(avaliacoes.some((a) => a.decisao === 'deny')).toBe(false);
   });
+
+  it('auditor fora do catalogo: papel "auditor" (nunca o papel do setor da demanda) e regra de auditoria casa em shadow', async () => {
+    vi.mocked(obterAgentePorChave).mockResolvedValue(null);
+    const politica = await criarPolitica(db.pool, { chave: `pol-orq-auditor-${randomUUID()}`, nome: 'x', descricao: 'x' });
+    const regra = await criarRegra(db.pool, {
+      politicaId: politica.id,
+      chave: `regra-auditor-desconhecido-${randomUUID()}`,
+      estagio: 'during',
+      decisao: 'require_approval',
+      condicao: { agente: PAPEL_AUDITOR, papel: 'auditor', estado: 'desconhecido', operacao: 'auditoria' },
+    });
+    const { demanda, runId } = await demandaReivindicada();
+
+    const r = await processarDemanda(deps(llmPadrao()), demanda, runId);
+
+    // Shadow: require_approval é só registrado; a auditoria roda e a demanda conclui.
+    expect(r.statusFinal).toBe('Concluída');
+    expect(await obterDemanda(db.pool, demanda.id)).toMatchObject({ status: 'Concluída' });
+    const avaliacoes = await listarAvaliacoesDaDemanda(db.pool, demanda.id);
+    const during = avaliacoes.find((a) => a.estagio === 'during');
+    expect(during).toMatchObject({ decisao: 'require_approval', regraId: regra.id });
+    expect(during!.contexto).toMatchObject({
+      agente: PAPEL_AUDITOR,
+      papel: 'auditor',
+      estado: 'desconhecido',
+      operacao: 'auditoria',
+      // A categoria continua sendo a da demanda, também na auditoria.
+      categoria: 'd1',
+    });
+    // Na execução, o papel de fallback continua sendo o do setor da demanda (d1 → executor).
+    expect(avaliacoes.find((a) => a.estagio === 'pre')!.contexto.papel).toBe('executor');
+  });
 });

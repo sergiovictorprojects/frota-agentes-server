@@ -79,7 +79,10 @@ Deliberadamente fora, para manter esta entrega mínima e reversível:
   que a allowlist de condição usa — o Policy Engine não precisou inventar um vocabulário novo, reaproveitou
   o que o catálogo de agentes já validava. A única extensão é `estado: "desconhecido"`, que existe só no
   vocabulário de políticas (nunca em `agentes.estado`) e marca um agente fora do catálogo — para que uma
-  regra `estado: "ativo"` nunca case com um agente inexistente.
+  regra `estado: "ativo"` nunca case com um agente inexistente. Por isso `agente` no contexto é um
+  identificador validado, não uma chave estrangeira para `agentes`; com o agente fora do catálogo, o
+  `papel` é o esperado pelo ponto do fluxo (execução: `papelDoSetor(categoria)`; auditoria: `auditor`), e
+  `categoria` é sempre a da demanda, inclusive na auditoria.
 - A allowlist é aplicada em duas camadas com a mesma regra: Zod na aplicação e `CHECK
   (politica_condicao_valida(...))` no banco. Uma regra inválida não entra nem por SQL direto; o fail-open
   do motor fica reservado a indisponibilidade ou corrupção inesperada.
