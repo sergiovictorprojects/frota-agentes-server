@@ -13,9 +13,14 @@ aprovação de verdade**. Nenhum status de demanda é alterado por este motor ne
   fila de aprovação;
 - UI de administração de políticas — criar/ativar/desativar políticas e regras hoje é só via as funções do
   repositório (`src/db/politicas.ts`), chamadas por script/console, nunca por uma rota HTTP;
-- qualquer política real pré-carregada — nenhuma política é seedada no boot; o catálogo de políticas
-  nasce vazio, e o motor em produção hoje sempre decide `allow` (nenhuma regra ativa existe até alguém
-  criar uma).
+- qualquer política real pré-carregada — **o catálogo de regras vazio é intencional**: nenhuma política é
+  seedada no boot, e sem regra ativa o motor decide `allow` por padrão. Em modo shadow isso é o
+  comportamento esperado: a trilha (`avaliacoes_politica` e `politica_avaliada` no ledger) já é gravada em
+  toda execução, e as primeiras regras serão criadas de forma deliberada, revisadas e observadas em shadow
+  antes de qualquer enforcement — nunca como efeito colateral de um deploy;
+- mais visibilidade de políticas no dossiê — o dossiê já mostra o evento seguro `politica_avaliada` na
+  linha do tempo (estágio, decisão, ids e versão da regra); uma seção própria de políticas no dossiê
+  (lendo `avaliacoes_politica`) fica como escopo futuro.
 
 Ver `docs/adr/0004-policy-engine-shadow.md` para o raciocínio completo por trás de "shadow antes de
 enforcement".
@@ -54,19 +59,32 @@ Cada regra tem:
 
   | Campo | Domínio |
   |---|---|
-  | `agente` | a `chave` de um agente no catálogo (`agentes.chave`) |
+  | `agente` | a `chave` de um agente no catálogo (`agentes.chave`) — identificador `^[a-z0-9][a-z0-9._:-]{0,99}$`, nunca texto livre |
   | `papel` | `coordenador`, `executor`, `avaliador`, `auditor` |
   | `categoria` | um dos 19 valores de `Categoria` (`gestores`, `d1`..`d18`) |
-  | `estado` | `ativo`, `suspenso`, `sob_demanda` (o estado do agente) |
-  | `modelo` | o modelo permitido/chamado |
+  | `estado` | `ativo`, `suspenso`, `sob_demanda` (o estado do agente) ou `desconhecido` (agente fora do catálogo — ver abaixo) |
+  | `modelo` | o modelo permitido/chamado — identificador no mesmo formato de `agente` |
   | `operacao` | `execucao` ou `auditoria` — os dois únicos pontos do fluxo real que chamam um modelo |
   | `prioridade` | `CRITICAL`, `HIGH`, `MEDIUM`, `LOW` |
 
   Todos os campos são opcionais; uma condição casa com um contexto quando **todo campo presente na
   condição** é igual ao campo correspondente do contexto (campos ausentes na condição são "qualquer
   valor"). Isto é o que torna o motor "sem LLM, sem código arbitrário, sem expressões livres": uma
-  condição nunca é uma função nem uma string interpretada — é só um objeto raso de igualdade, validado por
-  um schema Zod `.strict()` (e por um `CHECK` correspondente na migration).
+  condição nunca é uma função nem uma string interpretada — é só um objeto raso de igualdade.
+
+  **Validação em duas camadas, com a mesma regra:** o schema Zod `.strict()` em `src/db/politicas.ts`
+  (`CondicaoSchema`) e o `CHECK (politica_condicao_valida(condicao))` na migration. O `CHECK` faz o banco
+  rejeitar, mesmo num `INSERT` por SQL direto: JSON que não seja objeto; campo fora da allowlist; valor que
+  não seja string (objeto aninhado, array, número, booleano, `null`); valor fora do domínio fechado de cada
+  campo; e texto livre em `agente`/`modelo`. Uma regra inválida, portanto, não entra no banco por nenhum
+  caminho normal. `test/db/politicas.test.ts` tenta inserir por SQL direto cada caso inválido (e cada
+  valor válido de cada domínio), o que também pega qualquer divergência entre a lista do banco e a do Zod.
+
+  **Agente fora do catálogo:** se o agente avaliado não existe em `agentes`, o contexto recebe
+  `estado: "desconhecido"` — nunca `ativo`. Assim uma regra com `estado: "ativo"` nunca casa com um agente
+  inexistente, e uma política pode mirar `estado: "desconhecido"` explicitamente. `desconhecido` existe só
+  no vocabulário de políticas: `agentes.estado` continua aceitando apenas `ativo`, `suspenso` e
+  `sob_demanda`.
 
 ### `avaliacoes_politica`
 
@@ -74,8 +92,8 @@ O log append-only de cada avaliação, em modo shadow. Cursor global (`id bigint
 `agent_events`. Cada linha registra `demanda_id`, `run_id`, `regra_id`/`politica_id` (ambos `NULL` juntos
 quando nenhuma regra ativa casou — a decisão implícita `allow` ainda é registrada, para completude
 observacional), `estagio`, `decisao`, `contexto` (o mesmo formato fechado da condição — nunca texto livre
-da demanda) e `versao_regra` (snapshot da versão da regra no momento da avaliação). Um gatilho bloqueia
-`UPDATE`/`DELETE` diretos.
+da demanda, validado pelo mesmo `CHECK` da condição e exigindo os sete campos) e `versao_regra` (snapshot
+da versão da regra no momento da avaliação). Um gatilho bloqueia `UPDATE`/`DELETE` diretos.
 
 ## O motor: determinístico, sem LLM
 
@@ -93,11 +111,16 @@ da demanda) e `versao_regra` (snapshot da versão da regra no momento da avalia�
    `src/db/eventos.ts`).
 
 Nenhum passo usa um modelo de linguagem. Não há caminho para uma "condição" conter código a ser executado
-— o schema Zod `.strict()` rejeita qualquer campo fora da allowlist antes de a regra chegar ao banco.
+— o Zod rejeita qualquer campo fora da allowlist antes de a regra chegar ao banco, e o `CHECK` rejeita no
+próprio banco o que chegar por outro caminho.
 
-**Fail-open, nunca bloqueia**: `avaliarEregistrar()` nunca lança. Uma falha ao gravar (banco fora do ar,
-erro de validação) é logada e ignorada, retornando `allow` — o mesmo espírito fail-open do ledger de
-eventos (`registrarEvento`, Fase 1). Quem chama (o orquestrador) nunca ramifica no valor retornado para
+**Fail-open, nunca bloqueia**: `avaliarEregistrar()` nunca lança, e `avaliarEstagio()` no orquestrador
+também é fail-open por inteiro (inclusive a leitura do agente no catálogo, feita antes da avaliação — sem
+isso, uma falha nessa leitura no estágio `post`, que roda com a demanda já Concluída, devolveria a demanda
+para a fila). O fail-open existe para indisponibilidade ou corrupção inesperada (banco fora do ar, linha
+adulterada): a falha é logada (`erro_avaliacao_politica`) e ignorada — o mesmo espírito fail-open do
+ledger de eventos (`registrarEvento`, Fase 1). Uma regra inválida não é um desses casos: ela é barrada na
+entrada pelo `CHECK`. Quem chama (o orquestrador) nunca ramifica no valor retornado para
 alterar o fluxo da demanda; o retorno existe só para quem quiser inspecionar/logar, nunca para decidir.
 
 ## Integração no orquestrador (shadow — três pontos)

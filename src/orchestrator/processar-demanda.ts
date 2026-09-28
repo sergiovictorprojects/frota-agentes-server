@@ -3,7 +3,7 @@ import { agenteEstaAutorizado, obterAgentePorChave, papelDoSetor } from '../db/a
 import { atualizarDemanda, registrarTentativa, type Demanda } from '../db/demandas.ts';
 import { montarChaveIdempotencia, registrarEvento, type TipoEvento } from '../db/eventos.ts';
 import { adicionarMensagem, listarMensagens } from '../db/mensagens.ts';
-import { avaliarEregistrar, type EstagioPolitica, type OperacaoAvaliada } from '../db/politicas.ts';
+import { avaliarEregistrar, ESTADO_AGENTE_DESCONHECIDO, type EstagioPolitica, type OperacaoAvaliada } from '../db/politicas.ts';
 import { criarEntrega, registrarAprendizado, salvarRelatorio, type Metricas } from '../db/relatorios.ts';
 import { comTransacao } from '../db/tx.ts';
 import { CATEGORIAS, SETORES, type Categoria, type StatusDemanda } from '../domain/setores.ts';
@@ -127,7 +127,8 @@ async function avaliarEstagio(
         agente: agenteChave,
         papel: agente?.papel ?? papelDoSetor(demanda.categoria),
         categoria: demanda.categoria,
-        estado: agente?.estado ?? 'ativo',
+        // Agente fora do catálogo nunca é "ativo": vira o estado fechado "desconhecido".
+        estado: agente?.estado ?? ESTADO_AGENTE_DESCONHECIDO,
         modelo,
         operacao,
         prioridade: demanda.prioridade,

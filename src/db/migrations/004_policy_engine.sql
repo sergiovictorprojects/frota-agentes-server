@@ -75,6 +75,44 @@ CREATE TRIGGER politicas_controla_mudancas
   BEFORE UPDATE ON politicas
   FOR EACH ROW EXECUTE FUNCTION politicas_controlar_mudancas();
 
+-- Allowlist da condição (regras_politica.condicao) e do contexto avaliado (avaliacoes_politica.contexto),
+-- validada NO BANCO — não só pela aplicação: um INSERT por SQL direto com condição fora da allowlist é
+-- rejeitado pelo CHECK, em vez de entrar e depois quebrar a leitura das regras. É a mesma regra do Zod em
+-- src/db/politicas.ts (CondicaoSchema/ContextoSchema); test/db/politicas.test.ts confere, por SQL direto,
+-- que cada valor válido de cada domínio é aceito e que tudo fora dele é rejeitado — é esse teste que pega
+-- qualquer divergência entre as duas listas.
+--   * precisa ser um objeto JSON (nunca array, string, número, null);
+--   * só as chaves agente, papel, categoria, estado, modelo, operacao e prioridade;
+--   * todo valor é uma string (nunca objeto aninhado, array, número, booleano ou null);
+--   * papel/categoria/estado/operacao/prioridade: só os domínios fechados abaixo;
+--   * agente/modelo: identificador curto e controlado (mesmo formato do "ator"), nunca texto livre.
+-- "desconhecido" em estado não é um estado de agente do catálogo (agentes.estado não o aceita): é o valor
+-- que o orquestrador usa quando o agente avaliado não existe no catálogo, para que uma regra "estado:
+-- ativo" nunca case com um agente inexistente e uma regra futura possa mirar esse caso explicitamente.
+CREATE FUNCTION politica_condicao_valida(c jsonb) RETURNS boolean
+LANGUAGE sql IMMUTABLE AS $$
+  SELECT CASE
+    WHEN c IS NULL OR jsonb_typeof(c) <> 'object' THEN false
+    ELSE NOT EXISTS (
+      SELECT 1
+        FROM jsonb_each(c) AS e(chave, valor)
+       WHERE jsonb_typeof(e.valor) <> 'string'
+          OR NOT CASE e.chave
+               WHEN 'agente' THEN (e.valor #>> '{}') ~ '^[a-z0-9][a-z0-9._:-]{0,99}$'
+               WHEN 'modelo' THEN (e.valor #>> '{}') ~ '^[a-z0-9][a-z0-9._:-]{0,99}$'
+               WHEN 'papel' THEN (e.valor #>> '{}') IN ('coordenador','executor','avaliador','auditor')
+               WHEN 'categoria' THEN (e.valor #>> '{}') IN (
+                 'gestores','d1','d2','d3','d4','d5','d6','d7','d8','d9','d10','d11','d12','d13','d14','d15','d16','d17','d18'
+               )
+               WHEN 'estado' THEN (e.valor #>> '{}') IN ('ativo','suspenso','sob_demanda','desconhecido')
+               WHEN 'operacao' THEN (e.valor #>> '{}') IN ('execucao','auditoria')
+               WHEN 'prioridade' THEN (e.valor #>> '{}') IN ('CRITICAL','HIGH','MEDIUM','LOW')
+               ELSE false
+             END
+    )
+  END
+$$;
+
 -- Regras: totalmente append-only, sem nenhum campo mutável — mudar uma condição ou decisão é criar uma
 -- regra nova (novo id/chave), nunca editar uma existente. Ativar/desativar acontece no nível da política
 -- inteira (politicas.estado), não por regra.
@@ -84,10 +122,9 @@ CREATE TABLE regras_politica (
   chave text NOT NULL UNIQUE CHECK (char_length(chave) BETWEEN 1 AND 100),
   estagio text NOT NULL CHECK (estagio IN ('pre','during','post')),
   decisao text NOT NULL CHECK (decisao IN ('allow','warn','require_approval','deny')),
-  -- Allowlist estruturada, validada por schema Zod na aplicação (src/db/politicas.ts): só os campos
-  -- agente, papel, categoria, estado, modelo, operacao e prioridade, com os mesmos domínios fechados já
-  -- usados em agentes/demandas — nunca uma expressão livre, nunca código, nunca LLM.
-  condicao jsonb NOT NULL,
+  -- Allowlist estruturada, validada pelo CHECK (politica_condicao_valida, acima) e pelo Zod na aplicação:
+  -- nunca uma expressão livre, nunca código, nunca LLM.
+  condicao jsonb NOT NULL CHECK (politica_condicao_valida(condicao)),
   versao integer NOT NULL DEFAULT 1 CHECK (versao > 0),
   criado_em timestamptz NOT NULL DEFAULT now()
 );
@@ -121,7 +158,11 @@ CREATE TABLE avaliacoes_politica (
   estagio text NOT NULL CHECK (estagio IN ('pre','during','post')),
   decisao text NOT NULL CHECK (decisao IN ('allow','warn','require_approval','deny')),
   -- Snapshot do contexto avaliado — os mesmos campos fechados da condição, nunca texto livre da demanda.
-  contexto jsonb NOT NULL,
+  -- Os sete campos sempre presentes, com o mesmo domínio fechado da condição.
+  contexto jsonb NOT NULL CHECK (
+    politica_condicao_valida(contexto)
+    AND contexto ?& ARRAY['agente','papel','categoria','estado','modelo','operacao','prioridade']
+  ),
   versao_regra integer,
   ocorrido_em timestamptz NOT NULL DEFAULT now()
 );

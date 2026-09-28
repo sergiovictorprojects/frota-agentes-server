@@ -56,8 +56,11 @@ Deliberadamente fora, para manter esta entrega mínima e reversível:
 - **UI de administração de políticas** — criar políticas e regras hoje é só via as funções de
   `src/db/politicas.ts`, chamadas por script ou console. Não há rota HTTP.
 - **Qualquer política pré-carregada** — diferente do catálogo de agentes (Fase 2, Entrega 1, que semeia os
-  19 agentes de `SETORES` no boot), o Policy Engine não semeia nenhuma política. O catálogo nasce vazio, e
-  o motor em produção hoje sempre decide `allow` até que alguém crie uma política e uma regra.
+  19 agentes de `SETORES` no boot), o Policy Engine não semeia nenhuma política. O catálogo vazio é
+  intencional: em modo shadow, sem regra ativa, o motor decide `allow` por padrão, e as primeiras regras
+  serão criadas de forma deliberada e observadas em shadow antes de qualquer enforcement.
+- **Seção de políticas no dossiê** — o dossiê já mostra o evento seguro `politica_avaliada` na linha do
+  tempo; uma seção própria lendo `avaliacoes_politica` fica para uma entrega futura.
 - **Modo "warn"** (a fase intermediária entre shadow e enforce, de `docs/POLICY_AND_SECURITY.md`) — não
   implementado como um modo de ativação separado nesta entrega; `warn` já existe como um valor de
   `decisao` possível (registrado normalmente em modo shadow), mas o conceito de "exibir alertas de verdade
@@ -74,7 +77,12 @@ Deliberadamente fora, para manter esta entrega mínima e reversível:
   colateral: dá espaço para calibrar regras contra tráfego real antes de qualquer coisa depender delas.
 - `agentes.papel`/`categoria`/`estado`/`modelo_permitido` (Fase 2, Entrega 1) já são exatamente os campos
   que a allowlist de condição usa — o Policy Engine não precisou inventar um vocabulário novo, reaproveitou
-  o que o catálogo de agentes já validava.
+  o que o catálogo de agentes já validava. A única extensão é `estado: "desconhecido"`, que existe só no
+  vocabulário de políticas (nunca em `agentes.estado`) e marca um agente fora do catálogo — para que uma
+  regra `estado: "ativo"` nunca case com um agente inexistente.
+- A allowlist é aplicada em duas camadas com a mesma regra: Zod na aplicação e `CHECK
+  (politica_condicao_valida(...))` no banco. Uma regra inválida não entra nem por SQL direto; o fail-open
+  do motor fica reservado a indisponibilidade ou corrupção inesperada.
 
 ## Reversibilidade
 

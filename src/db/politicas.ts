@@ -16,18 +16,29 @@ export const OPERACOES_AVALIADAS = ['execucao', 'auditoria'] as const;
 export type OperacaoAvaliada = (typeof OPERACOES_AVALIADAS)[number];
 
 const ATOR_RE = /^[a-z0-9][a-z0-9_.:-]{0,99}$/;
+// agente e modelo: identificador curto e controlado, nunca texto livre — mesmo formato aplicado pelo CHECK
+// politica_condicao_valida na migration 004.
+const IDENTIFICADOR_RE = /^[a-z0-9][a-z0-9._:-]{0,99}$/;
+
+// Estados que o contexto avaliado pode ter: os do catálogo mais "desconhecido", usado quando o agente não
+// existe no catálogo. Nunca assumir "ativo" para um agente inexistente — uma regra "estado: ativo" não
+// pode casar com ele, e uma regra pode mirar "estado: desconhecido" explicitamente.
+export const ESTADO_AGENTE_DESCONHECIDO = 'desconhecido';
+export const ESTADOS_CONTEXTO = [...ESTADOS_AGENTE, ESTADO_AGENTE_DESCONHECIDO] as const;
+export type EstadoContexto = (typeof ESTADOS_CONTEXTO)[number];
 
 // Allowlist estruturada: só estes sete campos, cada um com um domínio fechado já usado em outro lugar do
 // sistema (agentes, demandas) — nunca uma chave nova, nunca um valor de texto livre. Isto é o que torna o
 // motor "sem LLM, sem código arbitrário, sem expressões livres": uma condição é só um objeto raso de
-// igualdade, nunca uma função nem uma string a ser interpretada.
+// igualdade, nunca uma função nem uma string a ser interpretada. A mesma regra é aplicada no banco pelo
+// CHECK politica_condicao_valida (migration 004), então uma condição inválida não entra nem por SQL direto.
 const CondicaoSchema = z
   .object({
-    agente: z.string().min(1).max(100).optional(),
+    agente: z.string().regex(IDENTIFICADOR_RE).optional(),
     papel: z.enum(PAPEIS_AGENTE).optional(),
     categoria: z.enum(CATEGORIAS).optional(),
-    estado: z.enum(ESTADOS_AGENTE).optional(),
-    modelo: z.string().min(1).max(100).optional(),
+    estado: z.enum(ESTADOS_CONTEXTO).optional(),
+    modelo: z.string().regex(IDENTIFICADOR_RE).optional(),
     operacao: z.enum(OPERACOES_AVALIADAS).optional(),
     prioridade: z.enum(PRIORIDADES).optional(),
   })
@@ -38,11 +49,11 @@ export type CondicaoRegra = z.infer<typeof CondicaoSchema>;
 // do mundo" no momento da avaliação, nunca texto da demanda (título, descrição, plano do modelo etc.).
 const ContextoSchema = z
   .object({
-    agente: z.string().min(1).max(100),
+    agente: z.string().regex(IDENTIFICADOR_RE),
     papel: z.enum(PAPEIS_AGENTE),
     categoria: z.enum(CATEGORIAS),
-    estado: z.enum(ESTADOS_AGENTE),
-    modelo: z.string().min(1).max(100),
+    estado: z.enum(ESTADOS_CONTEXTO),
+    modelo: z.string().regex(IDENTIFICADOR_RE),
     operacao: z.enum(OPERACOES_AVALIADAS),
     prioridade: z.enum(PRIORIDADES),
   })
