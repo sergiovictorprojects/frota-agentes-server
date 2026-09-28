@@ -18,7 +18,9 @@ describe('migrate', () => {
     );
     const nomes = rows.map((r) => r.table_name);
     for (const t of [
+      'agent_events',
       'agent_steps',
+      'agentes',
       'aprendizado_evolucao',
       'demandas',
       'entregas',

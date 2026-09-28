@@ -1,4 +1,5 @@
 import type pg from 'pg';
+import { agenteEstaAutorizado } from '../db/agentes.ts';
 import { atualizarDemanda, registrarTentativa, type Demanda } from '../db/demandas.ts';
 import { montarChaveIdempotencia, registrarEvento, type TipoEvento } from '../db/eventos.ts';
 import { adicionarMensagem, listarMensagens } from '../db/mensagens.ts';
@@ -9,7 +10,7 @@ import { LlmError, type Llm } from '../llm/llm.ts';
 import { paginaDeTexto } from '../util/html.ts';
 import { log, mensagemDeErro } from '../util/log.ts';
 import { calcularAuditoria, indiceGeral, regrasDosSetores, type MetricasAuditoria } from './auditoria.ts';
-import { codigoDoErro, ehParadaSistemica, statusDaInterrupcao, type Interrupcao } from './erros.ts';
+import { AgenteNaoAutorizadoError, codigoDoErro, ehParadaSistemica, statusDaInterrupcao, type Interrupcao } from './erros.ts';
 import {
   sistemaAuditoria,
   sistemaExecucao,
@@ -199,6 +200,16 @@ async function auditar(
   contexto: { runId: string; demandaId: string },
 ): Promise<Auditoria> {
   const regras = regrasDosSetores([demanda.categoria, ...exec.setoresEnvolvidos]);
+
+  // O auditor também passa pela mesma checagem do catálogo que a execução: existe, está ativo e o
+  // modelo bate com modelo_permitido. Se não, nenhuma chamada ao modelo de auditoria acontece — a
+  // demanda ainda conclui (métricas nulas), sem interromper a run inteira (não é parada sistêmica).
+  if (!(await agenteEstaAutorizado(d.pool, PAPEL_AUDITOR, d.modeloAuditoria))) {
+    await checkpoint('Auditoria não realizada: agente avaliador não autorizado.', PAPEL_AUDITOR);
+    await emitir('auditoria_interrompida', PAPEL_AUDITOR, { codigoErro: 'agente_nao_autorizado' });
+    return { resultado: null, chamadas: 0, interrupcao: null };
+  }
+
   await checkpoint('Auditando a entrega contra as regras dos setores envolvidos.', PAPEL_AUDITOR);
 
   let chamadas = 0;
@@ -360,6 +371,13 @@ export async function processarDemanda(d: DependenciasDemanda, demanda: Demanda,
 
   let exec: ResultadoExecucao;
   try {
+    // Fase 2 — Entrega 1 (catálogo de agentes): só valida que o agente solicitado existe no catálogo,
+    // está ativo e o modelo da chamada bate com modelo_permitido. Não muda prompts, não muda a lógica de
+    // fila, não cria agentes dinamicamente. Hoje todo agente seedado nasce "ativo" com o mesmo
+    // modeloTrabalho desta chamada (ver seedAgentesPadrao em src/db/agentes.ts), então isto é um no-op
+    // para o comportamento atual — só passa a barrar de verdade se um operador suspender o agente ou
+    // mudar seu modelo_permitido.
+    if (!(await agenteEstaAutorizado(d.pool, setor.papel, d.modeloTrabalho))) throw new AgenteNaoAutorizadoError(setor.papel);
     ({ valor: exec } = await d.llm.gerar({
       modelo: d.modeloTrabalho,
       papel: setor.papel,

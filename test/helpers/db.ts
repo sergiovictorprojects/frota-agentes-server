@@ -1,6 +1,9 @@
 import { randomUUID } from 'node:crypto';
 import pg from 'pg';
+import { seedAgentesPadrao } from '../../src/db/agentes.ts';
 import { migrate } from '../../src/db/migrate.ts';
+
+const MODELO_PADRAO_TESTES = 'claude-sonnet-5';
 
 export interface TestDb {
   pool: pg.Pool;
@@ -20,7 +23,14 @@ export async function createTestDb(opcoes: { migrar?: boolean } = {}): Promise<T
 
   const url = adminUrl.replace(/\/[^/]*$/, `/${name}`);
   const pool = new pg.Pool({ connectionString: url, max: 10 });
-  if (opcoes.migrar !== false) await migrate(pool);
+  if (opcoes.migrar !== false) {
+    await migrate(pool);
+    // Espelha o boot real (src/main.ts): sem isto, a checagem de autorização do agente em
+    // processarDemanda falharia para toda demanda em todos os testes, já que nenhum agente existiria.
+    // Todo fixture de teste usa o mesmo modelo para modeloTrabalho e modeloAuditoria, então um único
+    // MODELO_PADRAO_TESTES para os dois parâmetros mantém paridade total com esses fixtures.
+    await seedAgentesPadrao(pool, MODELO_PADRAO_TESTES, MODELO_PADRAO_TESTES);
+  }
 
   return {
     pool,

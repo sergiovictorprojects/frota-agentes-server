@@ -33,6 +33,7 @@ export const CODIGOS_ERRO = [
   'orcamento_excedido',
   'frota_pausada',
   'claim_expirado',
+  'agente_nao_autorizado',
   'falha_inesperada',
 ] as const;
 export type CodigoErro = (typeof CODIGOS_ERRO)[number];

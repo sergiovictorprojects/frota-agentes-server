@@ -10,6 +10,19 @@ export interface Interrupcao {
   status: 'pausada' | 'erro';
 }
 
+// Agente sem linha no catálogo, suspenso, ou só sob_demanda sem acionamento explícito. Determinístico
+// para aquele agente — não é parada sistêmica (não interrompe a run inteira, só esta demanda), e retry
+// só ajuda depois que um operador reativar o agente no catálogo.
+export class AgenteNaoAutorizadoError extends Error {
+  readonly chave: string;
+
+  constructor(chave: string) {
+    super(`Agente "${chave}" não está ativo no catálogo.`);
+    this.name = 'AgenteNaoAutorizadoError';
+    this.chave = chave;
+  }
+}
+
 // Erro que não é culpa da demanda: tentar de novo mais tarde pode dar certo e a tentativa não conta.
 // Um 400, 413 ou 422 é determinístico para aquele conteúdo: tratá-lo como falha de sistema repetiria o
 // mesmo erro a cada execução e travaria a fila, porque a demanda problemática é sempre a mais antiga.
@@ -28,6 +41,7 @@ export function statusDaInterrupcao(erro: unknown): 'pausada' | 'erro' {
 export function codigoDoErro(erro: unknown): CodigoErro {
   if (erro instanceof OrcamentoExcedidoError) return 'orcamento_excedido';
   if (erro instanceof FrotaPausadaError) return 'frota_pausada';
+  if (erro instanceof AgenteNaoAutorizadoError) return 'agente_nao_autorizado';
   if (erro instanceof LlmError) {
     if (erro.tipo === 'recusa') return 'llm_recusa';
     if (erro.tipo === 'truncado') return 'llm_truncado';

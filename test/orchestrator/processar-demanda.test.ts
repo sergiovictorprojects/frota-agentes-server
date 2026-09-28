@@ -1,11 +1,15 @@
 import { randomUUID } from 'node:crypto';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
+import { atualizarAgente } from '../../src/db/agentes.ts';
 import { criarDemanda, obterDemanda, reivindicarDemandas, type Demanda, type NovaDemanda } from '../../src/db/demandas.ts';
+import { listarEventosDaDemanda } from '../../src/db/eventos.ts';
 import { adicionarMensagem, listarMensagens } from '../../src/db/mensagens.ts';
+import { iniciarRun } from '../../src/db/operacao.ts';
 import { listarAprendizado, obterEntrega, relatorioMaisRecente } from '../../src/db/relatorios.ts';
 import { SETORES } from '../../src/domain/setores.ts';
 import { LlmError } from '../../src/llm/llm.ts';
 import { OrcamentoExcedidoError } from '../../src/llm/orcamento.ts';
+import { AgenteNaoAutorizadoError } from '../../src/orchestrator/erros.ts';
 import { processarDemanda, type DependenciasDemanda } from '../../src/orchestrator/processar-demanda.ts';
 import { createTestDb, type TestDb } from '../helpers/db.ts';
 import { LlmFalso, USO_PADRAO } from '../helpers/fakes.ts';
@@ -351,5 +355,64 @@ describe('processarDemanda', () => {
     expect(r.interrompidaPor).toMatchObject({ status: 'erro' });
     expect(await relatorioMaisRecente(db.pool, demanda.id)).not.toBeNull();
     expect((await listarMensagens(db.pool, demanda.id)).some((m) => m.texto.startsWith('Auditoria interrompida'))).toBe(true);
+  });
+
+  it('agente suspenso no catalogo nao pode ser acionado: falha antes de chamar o modelo, sem mudar prompts nem a fila', async () => {
+    const demanda = await reivindicada();
+    await atualizarAgente(db.pool, SETORES.d1.papel, 'teste', { estado: 'suspenso' });
+    const llm = llmPadrao();
+    const runId = await iniciarRun(db.pool);
+
+    await expect(processarDemanda(deps(llm), demanda, runId)).rejects.toBeInstanceOf(AgenteNaoAutorizadoError);
+
+    // Nenhuma chamada ao modelo aconteceu: a checagem barra antes do llm.gerar, não muda prompt nenhum.
+    expect(llm.pedidos).toHaveLength(0);
+    const eventos = await listarEventosDaDemanda(db.pool, demanda.id);
+    expect(eventos.map((e) => e.tipoEvento)).toEqual(['processamento_iniciado', 'chamada_trabalho_falhou']);
+    expect(eventos[1]!.metadata).toEqual({ codigoErro: 'agente_nao_autorizado' });
+
+    await atualizarAgente(db.pool, SETORES.d1.papel, 'teste', { estado: 'ativo' });
+  });
+
+  it('modelo divergente do modelo_permitido tambem barra a execucao, mesmo com o agente ativo', async () => {
+    const demanda = await reivindicada();
+    await atualizarAgente(db.pool, SETORES.d1.papel, 'teste', { modeloPermitido: 'claude-opus-5' });
+    const llm = llmPadrao();
+    const runId = await iniciarRun(db.pool);
+
+    await expect(processarDemanda(deps(llm), demanda, runId)).rejects.toBeInstanceOf(AgenteNaoAutorizadoError);
+
+    expect(llm.pedidos).toHaveLength(0);
+    const eventos = await listarEventosDaDemanda(db.pool, demanda.id);
+    expect(eventos.map((e) => e.tipoEvento)).toEqual(['processamento_iniciado', 'chamada_trabalho_falhou']);
+    expect(eventos[1]!.metadata).toEqual({ codigoErro: 'agente_nao_autorizado' });
+
+    await atualizarAgente(db.pool, SETORES.d1.papel, 'teste', { modeloPermitido: 'claude-sonnet-5' });
+  });
+
+  it('agente auditor (d17) suspenso: nenhuma chamada ao modelo de auditoria, demanda ainda conclui com metricas nulas', async () => {
+    const demanda = await reivindicada();
+    await atualizarAgente(db.pool, SETORES.d17.papel, 'teste', { estado: 'suspenso' });
+    const llm = llmPadrao();
+    const runId = await iniciarRun(db.pool);
+
+    const r = await processarDemanda(deps(llm), demanda, runId);
+
+    expect(r.statusFinal).toBe('Concluída');
+    expect(r.antipadroes).toBeNull();
+    // Nenhuma chamada com papel de auditor aconteceu — só a de execução.
+    expect(llm.pedidos.every((p) => p.papel !== PAPEL_AUDITOR)).toBe(true);
+    const eventos = await listarEventosDaDemanda(db.pool, demanda.id);
+    expect(eventos.map((e) => e.tipoEvento)).toEqual([
+      'processamento_iniciado',
+      'chamada_trabalho_concluida',
+      'entrega_criada',
+      'auditoria_interrompida',
+      'demanda_concluida',
+    ]);
+    const interrompida = eventos.find((e) => e.tipoEvento === 'auditoria_interrompida')!;
+    expect(interrompida.metadata).toEqual({ codigoErro: 'agente_nao_autorizado' });
+
+    await atualizarAgente(db.pool, SETORES.d17.papel, 'teste', { estado: 'ativo' });
   });
 });
