@@ -101,8 +101,10 @@ interface Auditoria {
 }
 
 // Fase 2 — Entrega 2 (Policy Engine, modo shadow): só observa e registra — nunca ramifica no resultado,
-// nunca altera o status da demanda. avaliarEregistrar já é fail-open por dentro (nunca lança), então
-// chamar isto nunca pode quebrar o processamento real.
+// nunca altera o status da demanda. avaliarEregistrar já é fail-open por dentro, mas a leitura do agente
+// no catálogo acontece antes dela; por isso esta função inteira também é fail-open. Sem isso, uma falha
+// nessa leitura no estágio "post" (que roda depois de a demanda já estar Concluída) subiria até
+// processar-fila e devolveria a demanda para a fila, reprocessando algo já entregue.
 async function avaliarEstagio(
   pool: pg.Pool,
   agenteChave: string,
@@ -113,23 +115,27 @@ async function avaliarEstagio(
   runId: string,
   tentativa: number | null,
 ): Promise<void> {
-  const agente = await obterAgentePorChave(pool, agenteChave);
-  await avaliarEregistrar(pool, {
-    demandaId: demanda.id,
-    runId,
-    correlacaoId: runId,
-    tentativa,
-    estagio,
-    contexto: {
-      agente: agenteChave,
-      papel: agente?.papel ?? papelDoSetor(demanda.categoria),
-      categoria: demanda.categoria,
-      estado: agente?.estado ?? 'ativo',
-      modelo,
-      operacao,
-      prioridade: demanda.prioridade,
-    },
-  });
+  try {
+    const agente = await obterAgentePorChave(pool, agenteChave);
+    await avaliarEregistrar(pool, {
+      demandaId: demanda.id,
+      runId,
+      correlacaoId: runId,
+      tentativa,
+      estagio,
+      contexto: {
+        agente: agenteChave,
+        papel: agente?.papel ?? papelDoSetor(demanda.categoria),
+        categoria: demanda.categoria,
+        estado: agente?.estado ?? 'ativo',
+        modelo,
+        operacao,
+        prioridade: demanda.prioridade,
+      },
+    });
+  } catch (erro) {
+    log('erro', 'erro_avaliacao_politica', { demandaId: demanda.id, estagio, erro: mensagemDeErro(erro) });
+  }
 }
 
 function criarCheckpoint(pool: pg.Pool, demanda: Demanda): Checkpoint {
