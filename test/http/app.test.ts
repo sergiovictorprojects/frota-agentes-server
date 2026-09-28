@@ -3,7 +3,7 @@ import type { FastifyInstance } from 'fastify';
 import type pg from 'pg';
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { criarDemanda, obterDemanda } from '../../src/db/demandas.ts';
-import { listarEventosDaDemanda } from '../../src/db/eventos.ts';
+import { listarEventosDaDemanda, montarChaveIdempotencia, registrarEvento } from '../../src/db/eventos.ts';
 import { adicionarMensagem, listarMensagens } from '../../src/db/mensagens.ts';
 import { finalizarRun, iniciarRun, obterFlags } from '../../src/db/operacao.ts';
 import { criarEntrega, salvarRelatorio } from '../../src/db/relatorios.ts';
@@ -303,6 +303,178 @@ describe('aplicacao HTTP', () => {
       expect(todos[1]!.metadata).toEqual({ origem: 'manual' });
       // correlacaoId de cada acao de interface e um UUID novo: nao ha um so run cobrindo as duas.
       expect(todos[0]!.correlacaoId).not.toBe(todos[1]!.correlacaoId);
+    });
+  });
+
+  describe('endpoint de eventos e dossie (Fase 1, Entrega 2)', () => {
+    it('exige autenticacao em ambos os endpoints, como qualquer outra rota', async () => {
+      const d = await criarDemanda(db.pool, { titulo: 'Protegida', categoria: 'd1' });
+      expect((await get(`/demandas/${d.id}/eventos`, {})).statusCode).toBe(401);
+      expect((await get(`/demandas/${d.id}/dossie`, {})).statusCode).toBe(401);
+    });
+
+    it('devolve 404 para demanda inexistente ou id que nao e UUID, nos dois endpoints', async () => {
+      expect((await get(`/demandas/${randomUUID()}/eventos`)).statusCode).toBe(404);
+      expect((await get("/demandas/1'; DROP TABLE demandas;--/eventos")).statusCode).toBe(404);
+      expect((await get(`/demandas/${randomUUID()}/dossie`)).statusCode).toBe(404);
+      expect((await get("/demandas/1'; DROP TABLE demandas;--/dossie")).statusCode).toBe(404);
+    });
+
+    it('o endpoint de eventos e somente leitura: GET nao grava nada e devolve a timeline ordenada pelo cursor global id', async () => {
+      const d = await criarDemanda(db.pool, { titulo: 'Com timeline', categoria: 'd1' });
+      const runId = await iniciarRun(db.pool);
+      // Seed direto no ledger, fora de ordem de tipo, só para provar que a ordenação da resposta segue o
+      // cursor global id (ordem de escrita), não a ordem alfabética nem qualquer outro critério.
+      await registrarEvento(db.pool, {
+        demandaId: d.id,
+        correlacaoId: runId,
+        runId,
+        tentativa: 1,
+        tipoEvento: 'processamento_iniciado',
+        ator: 'frota:architect',
+        chaveIdempotencia: montarChaveIdempotencia(runId, '1'),
+        metadata: {},
+      });
+      await registrarEvento(db.pool, {
+        demandaId: d.id,
+        correlacaoId: runId,
+        runId,
+        tentativa: 1,
+        tipoEvento: 'chamada_trabalho_falhou',
+        ator: 'frota:architect',
+        chaveIdempotencia: montarChaveIdempotencia(runId, '2'),
+        metadata: { codigoErro: 'llm_invalido' },
+      });
+      await registrarEvento(db.pool, {
+        demandaId: d.id,
+        correlacaoId: runId,
+        runId,
+        tentativa: 1,
+        tipoEvento: 'demanda_devolvida_para_fila',
+        ator: 'sistema',
+        chaveIdempotencia: montarChaveIdempotencia(runId, '3'),
+        metadata: { motivoDevolucao: 'falha_da_demanda', codigoErro: 'llm_invalido' },
+      });
+
+      const r = await get(`/demandas/${d.id}/eventos`);
+      expect(r.statusCode).toBe(200);
+      expect(r.headers['content-type']).toContain('application/json');
+      const eventos = r.json() as { id: string; tipoEvento: string }[];
+      expect(eventos.map((e) => e.tipoEvento)).toEqual([
+        'processamento_iniciado',
+        'chamada_trabalho_falhou',
+        'demanda_devolvida_para_fila',
+      ]);
+      for (let i = 1; i < eventos.length; i++) expect(BigInt(eventos[i]!.id)).toBeGreaterThan(BigInt(eventos[i - 1]!.id));
+
+      // GET não é escrita: nenhuma linha nova foi criada por causa da consulta.
+      expect(await listarEventosDaDemanda(db.pool, d.id)).toHaveLength(3);
+    });
+
+    it('o dossie consolida demanda, mensagens, relatorio, entrega e a mesma timeline de eventos', async () => {
+      const d = await criarDemanda(db.pool, { titulo: 'Dossie completo', categoria: 'd1', solicitante: 'Ana' });
+      await adicionarMensagem(db.pool, { demandaId: d.id, autor: 'agente', agente: 'frota:architect', texto: 'Executando.' });
+      const entrega = await criarEntrega(db.pool, { demandaId: d.id, titulo: 'T', conteudo: '<p>x</p>' });
+      const url = `https://frota.exemplo.com/entregas/${entrega.id}`;
+      await db.pool.query('UPDATE demandas SET entrega_url = $2, status = $3 WHERE id = $1', [d.id, url, 'Concluída']);
+      await salvarRelatorio(db.pool, {
+        demandaId: d.id,
+        demandaTitulo: d.titulo,
+        gerente: 'frota:architect',
+        nivelComplexidade: 2,
+        setoresEnvolvidos: ['d1'],
+        fontesUtilizadas: null,
+        metricas: { acoesRealizadas: 'x', tempoTotal: '1s', indiceGeral: 90, antipadroesCount: 0, regrasCumpridasPercent: 100 },
+        ganhos: 'g',
+        perdas: 'p',
+        aprendizado: 'a',
+        ponderacoes: [],
+        entregaUrl: url,
+      });
+      const runId = await iniciarRun(db.pool);
+      await registrarEvento(db.pool, {
+        demandaId: d.id,
+        correlacaoId: runId,
+        runId,
+        tentativa: 1,
+        tipoEvento: 'demanda_concluida',
+        ator: 'frota:architect',
+        chaveIdempotencia: montarChaveIdempotencia(runId, 'demanda_concluida'),
+        metadata: { indiceGeral: 90, antipadroesCount: 0 },
+      });
+
+      const r = await get(`/demandas/${d.id}/dossie`);
+
+      expect(r.statusCode).toBe(200);
+      expect(r.body).toContain('Dossiê');
+      expect(r.body).toContain('Dossie completo');
+      expect(r.body).toContain('Ana');
+      // texto da mensagem NÃO aparece — só metadado estrutural (ver teste de redaction abaixo).
+      expect(r.body).not.toContain('Executando.');
+      expect(r.body).toContain('Demanda concluída.');
+      expect(r.body).toContain(`href="${url}"`);
+      expect(r.body).toContain('90');
+    });
+
+    it('nunca renderiza o texto de mensagens nem os campos livres do relatorio, mesmo com segredo dentro deles', async () => {
+      const segredo = 'RACIOCINIO_OU_SEGREDO_QUE_NAO_PODE_APARECER_NO_DOSSIE';
+      const d = await criarDemanda(db.pool, { titulo: 'Sem vazamento fora do ledger', categoria: 'd1' });
+      await adicionarMensagem(db.pool, {
+        demandaId: d.id,
+        autor: 'agente',
+        agente: 'frota:architect',
+        texto: `Plano: entregar algo com um segredo — ${segredo}`,
+      });
+      await adicionarMensagem(db.pool, { demandaId: d.id, autor: 'solicitante', texto: `Resposta com segredo: ${segredo}` });
+      await salvarRelatorio(db.pool, {
+        demandaId: d.id,
+        demandaTitulo: d.titulo,
+        gerente: 'frota:architect',
+        nivelComplexidade: 2,
+        setoresEnvolvidos: ['d1'],
+        fontesUtilizadas: `fonte com ${segredo}`,
+        metricas: { acoesRealizadas: `2 chamadas — ${segredo}`, tempoTotal: '1s', indiceGeral: 80, antipadroesCount: 1, regrasCumpridasPercent: 90 },
+        ganhos: `ganhos com ${segredo}`,
+        perdas: `perdas com ${segredo}`,
+        aprendizado: `aprendizado com ${segredo}`,
+        ponderacoes: [{ setor: 'd1', nota: `nota com ${segredo}` }],
+        entregaUrl: null,
+      });
+
+      const r = await get(`/demandas/${d.id}/dossie`);
+
+      expect(r.statusCode).toBe(200);
+      expect(r.body).not.toContain(segredo);
+      // as métricas numéricas seguras continuam aparecendo.
+      expect(r.body).toContain('80');
+      expect(r.body).toContain('90%');
+      // a página deixa claro, por texto próprio, que o conteúdo livre foi omitido de propósito.
+      expect(r.body).toContain('texto livre');
+    });
+
+    it('a timeline de eventos no dossie nunca expoe prompt, raciocinio interno, segredo ou resposta bruta de erro', async () => {
+      const d = await criarDemanda(db.pool, { titulo: 'Sem vazamento no ledger', categoria: 'd1' });
+      const runId = await iniciarRun(db.pool);
+      await registrarEvento(db.pool, {
+        demandaId: d.id,
+        correlacaoId: runId,
+        runId,
+        tentativa: 1,
+        tipoEvento: 'chamada_trabalho_falhou',
+        ator: 'frota:architect',
+        chaveIdempotencia: montarChaveIdempotencia(runId, 'chamada_trabalho_falhou'),
+        // Só o código classificado entra — nunca a mensagem real do erro, que poderia carregar detalhe
+        // interno ou fragmento da resposta do modelo. codigoDoErro() é o único jeito de chegar aqui.
+        metadata: { codigoErro: 'llm_invalido' },
+      });
+
+      const [eventosJson, dossie] = await Promise.all([get(`/demandas/${d.id}/eventos`), get(`/demandas/${d.id}/dossie`)]);
+      for (const campoProibido of ['prompt', 'chain_of_thought', 'raciocinio', 'resposta_bruta', 'api_key', 'authorization']) {
+        expect(eventosJson.body).not.toContain(campoProibido);
+        expect(dossie.body).not.toContain(campoProibido);
+      }
+      // A metadata exibida é só o código fechado, nunca texto livre de erro.
+      expect(eventosJson.json()).toEqual([expect.objectContaining({ tipoEvento: 'chamada_trabalho_falhou', metadata: { codigoErro: 'llm_invalido' } })]);
     });
   });
 
