@@ -19,6 +19,7 @@ export const TIPOS_EVENTO = [
   'demanda_reaberta',
   'demanda_devolvida_para_fila',
   'demanda_falhou',
+  'politica_avaliada',
 ] as const;
 const TIPOS_EVENTO_VALIDOS = new Set<string>(TIPOS_EVENTO);
 export type TipoEvento = (typeof TIPOS_EVENTO)[number];
@@ -58,6 +59,7 @@ const RESUMOS_POR_TIPO: Readonly<Record<TipoEvento, string>> = {
   demanda_reaberta: 'Demanda reaberta.',
   demanda_devolvida_para_fila: 'Demanda devolvida para a fila.',
   demanda_falhou: 'Limite de tentativas atingido.',
+  politica_avaliada: 'Política avaliada (modo shadow — não bloqueia).',
 };
 
 const categoria = z.enum(CATEGORIAS);
@@ -95,6 +97,17 @@ const METADATA_SCHEMAS: Readonly<Record<TipoEvento, z.ZodType>> = {
     tentativaPlanejada: tentativaPlanejada.optional(),
   }),
   demanda_falhou: z.strictObject({ codigoErro }),
+  // Fase 2 — Entrega 2 (Policy Engine, modo shadow): só decisão, estágio, ids/versionamento e código
+  // fechado — nunca a condição da regra, o nome da política ou qualquer texto. Os enums de estagio/decisao
+  // são redeclarados aqui (em vez de importados de src/db/politicas.ts) para não criar import circular —
+  // politicas.ts já importa deste módulo para emitir o próprio evento.
+  politica_avaliada: z.strictObject({
+    estagio: z.enum(['pre', 'during', 'post']),
+    decisao: z.enum(['allow', 'warn', 'require_approval', 'deny']),
+    politicaId: uuid.nullable(),
+    regraId: uuid.nullable(),
+    versaoRegra: z.number().int().positive().nullable(),
+  }),
 };
 
 export interface NovoEvento {
