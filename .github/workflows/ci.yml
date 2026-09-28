@@ -29,5 +29,7 @@ jobs:
 
       - run: npm run typecheck
 
-      # Os testes sobem um Postgres embutido sozinhos (test/helpers/global-setup.ts): nenhum banco externo.
-      - run: npm test
+      # Testes com cobertura: falha se statements, branches, functions ou lines caírem abaixo dos limites
+      # de vitest.config.ts (coverage.thresholds). Os testes sobem um Postgres embutido sozinhos
+      # (test/helpers/global-setup.ts): nenhum banco externo, segredo ou artefato publicado.
+      - run: npm run test:coverage
