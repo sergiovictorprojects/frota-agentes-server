@@ -1,3 +1,4 @@
+import type { CodigoErro } from '../db/eventos.ts';
 import { LlmError } from '../llm/llm.ts';
 import { FrotaPausadaError, OrcamentoExcedidoError } from '../llm/orcamento.ts';
 
@@ -20,4 +21,18 @@ export function ehParadaSistemica(erro: unknown): boolean {
 
 export function statusDaInterrupcao(erro: unknown): 'pausada' | 'erro' {
   return erro instanceof FrotaPausadaError || erro instanceof OrcamentoExcedidoError ? 'pausada' : 'erro';
+}
+
+// Classifica qualquer erro num código fechado, para o ledger — nunca a mensagem do erro em si, que pode
+// carregar detalhe interno ou fragmento da resposta do modelo.
+export function codigoDoErro(erro: unknown): CodigoErro {
+  if (erro instanceof OrcamentoExcedidoError) return 'orcamento_excedido';
+  if (erro instanceof FrotaPausadaError) return 'frota_pausada';
+  if (erro instanceof LlmError) {
+    if (erro.tipo === 'recusa') return 'llm_recusa';
+    if (erro.tipo === 'truncado') return 'llm_truncado';
+    if (erro.tipo === 'invalido') return 'llm_invalido';
+    return 'llm_api';
+  }
+  return 'falha_inesperada';
 }

@@ -3,6 +3,7 @@ import type { FastifyInstance } from 'fastify';
 import type pg from 'pg';
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { criarDemanda, obterDemanda } from '../../src/db/demandas.ts';
+import { listarEventosDaDemanda } from '../../src/db/eventos.ts';
 import { adicionarMensagem, listarMensagens } from '../../src/db/mensagens.ts';
 import { finalizarRun, iniciarRun, obterFlags } from '../../src/db/operacao.ts';
 import { criarEntrega, salvarRelatorio } from '../../src/db/relatorios.ts';
@@ -262,6 +263,46 @@ describe('aplicacao HTTP', () => {
       expect((await obterDemanda(db.pool, a.id))?.status).toBe('Arquivada');
       expect((await post(`/demandas/${b.id}/arquivar`)).statusCode).toBe(409);
       expect((await obterDemanda(db.pool, b.id))?.status).toBe('Em andamento');
+    });
+  });
+
+  describe('ledger de eventos (agent_events) na interface', () => {
+    it('criar uma demanda pela interface grava demanda_criada, com tentativa null e sem o titulo na metadata', async () => {
+      const r = await post('/demandas', { titulo: 'Com segredo no titulo', categoria: 'd1', prioridade: 'HIGH' });
+      const id = r.headers.location!.split('/').pop()!;
+
+      const eventos = await listarEventosDaDemanda(db.pool, id);
+      expect(eventos.map((e) => e.tipoEvento)).toEqual(['demanda_criada']);
+      expect(eventos[0]!.ator).toBe('solicitante');
+      expect(eventos[0]!.tentativa).toBeNull();
+      expect(eventos[0]!.resumo).toBe('Demanda criada.');
+      expect(eventos[0]!.metadata).toEqual({ categoria: 'd1', prioridade: 'HIGH' });
+      expect(JSON.stringify(eventos)).not.toContain('Com segredo no titulo');
+    });
+
+    it('responder a uma pendencia e reabrir pela interface gravam demanda_reaberta, sem o texto da resposta', async () => {
+      const d = await criarDemanda(db.pool, { titulo: 'Espera resposta', categoria: 'd1' });
+      await db.pool.query("UPDATE demandas SET status = 'Aguardando insumo', alternativa_insumo = 'B' WHERE id = $1", [d.id]);
+
+      await post(`/demandas/${d.id}/responder`, { texto: 'Resposta com segredo: NAO_PODE_VAZAR' });
+
+      const viaResposta = await listarEventosDaDemanda(db.pool, d.id);
+      expect(viaResposta.map((e) => e.tipoEvento)).toEqual(['demanda_reaberta']);
+      expect(viaResposta[0]!.ator).toBe('solicitante');
+      expect(viaResposta[0]!.tentativa).toBeNull();
+      expect(viaResposta[0]!.metadata).toEqual({ origem: 'resposta' });
+      expect(JSON.stringify(viaResposta)).not.toContain('NAO_PODE_VAZAR');
+
+      await db.pool.query("UPDATE demandas SET status = 'Falhou' WHERE id = $1", [d.id]);
+      await post(`/demandas/${d.id}/reabrir`);
+
+      const todos = await listarEventosDaDemanda(db.pool, d.id);
+      expect(todos.map((e) => e.tipoEvento)).toEqual(['demanda_reaberta', 'demanda_reaberta']);
+      expect(todos[1]!.ator).toBe('sistema');
+      expect(todos[1]!.tentativa).toBeNull();
+      expect(todos[1]!.metadata).toEqual({ origem: 'manual' });
+      // correlacaoId de cada acao de interface e um UUID novo: nao ha um so run cobrindo as duas.
+      expect(todos[0]!.correlacaoId).not.toBe(todos[1]!.correlacaoId);
     });
   });
 
