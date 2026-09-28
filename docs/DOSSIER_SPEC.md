@@ -1,5 +1,22 @@
 # Especificação do Dossiê da Demanda
 
+> **Nota de implementação (Fase 1 — Entrega 2):** a primeira implementação real (`GET /demandas/:id/dossie`
+> em `src/http/ui/rotas.ts`, `paginaDossie` em `src/http/ui/paginas.ts`) cobre apenas o **dossiê em
+> andamento** (leitura consolidada ao vivo de `demandas`, `mensagens`, `relatorios` e `agent_events`, sem
+> nova tabela nem migration). O **dossiê final versionado** (`dossier_snapshots`, com hash de conteúdo e
+> `GET /demandas/:id/dossie/versions/:version`) descrito abaixo ainda é alvo futuro, não implementado.
+> Também não há `GET /demandas/:id/dossie?mode=live` separado — o endpoint de hoje só tem o modo ao vivo.
+> Há também um endpoint somente-leitura separado, `GET /demandas/:id/eventos`, que devolve a timeline de
+> `agent_events` em JSON, ordenada pelo cursor global `id` (nunca por `sequencia_demanda` ou `tentativa` —
+> ver `docs/adr/0002-ledger-eventos-operacionais.md`).
+>
+> **Conteúdo omitido de propósito:** apenas a timeline de `agent_events` é garantidamente segura de exibir
+> por inteiro — ela já passa pelo schema por tipo descrito na nota acima. `mensagens.texto` e os campos
+> livres do relatório (`ganhos`, `perdas`, `aprendizado`, `ponderacoes`, `acoesRealizadas`,
+> `fontesUtilizadas`) não têm esse schema e podem carregar texto do modelo ou do usuário sem filtro — por
+> isso o dossiê deliberadamente não os exibe, só metadado estrutural (data, autor, métricas numéricas). O
+> texto completo continua disponível em `/demandas/:id`, fora do dossiê.
+
 ## Propósito
 
 O dossiê é a representação auditável de uma demanda. Ele deve permitir compreender a operação inteira sem depender de um formulário simplificado e sem revelar raciocínio interno bruto de modelos.

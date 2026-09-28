@@ -1,4 +1,5 @@
 import type { Demanda } from '../../db/demandas.ts';
+import type { Evento } from '../../db/eventos.ts';
 import type { Mensagem } from '../../db/mensagens.ts';
 import type { Relatorio } from '../../db/relatorios.ts';
 import { CATEGORIAS, PRIORIDADES, SETORES, STATUS, type StatusDemanda } from '../../domain/setores.ts';
@@ -108,6 +109,7 @@ ${d.status !== 'Arquivada' && d.status !== 'Em andamento' ? botaoAcao(`/demandas
 </div>
 </div>
 ${entrega ? html`<p><a class="botao" href="${entrega}">Abrir entrega</a></p>` : ''}
+<p><a href="/demandas/${d.id}/dossie">Ver dossiê</a></p>
 <dl class="info">
 <dt>Solicitante</dt><dd>${d.solicitante ?? '—'}</dd>
 <dt>Prazo</dt><dd>${d.prazo ?? '—'}</dd>
@@ -129,6 +131,87 @@ ${
 ${linhas.length ? html`<ol class="linha-do-tempo">${linhas}</ol>` : html`<p class="vazio">Nenhuma atividade registrada ainda.</p>`}
 <h2>Relatório</h2>
 ${blocoRelatorio(a.relatorio)}`;
+}
+
+// metadata já passou pelo schema por tipo de evento (METADATA_SCHEMAS em src/db/eventos.ts) antes de ser
+// gravada: só ids, enums, contagens, percentuais e flags chegam aqui, nunca texto livre. Por isso é seguro
+// exibir como está — sem risco de vazar raciocínio interno, prompt ou segredo.
+function metadataResumida(m: Record<string, unknown>): string {
+  const pares = Object.entries(m).map(([chave, valor]) => `${chave}: ${JSON.stringify(valor)}`);
+  return pares.length ? pares.join(' · ') : '—';
+}
+
+function linhaDoTempoDeEventos(eventos: readonly Evento[]): Bruto {
+  if (!eventos.length) return html`<p class="vazio">Nenhum evento registrado ainda.</p>`;
+  const linhas = eventos.map(
+    (e) => html`<li><time datetime="${e.ocorridoEm}">${formatarData(e.ocorridoEm)}</time>
+<span class="agente">${e.resumo}</span>
+<div class="texto"><code>${e.tipoEvento}</code> · ator: ${e.ator} · tentativa: ${e.tentativa ?? '—'} · ${metadataResumida(e.metadata)}</div></li>`,
+  );
+  return html`<ol class="linha-do-tempo">${linhas}</ol>`;
+}
+
+// Mensagens não têm schema: m.texto é texto livre (checkpoints operacionais, respostas do solicitante,
+// e alguns deles ecoam campos gerados pelo modelo, como "Plano: ${exec.plano}" ou o motivo de uma
+// pendência). Diferente de agent_events, nada aqui garante ausência de segredo ou raciocínio interno.
+// Por isso o dossiê mostra só metadado estrutural de cada mensagem — nunca m.texto.
+function linhaDoTempoDeMensagens(mensagens: readonly Mensagem[]): Bruto {
+  if (!mensagens.length) return html`<p class="vazio">Nenhuma mensagem registrada ainda.</p>`;
+  const linhas = mensagens.map(
+    (m) => html`<li><time datetime="${m.criadoEm}">${formatarData(m.criadoEm)}</time>
+<span class="${m.autor === 'solicitante' ? 'solicitante' : 'agente'}">${m.autor === 'solicitante' ? 'Solicitante' : (m.agente ?? 'orquestrador')}</span></li>`,
+  );
+  return html`<ol class="linha-do-tempo">${linhas}</ol>`;
+}
+
+// Só os campos numéricos/estruturados do relatório — nunca ganhos, perdas, aprendizado, ponderações,
+// acoesRealizadas (que embute exec.resumo) ou fontesUtilizadas: todos são texto livre gerado pelo modelo,
+// sem o mesmo schema de validação que protege agent_events, e podem carregar raciocínio interno ou segredo
+// colado pelo usuário. gerente e tempoTotal são construídos pelo próprio código (nunca texto do modelo).
+function blocoRelatorioSeguro(r: Relatorio | null): Bruto {
+  if (!r) return html`<p class="vazio">Ainda não há relatório para esta demanda.</p>`;
+  const m = r.metricas;
+  return html`<dl class="info">
+<dt>Executado por</dt><dd>${r.gerente}</dd>
+<dt>Complexidade</dt><dd>nível ${r.nivelComplexidade}</dd>
+<dt>Setores</dt><dd>${r.setoresEnvolvidos.join(', ') || '—'}</dd>
+<dt>Índice geral</dt><dd>${numero(m.indiceGeral)}</dd>
+<dt>Antipadrões auditados</dt><dd>${numero(m.antipadroesCount)}</dd>
+<dt>Regras cumpridas</dt><dd>${numero(m.regrasCumpridasPercent, '%')}</dd>
+<dt>Tempo</dt><dd>${m.tempoTotal}</dd>
+</dl>
+${m.auditoriaFalhou ? html`<p class="aviso">A auditoria automática não terminou: os números de conformidade não foram calculados.</p>` : ''}
+<p class="vazio">Ganhos, perdas, aprendizado e demais textos livres do relatório ficam só em /demandas/${r.demandaId} — o dossiê não os exibe, porque são texto do modelo sem o mesmo schema de validação de agent_events.</p>`;
+}
+
+export function paginaDossie(a: {
+  demanda: Demanda;
+  mensagens: readonly Mensagem[];
+  relatorio: Relatorio | null;
+  eventos: readonly Evento[];
+}): Bruto {
+  const d = a.demanda;
+  const entrega = linkSeguro(d.entregaUrl);
+  return html`<div class="cabecalho">
+<div><h1>Dossiê — ${d.titulo}</h1><div class="meta">${chip(d.status)}<span>${d.categoria} — ${SETORES[d.categoria].nome}</span><span>${d.prioridade}</span></div></div>
+</div>
+${entrega ? html`<p><a class="botao" href="${entrega}">Abrir entrega</a></p>` : ''}
+<h2>Resumo executivo</h2>
+<dl class="info">
+<dt>Solicitante</dt><dd>${d.solicitante ?? '—'}</dd>
+<dt>Prazo</dt><dd>${d.prazo ?? '—'}</dd>
+<dt>Criada em</dt><dd>${formatarData(d.criadoEm)}</dd>
+<dt>Tentativas</dt><dd>${d.tentativas}</dd>
+<dt>Status</dt><dd>${d.status}</dd>
+</dl>
+<h2>Linha do tempo de eventos (agent_events, ordenados por id)</h2>
+${linhaDoTempoDeEventos(a.eventos)}
+<h2>Mensagens operacionais</h2>
+<p class="vazio">Só data e autor — o texto de cada mensagem fica em /demandas/${d.id}, porque pode conter texto livre sem o mesmo schema de validação de agent_events.</p>
+${linhaDoTempoDeMensagens(a.mensagens)}
+<h2>Relatório</h2>
+${blocoRelatorioSeguro(a.relatorio)}
+<p><a href="/demandas/${d.id}">Voltar para a demanda</a></p>`;
 }
 
 export function paginaRelatorios(a: { relatorios: readonly Relatorio[] }): Bruto {

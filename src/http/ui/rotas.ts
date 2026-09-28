@@ -10,6 +10,7 @@ import {
   obterDemanda,
   reabrirDemanda,
 } from '../../db/demandas.ts';
+import { listarEventosDaDemanda } from '../../db/eventos.ts';
 import { adicionarMensagem, listarMensagens } from '../../db/mensagens.ts';
 import { obterFlags, pausarFrota, retomarFrota, ultimaRun } from '../../db/operacao.ts';
 import { listarRelatorios, relatorioMaisRecente } from '../../db/relatorios.ts';
@@ -19,7 +20,7 @@ import { log } from '../../util/log.ts';
 import { credenciaisValidas, origemConfiavel } from '../auth.ts';
 import type { Bruto } from './html.ts';
 import { pagina, type Aba, type EstadoFrota } from './layout.ts';
-import { paginaDetalhe, paginaFila, paginaMensagem, paginaNova, paginaRelatorios } from './paginas.ts';
+import { paginaDetalhe, paginaDossie, paginaFila, paginaMensagem, paginaNova, paginaRelatorios } from './paginas.ts';
 
 export interface DependenciasUi {
   pool: pg.Pool;
@@ -176,6 +177,32 @@ function registrarDetalheEAcoes(app: FastifyInstance, d: DependenciasUi, r: Resp
     if (!demanda) return r.naoEncontrada(reply);
     const [mensagens, relatorio] = await Promise.all([listarMensagens(d.pool, demanda.id), relatorioMaisRecente(d.pool, demanda.id)]);
     return r.enviar(reply, 200, demanda.titulo, 'fila', paginaDetalhe({ demanda, mensagens, relatorio }));
+  });
+
+  // Somente-leitura: nenhuma escrita, nenhum efeito colateral. Timeline ordenada pelo cursor global id
+  // (ver listarEventosDaDemanda em src/db/eventos.ts) — nunca por sequencia_demanda ou tentativa.
+  app.get<{ Params: { id: string } }>('/demandas/:id/eventos', async (req, reply) => {
+    const demanda = UUID.test(req.params.id) ? await obterDemanda(d.pool, req.params.id) : null;
+    if (!demanda) return reply.code(404).send({ erro: 'Demanda não encontrada.' });
+    return listarEventosDaDemanda(d.pool, demanda.id);
+  });
+
+  // Dossiê: leitura consolidada de demanda, mensagens, relatório, entrega e eventos — sem SSE/tempo real
+  // ainda (Fase 1, Entrega 2). Só a timeline de agent_events é garantidamente segura de exibir por inteiro
+  // (resumo fixo + metadata validada por schema — ver src/db/eventos.ts). mensagens e relatorio NÃO têm
+  // esse schema: mensagens.texto e os campos livres do relatório (ganhos, perdas, aprendizado,
+  // ponderacoes, acoesRealizadas, fontesUtilizadas) podem carregar texto do modelo ou do usuário sem
+  // filtro — por isso paginaDossie (src/http/ui/paginas.ts) deliberadamente NÃO os exibe, só metadado
+  // estrutural (data, autor, métricas numéricas). O texto completo continua em /demandas/:id.
+  app.get<{ Params: { id: string } }>('/demandas/:id/dossie', async (req, reply) => {
+    const demanda = UUID.test(req.params.id) ? await obterDemanda(d.pool, req.params.id) : null;
+    if (!demanda) return r.naoEncontrada(reply);
+    const [mensagens, relatorio, eventos] = await Promise.all([
+      listarMensagens(d.pool, demanda.id),
+      relatorioMaisRecente(d.pool, demanda.id),
+      listarEventosDaDemanda(d.pool, demanda.id),
+    ]);
+    return r.enviar(reply, 200, `Dossiê — ${demanda.titulo}`, 'fila', paginaDossie({ demanda, mensagens, relatorio, eventos }));
   });
 
   app.post<{ Params: { id: string } }>('/demandas/:id/responder', async (req, reply) => {
