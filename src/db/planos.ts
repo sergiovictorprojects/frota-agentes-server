@@ -1,10 +1,15 @@
 import type pg from 'pg';
 import { z } from 'zod';
-import { comTransacao } from './tx.ts';
+import { CARACTERE_DE_CONTROLE_RE, comprimento, textoArmazenavel } from './artefatos.ts';
+import { comTransacao, type Db } from './tx.ts';
 
 // Fase 3 — Entrega 3.1 (modo "planejar"). O coordenador propõe um plano; a validação aqui é
 // determinística (sem modelo) e o plano é só gravado, nunca executado. Ver
 // docs/adr/0006-orquestracao-por-tarefas.md.
+//
+// Fase 3.2a: o plano em execução (modo "execucao"), com objetivo por especialista e a máquina de estados da
+// migration 006. Nada aqui liga a execução: a PR 3.2b é quem cria planos em execução. Ver
+// docs/adr/0007-execucao-sequencial-e-teto-de-custo.md.
 
 // Vocabulário que o modelo pode devolver: as 18 especialidades do domínio (Categoria sem "gestores").
 const CAPACIDADES_DOMINIO = [
@@ -55,8 +60,26 @@ export const MOTIVOS_REJEICAO = [
   'dependencia_inexistente',
   'autodependencia',
   'ciclo',
+  // Fase 3.2: só no plano em execução, quando um objetivo sai do formato fechado.
+  'objetivo_invalido',
 ] as const;
 export type MotivoRejeicao = (typeof MOTIVOS_REJEICAO)[number];
+
+// Vocabulários da migration 006 (mesmos CHECK do banco).
+export const MODOS_PLANO = ['shadow', 'execucao'] as const;
+export type ModoPlano = (typeof MODOS_PLANO)[number];
+export const ESTADOS_PLANO = ['registrado', 'rejeitado', 'ativo', 'concluido', 'abandonado'] as const;
+export type EstadoPlano = (typeof ESTADOS_PLANO)[number];
+export const MOTIVOS_ABANDONO = [
+  'tarefa_falhou',
+  'agente_indisponivel',
+  'pendencia_humana',
+  'orquestracao_desligada',
+  'demanda_encerrada',
+] as const;
+export type MotivoAbandono = (typeof MOTIVOS_ABANDONO)[number];
+export const ESTADOS_TAREFA = ['pendente', 'pronta', 'em_execucao', 'concluida', 'falhou', 'cancelada'] as const;
+export type EstadoTarefa = (typeof ESTADOS_TAREFA)[number];
 
 export interface TarefaPlanejada {
   chave: string;
@@ -118,6 +141,63 @@ function temCiclo(tarefas: PlanoProposto['tarefas']): boolean {
   return tarefas.some((t) => visitar(t.chave));
 }
 
+// Fase 3.2 (decisão 1B): cada especialista de um plano em execução traz um objetivo curto. É texto do modelo:
+// imutável, vai para o prompt só pela serialização canônica e nunca aparece em eventos, dossiê, logs ou
+// interface. O banco repete a regra (tarefas_objetivo_check), exceto a de não ser só espaço, que é só daqui.
+export const LIMITE_OBJETIVO = 300;
+const SINAL_DE_TAG_RE = /[<>]/;
+
+export function objetivoValido(objetivo: string): boolean {
+  const n = comprimento(objetivo);
+  return (
+    n >= 1 &&
+    n <= LIMITE_OBJETIVO &&
+    objetivo.trim().length > 0 &&
+    textoArmazenavel(objetivo) &&
+    !CARACTERE_DE_CONTROLE_RE.test(objetivo) &&
+    !SINAL_DE_TAG_RE.test(objetivo)
+  );
+}
+
+// O mesmo formato de PlanoPropostoSchema, mais o objetivo de cada especialista. O objetivo é folgado de
+// propósito: quem recusa é validarPlanoExecucao, com o motivo objetivo_invalido gravado.
+export const PlanoExecucaoPropostoSchema = z.object({
+  tarefas: z
+    .array(
+      z.object({
+        chave: z.string().regex(CHAVE_TAREFA_RE),
+        capacidade: z.enum(CAPACIDADES_DOMINIO),
+        objetivo: z.string(),
+        dependeDe: z.array(z.string().regex(CHAVE_TAREFA_RE)).max(20),
+      }),
+    )
+    .max(20),
+});
+export type PlanoExecucaoProposto = z.infer<typeof PlanoExecucaoPropostoSchema>;
+
+export interface TarefaPlanejadaExecucao extends TarefaPlanejada {
+  // Nulo só na integração.
+  objetivo: string | null;
+}
+
+export type ValidacaoPlanoExecucao =
+  | { valido: true; tarefas: TarefaPlanejadaExecucao[] }
+  | { valido: false; motivo: MotivoRejeicao };
+
+// Mesmas regras de validarPlano, na mesma ordem, e depois os objetivos. Determinística.
+export function validarPlanoExecucao(proposta: PlanoExecucaoProposto): ValidacaoPlanoExecucao {
+  const estrutura = validarPlano({
+    tarefas: proposta.tarefas.map((t) => ({ chave: t.chave, capacidade: t.capacidade, dependeDe: t.dependeDe })),
+  });
+  if (!estrutura.valido) return estrutura;
+  if (proposta.tarefas.some((t) => !objetivoValido(t.objetivo))) return { valido: false, motivo: 'objetivo_invalido' };
+  const objetivos = new Map(proposta.tarefas.map((t) => [t.chave, t.objetivo]));
+  return {
+    valido: true,
+    tarefas: estrutura.tarefas.map((t) => ({ ...t, objetivo: t.tipo === 'especialista' ? objetivos.get(t.chave)! : null })),
+  };
+}
+
 export interface PlanoGravado {
   id: string;
   versao: number;
@@ -142,61 +222,108 @@ export async function registrarPlanoShadow(
   pool: pg.Pool,
   p: { demandaId: string; runId: string | null; tarefas: readonly TarefaPlanejada[] },
 ): Promise<PlanoGravado> {
-  return comTransacao(pool, async (cliente) => {
-    const versao = await proximaVersao(cliente, p.demandaId);
-    const { rows: planoRows } = await cliente.query<{ id: string }>(
-      `INSERT INTO planos_demanda (demanda_id, versao, criado_pela_run_id, modo, estado)
-       VALUES ($1, $2, $3, 'shadow', 'registrado') RETURNING id`,
-      [p.demandaId, versao, p.runId],
-    );
-    const planoId = planoRows[0]!.id;
-    const ids = new Map<string, string>();
-    for (const t of p.tarefas) {
-      const { rows } = await cliente.query<{ id: string }>(
-        'INSERT INTO tarefas (plano_id, chave, tipo, capacidade) VALUES ($1, $2, $3, $4) RETURNING id',
-        [planoId, t.chave, t.tipo, t.capacidade],
-      );
-      ids.set(t.chave, rows[0]!.id);
-    }
-    let totalDependencias = 0;
-    for (const t of p.tarefas) {
-      for (const dep of t.dependeDe) {
-        await cliente.query('INSERT INTO tarefas_dependencias (tarefa_id, depende_de_id) VALUES ($1, $2)', [
-          ids.get(t.chave),
-          ids.get(dep),
-        ]);
-        totalDependencias++;
-      }
-    }
-    return { id: planoId, versao, totalTarefas: p.tarefas.length, totalDependencias };
-  });
+  return comTransacao(pool, (cliente) =>
+    gravarPlano(cliente, { ...p, modo: 'shadow', tarefas: p.tarefas.map((t) => ({ ...t, objetivo: null })) }),
+  );
 }
 
-// Grava a recusa (sem tarefas), com o motivo em código fechado: a proposta inválida fica auditável.
+// Fase 3.2: grava um plano válido em modo execução, registrado e ainda não ativo, com os objetivos. O banco
+// exige o envelope da demanda na rota tarefas (gatilho planos_demanda_controla); quem ativa é ativarPlano, em
+// src/db/tarefas.ts.
+export async function registrarPlanoExecucao(
+  pool: pg.Pool,
+  p: { demandaId: string; runId: string | null; tarefas: readonly TarefaPlanejadaExecucao[] },
+): Promise<PlanoGravado> {
+  return comTransacao(pool, (cliente) => gravarPlano(cliente, { ...p, modo: 'execucao' }));
+}
+
+async function gravarPlano(
+  cliente: pg.PoolClient,
+  p: { demandaId: string; runId: string | null; modo: ModoPlano; tarefas: readonly TarefaPlanejadaExecucao[] },
+): Promise<PlanoGravado> {
+  const versao = await proximaVersao(cliente, p.demandaId);
+  const { rows: planoRows } = await cliente.query<{ id: string }>(
+    `INSERT INTO planos_demanda (demanda_id, versao, criado_pela_run_id, modo, estado)
+     VALUES ($1, $2, $3, $4, 'registrado') RETURNING id`,
+    [p.demandaId, versao, p.runId, p.modo],
+  );
+  const planoId = planoRows[0]!.id;
+  const ids = new Map<string, string>();
+  for (const t of p.tarefas) {
+    const { rows } = await cliente.query<{ id: string }>(
+      'INSERT INTO tarefas (plano_id, chave, tipo, capacidade, objetivo) VALUES ($1, $2, $3, $4, $5) RETURNING id',
+      [planoId, t.chave, t.tipo, t.capacidade, t.objetivo],
+    );
+    ids.set(t.chave, rows[0]!.id);
+  }
+  let totalDependencias = 0;
+  for (const t of p.tarefas) {
+    for (const dep of t.dependeDe) {
+      await cliente.query('INSERT INTO tarefas_dependencias (tarefa_id, depende_de_id) VALUES ($1, $2)', [
+        ids.get(t.chave),
+        ids.get(dep),
+      ]);
+      totalDependencias++;
+    }
+  }
+  return { id: planoId, versao, totalTarefas: p.tarefas.length, totalDependencias };
+}
+
+// Grava a recusa (sem tarefas), com o motivo em código fechado: a proposta inválida fica auditável. O modo
+// padrão é shadow (Fase 3.1); a recusa de um plano em execução exige o envelope, como o plano registrado.
 export async function registrarPlanoRejeitado(
   pool: pg.Pool,
-  p: { demandaId: string; runId: string | null; motivo: MotivoRejeicao },
+  p: { demandaId: string; runId: string | null; motivo: MotivoRejeicao; modo?: ModoPlano },
 ): Promise<{ id: string; versao: number }> {
   return comTransacao(pool, async (cliente) => {
     const versao = await proximaVersao(cliente, p.demandaId);
     const { rows } = await cliente.query<{ id: string }>(
       `INSERT INTO planos_demanda (demanda_id, versao, criado_pela_run_id, modo, estado, motivo_rejeicao)
-       VALUES ($1, $2, $3, 'shadow', 'rejeitado', $4) RETURNING id`,
-      [p.demandaId, versao, p.runId, p.motivo],
+       VALUES ($1, $2, $3, $4, 'rejeitado', $5) RETURNING id`,
+      [p.demandaId, versao, p.runId, p.modo ?? 'shadow', p.motivo],
     );
     return { id: rows[0]!.id, versao };
   });
 }
 
+export interface PlanoAtivo {
+  id: string;
+  demandaId: string;
+  versao: number;
+  criadoPelaRunId: string | null;
+  ativadoEm: string;
+}
+
+// O plano ativo da demanda, se houver (no máximo um: índice planos_demanda_um_ativo_idx).
+export async function obterPlanoAtivo(db: Db, demandaId: string): Promise<PlanoAtivo | null> {
+  const { rows } = await db.query<{
+    id: string;
+    demanda_id: string;
+    versao: number;
+    criado_pela_run_id: string | null;
+    ativado_em: Date;
+  }>(
+    `SELECT id, demanda_id, versao, criado_pela_run_id, ativado_em
+       FROM planos_demanda WHERE demanda_id = $1 AND estado = 'ativo'`,
+    [demandaId],
+  );
+  const l = rows[0];
+  return l
+    ? { id: l.id, demandaId: l.demanda_id, versao: l.versao, criadoPelaRunId: l.criado_pela_run_id, ativadoEm: l.ativado_em.toISOString() }
+    : null;
+}
+
+// Leitura para auditoria e testes. Nunca devolve o objetivo das tarefas (texto do modelo).
 export interface PlanoResumo {
   id: string;
   demandaId: string;
   versao: number;
   criadoPelaRunId: string | null;
-  modo: 'shadow';
-  estado: 'registrado' | 'rejeitado';
+  modo: ModoPlano;
+  estado: EstadoPlano;
   motivoRejeicao: MotivoRejeicao | null;
-  tarefas: { chave: string; tipo: TarefaPlanejada['tipo']; capacidade: string; estado: 'pendente'; dependeDe: string[] }[];
+  motivoAbandono: MotivoAbandono | null;
+  tarefas: { chave: string; tipo: TarefaPlanejada['tipo']; capacidade: string; estado: EstadoTarefa; dependeDe: string[] }[];
 }
 
 export async function listarPlanosDaDemanda(pool: pg.Pool, demandaId: string): Promise<PlanoResumo[]> {
@@ -208,8 +335,9 @@ export async function listarPlanosDaDemanda(pool: pg.Pool, demandaId: string): P
     modo: PlanoResumo['modo'];
     estado: PlanoResumo['estado'];
     motivo_rejeicao: MotivoRejeicao | null;
+    motivo_abandono: MotivoAbandono | null;
   }>(
-    `SELECT id, demanda_id, versao, criado_pela_run_id, modo, estado, motivo_rejeicao
+    `SELECT id, demanda_id, versao, criado_pela_run_id, modo, estado, motivo_rejeicao, motivo_abandono
        FROM planos_demanda WHERE demanda_id = $1 ORDER BY versao`,
     [demandaId],
   );
@@ -218,7 +346,7 @@ export async function listarPlanosDaDemanda(pool: pg.Pool, demandaId: string): P
     chave: string;
     tipo: TarefaPlanejada['tipo'];
     capacidade: string;
-    estado: 'pendente';
+    estado: EstadoTarefa;
     depende_de: string[];
   }>(
     `SELECT t.plano_id, t.chave, t.tipo, t.capacidade, t.estado,
@@ -242,6 +370,7 @@ export async function listarPlanosDaDemanda(pool: pg.Pool, demandaId: string): P
     modo: p.modo,
     estado: p.estado,
     motivoRejeicao: p.motivo_rejeicao,
+    motivoAbandono: p.motivo_abandono,
     tarefas: tarefas
       .filter((t) => t.plano_id === p.id)
       .map((t) => ({ chave: t.chave, tipo: t.tipo, capacidade: t.capacidade, estado: t.estado, dependeDe: t.depende_de })),

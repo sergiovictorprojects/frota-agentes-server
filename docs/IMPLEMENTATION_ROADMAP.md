@@ -12,7 +12,7 @@ Implementar por fatias verticais, com migrations aditivas, testes e rollback. N�
 | 1 — Modelo Operacional Auditável | Concluída: ledger `agent_events` (002), dossiê ao vivo e CI |
 | 2 — Catálogo e Policy Engine shadow | Concluída: catálogo e histórico de agentes (003); Policy Engine shadow (004) |
 | Hotfix — URL de entrega segura | Concluído (ADR 0005) |
-| **3 — Orquestração Real por Tarefas** | Em andamento: entrega 3.1 (modo `planejar`, migration 005, ADR 0006). 3.2 a 3.4 planejadas |
+| **3 — Orquestração Real por Tarefas** | Em andamento: entrega 3.1 (modo `planejar`, migration 005, ADR 0006). 3.2a (base de dados e funções puras, migration 006, ADR 0007) em PR draft, sem ligar nada. 3.2b a 3.4 planejadas |
 | 4 a 9 | Sem mudança |
 
 Continuam pendentes, sem data: `agent_permissions`, estados `idle` e `retired` no catálogo e o snapshot
@@ -129,10 +129,16 @@ dependências e uma tarefa de integração que produz a entrega única, sem queb
   plano é gravado em shadow. A demanda segue pelo fluxo legado. Migration 005, restrita ao shadow
   (`planos_demanda`, `tarefas` e `tarefas_dependencias` imutáveis, ciclos barrados no banco, `operacao`
   ampliada só com `planejamento`).
-- **3.2 — Execução sequencial.** Migration 006 com os campos e estados de execução, a máquina de estados,
-  `operacao: integracao` e a manutenção da proteção de ciclo no banco. Claim com lease e token, persistência condicional, `artefatos_tarefa`
-  (contrato estrito, limite de tamanho, hash no servidor, append-only, fora do dossiê), integração com entrega
-  única, `tarefa_id` nas avaliações de política e nos eventos, uma categoria ligada por vez.
+- **3.2 — Execução sequencial**, em duas PRs (plano versão 4, decisão 6A):
+  - **3.2a — Base, sem ligar nada (em PR draft).** Migration 006 com o envelope da demanda, os estados e a máquina
+    de estados de planos e tarefas, o grafo congelado depois da ativação, `artefatos_tarefa`, `reservas_custo`,
+    `autorizacoes_custo`, as colunas novas de `agent_steps`, `tarefa_id` e `claim_id` nos eventos e nas
+    avaliações e `operacao: integracao`. Repositórios tipados, serialização canônica com limites de contexto,
+    tabela de modelos com janela e custo em decimal. A proteção de ciclo no banco continua. Ver
+    `docs/adr/0007-execucao-sequencial-e-teto-de-custo.md`.
+  - **3.2b — Liga a orquestração.** Flag `executar`, uma categoria ligada por vez, laço de tarefas, prompts
+    serializados, prazo e timeouts, liquidação pela lista de status, fallback, interface de autorização e script
+    de verificação de rollback.
 - **3.3 — Concorrência.** `agentes.max_concorrencia` com gatilho, histórico, Zod e testes; lock da linha do
   agente no claim; paralelismo de 2; estado `aguardando_agente`, que não consome tentativa e escala para
   humano no prazo.
@@ -140,7 +146,7 @@ dependências e uma tarefa de integração que produz a entrega única, sem queb
 
 ### Não fazer
 
-- Não executar tarefas antes da 3.2, nem paralelizar antes da 3.3.
+- Não executar tarefas antes da 3.2b, nem paralelizar antes da 3.3.
 - Não criar fila pg-boss por tarefa, SSE, cidade 3D ou Policy Engine em enforce nesta fase.
 
 ### Critério de aceite

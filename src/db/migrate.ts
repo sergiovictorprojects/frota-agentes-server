@@ -7,7 +7,16 @@ const ADVISORY_LOCK_KEY = 727_001;
 
 // Aplica em ordem alfabética as migrações ainda não registradas. O lock de sessão
 // impede que dois processos migrem o mesmo banco ao mesmo tempo.
-export async function migrate(pool: pg.Pool): Promise<string[]> {
+//
+// opcoes.ate para na migração indicada (inclusive). Só os testes usam: é o que permite montar um banco parado
+// numa versão anterior, com dados, e depois aplicar o resto (teste de upgrade 005 → 006). O boot (src/main.ts)
+// sempre aplica todas.
+export async function migrate(pool: pg.Pool, opcoes: { ate?: string } = {}): Promise<string[]> {
+  const disponiveis = await listarMigracoesDisponiveis();
+  const ate = opcoes.ate;
+  if (ate !== undefined && !disponiveis.includes(ate)) throw new Error(`Migração inexistente: ${ate}.`);
+  const arquivos = ate === undefined ? disponiveis : disponiveis.filter((f) => f <= ate);
+
   const client = await pool.connect();
   try {
     await client.query('SELECT pg_advisory_lock($1)', [ADVISORY_LOCK_KEY]);
@@ -16,7 +25,6 @@ export async function migrate(pool: pg.Pool): Promise<string[]> {
     );
     const { rows } = await client.query<{ name: string }>('SELECT name FROM schema_migrations');
     const jaAplicadas = new Set(rows.map((r) => r.name));
-    const arquivos = (await readdir(MIGRATIONS_DIR)).filter((f) => f.endsWith('.sql')).sort();
 
     const aplicadas: string[] = [];
     for (const arquivo of arquivos) {

@@ -11,11 +11,11 @@ export type EstagioPolitica = (typeof ESTAGIOS_POLITICA)[number];
 export const DECISOES_POLITICA = ['allow', 'warn', 'require_approval', 'deny'] as const;
 export type DecisaoPolitica = (typeof DECISOES_POLITICA)[number];
 
-// Os pontos do fluxo que chamam um modelo: a execução do trabalho e a auditoria (desde a Fase 2) e o
-// planejamento do coordenador (Fase 3.1, modo "planejar"). A migration 005 acrescentou "planejamento" ao
-// CHECK politica_condicao_valida — só acrescentou, nada deixou de valer. "integracao" entra com a 3.2,
-// quando essa operação passar a ser executada.
-export const OPERACOES_AVALIADAS = ['execucao', 'auditoria', 'planejamento'] as const;
+// Os pontos do fluxo que chamam um modelo: a execução do trabalho e a auditoria (desde a Fase 2), o
+// planejamento do coordenador (Fase 3.1, modo "planejar") e a integração das tarefas (Fase 3.2). As
+// migrations 005 e 006 acrescentaram "planejamento" e "integracao" ao CHECK politica_condicao_valida — só
+// acrescentaram, nada deixou de valer.
+export const OPERACOES_AVALIADAS = ['execucao', 'auditoria', 'planejamento', 'integracao'] as const;
 // As operações que já existiam antes da Fase 3: mantêm a chave de idempotência e o formato do evento
 // politica_avaliada exatamente como eram.
 const OPERACOES_LEGADAS: ReadonlySet<OperacaoAvaliada> = new Set(['execucao', 'auditoria']);
@@ -99,6 +99,17 @@ export interface AvaliacaoPolitica {
   contexto: ContextoAvaliacao;
   versaoRegra: number | null;
   ocorridoEm: string;
+  // Fase 3.2: a tarefa avaliada e o claim cujo snapshot foi avaliado (os dois ou nenhum).
+  tarefaId: string | null;
+  claimId: string | null;
+}
+
+// Uma avaliação por tarefa (Fase 3.2): a tarefa e o claim cujo snapshot (agente, papel e modelo) está no
+// contexto. O banco confere a demanda, a operação e, no estágio pre, o snapshot do claim atual (gatilho
+// avaliacoes_politica_confere_tarefa, migration 006).
+export interface TarefaAvaliada {
+  id: string;
+  claimId: string;
 }
 
 const PoliticaSchema = z.object({
@@ -134,7 +145,11 @@ const AvaliacaoSchema = z.object({
   contexto: ContextoSchema,
   versaoRegra: z.number().int().positive().nullable(),
   ocorridoEm: z.string(),
+  tarefaId: z.uuid().nullable(),
+  claimId: z.uuid().nullable(),
 });
+
+const TarefaAvaliadaSchema = z.strictObject({ id: z.uuid(), claimId: z.uuid() });
 
 interface LinhaPolitica {
   id: string;
@@ -294,17 +309,20 @@ export async function avaliarEregistrar(
     tentativa: number | null;
     estagio: EstagioPolitica;
     contexto: ContextoAvaliacao;
+    tarefa?: TarefaAvaliada | null;
   },
 ): Promise<DecisaoPolitica> {
   try {
     const contextoValidado = ContextoSchema.parse(params.contexto);
+    const tarefa = params.tarefa ? TarefaAvaliadaSchema.parse(params.tarefa) : null;
     const regras = await listarRegrasAtivasPorEstagio(pool, params.estagio);
     const regraVencedora = decidir(regras, contextoValidado);
     const decisao = regraVencedora?.decisao ?? 'allow';
 
     await pool.query(
-      `INSERT INTO avaliacoes_politica (demanda_id, run_id, regra_id, politica_id, estagio, decisao, contexto, versao_regra)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
+      `INSERT INTO avaliacoes_politica (demanda_id, run_id, regra_id, politica_id, estagio, decisao, contexto, versao_regra,
+         tarefa_id, claim_id)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)`,
       [
         params.demandaId,
         params.runId,
@@ -314,6 +332,8 @@ export async function avaliarEregistrar(
         decisao,
         JSON.stringify(contextoValidado),
         regraVencedora?.versao ?? null,
+        tarefa?.id ?? null,
+        tarefa?.claimId ?? null,
       ],
     );
 
@@ -322,9 +342,15 @@ export async function avaliarEregistrar(
     // vezes por execução (pre/during/post), cada uma com sua própria idempotência. As operações novas
     // (hoje, o planejamento) acontecem na MESMA run que a execução, com os mesmos estágios: sem a
     // operação na chave, o "pre" do planejamento tomaria a chave do "pre" da execução e esse evento se
-    // perderia. Por isso elas levam a operação na chave e no metadata; as legadas ficam como eram.
-    const legada = OPERACOES_LEGADAS.has(contextoValidado.operacao);
-    const discriminador = legada ? params.estagio : `${contextoValidado.operacao}:${params.estagio}`;
+    // perderia. Por isso elas levam a operação na chave e no metadata; as legadas ficam como eram. Uma
+    // avaliação por tarefa (Fase 3.2) também leva a tarefa e o claim na chave: a mesma tarefa pode ser
+    // reivindicada mais de uma vez antes do envio, e cada claim tem o próprio snapshot avaliado.
+    const legada = !tarefa && OPERACOES_LEGADAS.has(contextoValidado.operacao);
+    const discriminador = tarefa
+      ? `${contextoValidado.operacao}:${tarefa.id}:${tarefa.claimId}:${params.estagio}`
+      : legada
+        ? params.estagio
+        : `${contextoValidado.operacao}:${params.estagio}`;
     try {
       await registrarEvento(pool, {
         demandaId: params.demandaId,
@@ -334,6 +360,7 @@ export async function avaliarEregistrar(
         tipoEvento: 'politica_avaliada',
         ator: contextoValidado.agente,
         chaveIdempotencia: montarChaveIdempotencia(params.correlacaoId, 'politica_avaliada', discriminador),
+        tarefaId: tarefa?.id ?? null,
         metadata: {
           estagio: params.estagio,
           decisao,
@@ -341,6 +368,7 @@ export async function avaliarEregistrar(
           regraId: regraVencedora?.id ?? null,
           versaoRegra: regraVencedora?.versao ?? null,
           ...(legada ? {} : { operacao: contextoValidado.operacao }),
+          ...(tarefa ? { claimId: tarefa.claimId } : {}),
         },
       });
     } catch (erro) {
@@ -369,6 +397,8 @@ interface LinhaAvaliacao {
   contexto: ContextoAvaliacao;
   versao_regra: number | null;
   ocorrido_em: Date;
+  tarefa_id: string | null;
+  claim_id: string | null;
 }
 
 function mapearAvaliacao(l: LinhaAvaliacao): AvaliacaoPolitica {
@@ -383,12 +413,15 @@ function mapearAvaliacao(l: LinhaAvaliacao): AvaliacaoPolitica {
     contexto: l.contexto,
     versaoRegra: l.versao_regra,
     ocorridoEm: l.ocorrido_em.toISOString(),
+    tarefaId: l.tarefa_id,
+    claimId: l.claim_id,
   }) as AvaliacaoPolitica;
 }
 
 export async function listarAvaliacoesDaDemanda(pool: pg.Pool, demandaId: string): Promise<AvaliacaoPolitica[]> {
   const { rows } = await pool.query<LinhaAvaliacao>(
-    `SELECT id, demanda_id, run_id, regra_id, politica_id, estagio, decisao, contexto, versao_regra, ocorrido_em
+    `SELECT id, demanda_id, run_id, regra_id, politica_id, estagio, decisao, contexto, versao_regra, ocorrido_em,
+            tarefa_id, claim_id
        FROM avaliacoes_politica WHERE demanda_id = $1 ORDER BY id ASC`,
     [demandaId],
   );

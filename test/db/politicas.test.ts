@@ -71,6 +71,9 @@ describe('policy engine determinístico em modo shadow (Fase 2, Entrega 2)', () 
           'contexto',
           'versao_regra',
           'ocorrido_em',
+          // Fase 3.2a (migration 006): anuláveis, os dois juntos.
+          'tarefa_id',
+          'claim_id',
         ],
       };
       for (const [tabela, colunas] of Object.entries(tabelas)) {
@@ -526,7 +529,8 @@ describe('policy engine determinístico em modo shadow (Fase 2, Entrega 2)', () 
       ]);
     });
 
-    it('integracao ainda nao e uma operacao valida: nem no Zod nem no CHECK do banco', async () => {
+    it('integracao passa a ser uma operacao valida com a migration 006, no Zod e no CHECK do banco, so acrescentando', async () => {
+      expect(OPERACOES_AVALIADAS).toEqual(['execucao', 'auditoria', 'planejamento', 'integracao']);
       const { demandaId, runId } = await demandaERun();
       const decisao = await avaliarEregistrar(db.pool, {
         demandaId,
@@ -534,16 +538,20 @@ describe('policy engine determinístico em modo shadow (Fase 2, Entrega 2)', () 
         correlacaoId: runId,
         tentativa: 1,
         estagio: 'pre',
-        contexto: { ...contextoPadrao, operacao: 'integracao' as never },
+        contexto: { ...contextoPadrao, operacao: 'integracao' },
       });
-      // Fail-open: contexto inválido não grava nada e devolve allow.
       expect(decisao).toBe('allow');
-      expect(await listarAvaliacoesDaDemanda(db.pool, demandaId)).toEqual([]);
-      const { rows } = await db.pool.query<{ plan: boolean; integ: boolean }>(
+      const [avaliacao] = await listarAvaliacoesDaDemanda(db.pool, demandaId);
+      expect(avaliacao).toMatchObject({ contexto: { operacao: 'integracao' }, tarefaId: null, claimId: null });
+      const [evento] = (await listarEventosDaDemanda(db.pool, demandaId)).filter((e) => e.tipoEvento === 'politica_avaliada');
+      expect(evento!.chaveIdempotencia).toBe(`${runId}|politica_avaliada|integracao:pre`);
+      expect(evento!.metadata).toMatchObject({ operacao: 'integracao' });
+      const { rows } = await db.pool.query<{ plan: boolean; integ: boolean; outra: boolean }>(
         `SELECT politica_condicao_valida('{"operacao":"planejamento"}'::jsonb) AS plan,
-                politica_condicao_valida('{"operacao":"integracao"}'::jsonb) AS integ`,
+                politica_condicao_valida('{"operacao":"integracao"}'::jsonb) AS integ,
+                politica_condicao_valida('{"operacao":"qualquer"}'::jsonb) AS outra`,
       );
-      expect(rows[0]).toEqual({ plan: true, integ: false });
+      expect(rows[0]).toEqual({ plan: true, integ: true, outra: false });
     });
 
     it('uma regra pode mirar o planejamento sem casar com a execucao', async () => {

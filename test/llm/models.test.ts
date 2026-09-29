@@ -1,5 +1,14 @@
 import { describe, expect, it } from 'vitest';
-import { custoUsd, modeloConhecido, ModeloDesconhecidoError } from '../../src/llm/models.ts';
+import {
+  custoUsd,
+  dadosDoModelo,
+  modeloConhecido,
+  ModeloDesconhecidoError,
+  MODELOS_VERIFICADOS_EM,
+  MULTIPLICADOR_CACHE_ESCRITA,
+  MULTIPLICADOR_CACHE_LEITURA,
+} from '../../src/llm/models.ts';
+import { decimalParaInteiro } from '../../src/llm/reserva.ts';
 
 const zero = { inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0 };
 
@@ -37,5 +46,33 @@ describe('modeloConhecido', () => {
     expect(modeloConhecido('gpt-5')).toBe(false);
     expect(modeloConhecido('toString')).toBe(false);
     expect(modeloConhecido('__proto__')).toBe(false);
+  });
+});
+
+// Fase 3.2a: a tabela fechada ganhou a janela de contexto e a saída máxima, conferidas na documentação oficial
+// (platform.claude.com, páginas de preços e de janelas de contexto) na data registrada.
+describe('dadosDoModelo', () => {
+  it('traz preco, janela de contexto e saida maxima de cada modelo, com a data da conferencia', () => {
+    expect(MODELOS_VERIFICADOS_EM).toBe('2026-09-29');
+    expect(dadosDoModelo('claude-fable-5-1')).toEqual({ entrada: '10', saida: '50', janelaTokens: 1_000_000, maxSaidaTokens: 128_000 });
+    expect(dadosDoModelo('claude-opus-5')).toEqual({ entrada: '5', saida: '25', janelaTokens: 1_000_000, maxSaidaTokens: 128_000 });
+    expect(dadosDoModelo('claude-sonnet-5')).toEqual({ entrada: '2', saida: '10', janelaTokens: 1_000_000, maxSaidaTokens: 128_000 });
+    expect(dadosDoModelo('claude-haiku-4-5')).toEqual({ entrada: '1', saida: '5', janelaTokens: 200_000, maxSaidaTokens: 64_000 });
+  });
+
+  it('preco e multiplicadores sao texto decimal (sem ponto flutuante no caminho do teto)', () => {
+    for (const modelo of ['claude-fable-5-1', 'claude-opus-5', 'claude-sonnet-5', 'claude-haiku-4-5']) {
+      const m = dadosDoModelo(modelo);
+      expect(decimalParaInteiro(m.entrada, 6)).toBeGreaterThan(0n);
+      expect(decimalParaInteiro(m.saida, 6)).toBeGreaterThan(0n);
+      expect(m.maxSaidaTokens).toBeLessThan(m.janelaTokens);
+    }
+    expect(decimalParaInteiro(MULTIPLICADOR_CACHE_ESCRITA, 2)).toBe(125n);
+    expect(decimalParaInteiro(MULTIPLICADOR_CACHE_LEITURA, 2)).toBe(10n);
+  });
+
+  it('falha fechado para modelo sem cadastro, inclusive nomes herdados de Object', () => {
+    expect(() => dadosDoModelo('modelo-inventado')).toThrowError(ModeloDesconhecidoError);
+    expect(() => dadosDoModelo('toString')).toThrowError(ModeloDesconhecidoError);
   });
 });

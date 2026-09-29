@@ -69,7 +69,8 @@ export class AnthropicLlm implements Llm {
 
   // Sempre em streaming: respostas longas (páginas HTML) estouram o timeout HTTP sem ele.
   async gerar<T>(pedido: PedidoLlm<T>): Promise<RespostaLlm<T>> {
-    const inicio = Date.now();
+    // Relógio monotônico: o de parede pode voltar durante a chamada, e agent_steps recusa duração negativa.
+    const inicio = performance.now();
 
     let mensagem: Anthropic.Message;
     try {
@@ -103,6 +104,6 @@ export class AnthropicLlm implements Llm {
     const validado = pedido.schema.safeParse(json);
     if (!validado.success) throw new LlmError('invalido', 'A resposta do modelo fugiu do esquema esperado.', uso);
 
-    return { valor: validado.data, uso, modelo: pedido.modelo, duracaoMs: Date.now() - inicio };
+    return { valor: validado.data, uso, modelo: pedido.modelo, duracaoMs: Math.round(performance.now() - inicio) };
   }
 }

@@ -23,6 +23,24 @@ export const TIPOS_EVENTO = [
   'plano_registrado',
   'plano_rejeitado',
   'planejamento_falhou',
+  // Fase 3.2 (execução por tarefas). Os schemas entram na PR 3.2a; quem emite é a PR 3.2b.
+  'rota_definida',
+  'plano_ativado',
+  'plano_retomado',
+  'plano_abandonado',
+  'plano_concluido',
+  'fallback_legado',
+  'agente_selecionado',
+  'tarefa_iniciada',
+  'tarefa_concluida',
+  'tarefa_falhou',
+  'tarefa_devolvida',
+  'tarefa_lease_expirado',
+  'tarefa_resultado_descartado',
+  'custo_demanda_excedido',
+  'custo_acima_da_reserva',
+  'custo_adicional_autorizado',
+  'gasto_retido_reconhecido',
 ] as const;
 const TIPOS_EVENTO_VALIDOS = new Set<string>(TIPOS_EVENTO);
 export type TipoEvento = (typeof TIPOS_EVENTO)[number];
@@ -39,8 +57,33 @@ export const CODIGOS_ERRO = [
   'claim_expirado',
   'agente_nao_autorizado',
   'falha_inesperada',
+  // Fase 3.2: só acrescentam (seção 7 do plano e ADR 0007).
+  'lease_expirado',
+  'artefato_invalido',
+  'custo_demanda_excedido',
+  'prazo_da_run',
+  'llm_timeout',
+  'contexto_excedido',
+  'agente_alterado',
 ] as const;
 export type CodigoErro = (typeof CODIGOS_ERRO)[number];
+
+// Os códigos com que uma tarefa falha: os mesmos do CHECK tarefas_codigo_erro_check (migration 006).
+export const CODIGOS_ERRO_TAREFA = [
+  'contexto_excedido',
+  'artefato_invalido',
+  'lease_expirado',
+  'llm_recusa',
+  'llm_truncado',
+  'llm_invalido',
+  'llm_api',
+  'llm_timeout',
+  'falha_inesperada',
+] as const satisfies readonly CodigoErro[];
+export type CodigoErroTarefa = (typeof CODIGOS_ERRO_TAREFA)[number];
+
+// Ator dos eventos que o próprio sistema registra (fila, watchdog, roteamento), como já é hoje.
+export const ATOR_SISTEMA = 'sistema';
 
 const SCHEMA_VERSAO_ATUAL = 1;
 
@@ -66,7 +109,32 @@ const RESUMOS_POR_TIPO: Readonly<Record<TipoEvento, string>> = {
   plano_registrado: 'Plano de tarefas registrado (modo planejar — não executa).',
   plano_rejeitado: 'Plano de tarefas rejeitado pela validação.',
   planejamento_falhou: 'Planejamento de tarefas falhou; a demanda segue pelo fluxo atual.',
+  rota_definida: 'Rota do processamento definida.',
+  plano_ativado: 'Plano de tarefas ativado para execução.',
+  plano_retomado: 'Plano de tarefas retomado.',
+  plano_abandonado: 'Plano de tarefas abandonado.',
+  plano_concluido: 'Plano de tarefas concluído.',
+  fallback_legado: 'Demanda desviada para o fluxo legado.',
+  agente_selecionado: 'Agente selecionado para a tarefa.',
+  tarefa_iniciada: 'Tarefa iniciada: envio registrado.',
+  tarefa_concluida: 'Tarefa concluída.',
+  tarefa_falhou: 'Tarefa falhou.',
+  tarefa_devolvida: 'Tarefa devolvida antes do envio, sem consumir tentativa.',
+  tarefa_lease_expirado: 'Lease da tarefa expirado.',
+  tarefa_resultado_descartado: 'Resultado da tarefa descartado.',
+  custo_demanda_excedido: 'Teto de custo da demanda atingido: a chamada não foi feita.',
+  custo_acima_da_reserva: 'Custo real acima do valor reservado.',
+  custo_adicional_autorizado: 'Custo adicional autorizado.',
+  gasto_retido_reconhecido: 'Gasto retido reconhecido.',
 };
+
+// plano_registrado de um plano em execução (Fase 3.2) tem o próprio texto fixo: o de cima diz "não executa".
+const RESUMO_PLANO_EM_EXECUCAO = 'Plano de tarefas registrado para execução.';
+
+function resumoDo(tipo: TipoEvento, metadata: Record<string, unknown>): string {
+  if (tipo === 'plano_registrado' && metadata.modo === 'execucao') return RESUMO_PLANO_EM_EXECUCAO;
+  return RESUMOS_POR_TIPO[tipo];
+}
 
 const categoria = z.enum(CATEGORIAS);
 const prioridade = z.enum(PRIORIDADES);
@@ -75,6 +143,56 @@ const uuid = z.uuid();
 const contagem = z.number().int().nonnegative();
 const percentual = z.number().int().min(0).max(100);
 const tentativaPlanejada = z.number().int().positive();
+const versaoPlano = z.number().int().positive();
+
+// Fase 3.2. Vocabulários fechados; os que espelham o banco repetem os CHECK da migration 006. Redeclarados aqui
+// (em vez de importados de planos.ts, tarefas.ts e orquestracao.ts) pelo mesmo motivo do politica_avaliada:
+// esses módulos importam este para emitir os próprios eventos.
+const MOTIVOS_REJEICAO_PLANO = [
+  'sem_tarefas',
+  'limite_tarefas',
+  'chave_duplicada',
+  'chave_reservada',
+  'capacidade_nao_executora',
+  'dependencia_inexistente',
+  'autodependencia',
+  'ciclo',
+  'objetivo_invalido',
+] as const;
+const MOTIVOS_ABANDONO_PLANO = [
+  'tarefa_falhou',
+  'agente_indisponivel',
+  'pendencia_humana',
+  'orquestracao_desligada',
+  'demanda_encerrada',
+] as const;
+// Os mesmos de orquestracao_demandas.motivo_legado: todo fallback fixa a rota com o próprio motivo.
+const MOTIVOS_FALLBACK = ['plano_rejeitado', 'planejamento_falhou', 'tarefa_falhou', 'agente_indisponivel'] as const;
+// A rota que o processamento tomou (tabela de roteamento, seção 3.2 do plano) e por quê.
+export const ROTAS_PROCESSAMENTO = ['pos_integracao', 'retomada', 'tarefas', 'legado_fixo', 'shadow', 'legado'] as const;
+export const MOTIVOS_ROTA = [
+  'integracao_concluida',
+  'plano_ativo',
+  'rota_fixada',
+  'categoria_ligada',
+  'flag_planejar',
+  'flag_desligada',
+  'categoria_desligada',
+] as const;
+const tipoTarefa = z.enum(['especialista', 'integracao']);
+const capacidadeTarefa = z.enum([
+  'gestores', 'd1', 'd2', 'd3', 'd4', 'd5', 'd6', 'd7', 'd8', 'd9',
+  'd10', 'd11', 'd12', 'd13', 'd14', 'd15', 'd16', 'd18',
+]);
+const operacaoCusto = z.enum(['planejamento', 'execucao', 'integracao', 'auditoria']);
+// Chave de agente: o mesmo formato fechado do contexto de política (nunca texto livre).
+const chaveAgente = z.string().regex(/^[a-z0-9][a-z0-9._:-]{0,99}$/);
+// Dólar como número, com no máximo 6 casas: recusa lixo de ponto flutuante (0.1 + 0.2) em vez de gravá-lo.
+const usd = z
+  .number()
+  .nonnegative()
+  .max(1_000_000)
+  .refine((v) => Number(v.toFixed(6)) === v, { message: 'valor em dólar com mais de 6 casas decimais' });
 
 // Um schema Zod .strict() por tipo_evento: só os campos exatos passam, com o tipo exato — nunca texto
 // livre. Isto substitui uma lista de nomes proibidos (denylist): uma denylist nunca pegaria "motivo" ou
@@ -98,7 +216,7 @@ const METADATA_SCHEMAS: Readonly<Record<TipoEvento, z.ZodType>> = {
   demanda_concluida: z.strictObject({ indiceGeral: percentual.nullable(), antipadroesCount: contagem.nullable() }),
   demanda_reaberta: z.strictObject({ origem: z.enum(['resposta', 'manual']) }),
   demanda_devolvida_para_fila: z.strictObject({
-    motivoDevolucao: z.enum(['nunca_iniciada', 'parada_sistemica', 'falha_da_demanda', 'watchdog']),
+    motivoDevolucao: z.enum(['nunca_iniciada', 'parada_sistemica', 'falha_da_demanda', 'watchdog', 'prazo_da_run']),
     codigoErro: codigoErro.nullable(),
     tentativaPlanejada: tentativaPlanejada.optional(),
   }),
@@ -113,34 +231,145 @@ const METADATA_SCHEMAS: Readonly<Record<TipoEvento, z.ZodType>> = {
     politicaId: uuid.nullable(),
     regraId: uuid.nullable(),
     versaoRegra: z.number().int().positive().nullable(),
-    // Só nas operações da Fase 3 (hoje, o planejamento): as legadas mantêm o formato original.
-    operacao: z.literal('planejamento').optional(),
+    // Só nas operações da Fase 3 (o planejamento e as avaliações por tarefa): as legadas mantêm o formato
+    // original. Numa avaliação por tarefa, claimId liga o evento ao snapshot do claim (a tarefa vai na coluna).
+    operacao: z.enum(['planejamento', 'execucao', 'integracao']).optional(),
+    claimId: uuid.optional(),
   }),
-  // Fase 3.1 (modo "planejar"): só ids, versão, contagens e códigos fechados — nunca a chave de uma
-  // tarefa, texto do modelo ou da demanda.
+  // Fase 3.1 (modo "planejar") e 3.2: só ids, versão, contagens e códigos fechados — nunca a chave de uma
+  // tarefa, o objetivo, texto do modelo ou da demanda.
   plano_registrado: z.strictObject({
     planoId: uuid,
-    versao: z.number().int().positive(),
-    modo: z.literal('shadow'),
+    versao: versaoPlano,
+    modo: z.enum(['shadow', 'execucao']),
     totalTarefas: contagem,
     totalDependencias: contagem,
   }),
-  plano_rejeitado: z.strictObject({
+  plano_rejeitado: z.strictObject({ planoId: uuid, versao: versaoPlano, motivoRejeicao: z.enum(MOTIVOS_REJEICAO_PLANO) }),
+  planejamento_falhou: z.strictObject({ codigoErro }),
+  // Fase 3.2 (seção 7 do plano). Nunca lease_token, lease, chave ou objetivo de tarefa, conteúdo, resumo ou
+  // referência de artefato, URL, prompt ou texto de erro. claimId pode: identifica o claim, mas não autoriza nada.
+  rota_definida: z.strictObject({ rota: z.enum(ROTAS_PROCESSAMENTO), motivoRota: z.enum(MOTIVOS_ROTA) }),
+  plano_ativado: z.strictObject({ planoId: uuid, versao: versaoPlano, totalTarefas: contagem }),
+  plano_retomado: z.strictObject({ planoId: uuid, versao: versaoPlano, tarefasConcluidas: contagem, tarefasRestantes: contagem }),
+  plano_abandonado: z.strictObject({
     planoId: uuid,
-    versao: z.number().int().positive(),
-    motivoRejeicao: z.enum([
-      'sem_tarefas',
-      'limite_tarefas',
-      'chave_duplicada',
-      'chave_reservada',
-      'capacidade_nao_executora',
-      'dependencia_inexistente',
-      'autodependencia',
-      'ciclo',
+    versao: versaoPlano,
+    motivoAbandono: z.enum(MOTIVOS_ABANDONO_PLANO),
+    tarefasCanceladas: contagem,
+  }),
+  plano_concluido: z.strictObject({ planoId: uuid, versao: versaoPlano, entregaId: uuid }),
+  fallback_legado: z.strictObject({
+    planoId: uuid.nullable(),
+    motivoFallback: z.enum(MOTIVOS_FALLBACK),
+    codigoErro: codigoErro.nullable(),
+  }),
+  agente_selecionado: z.strictObject({
+    claimId: uuid,
+    agente: chaveAgente,
+    versaoAgente: z.number().int().positive(),
+    capacidade: capacidadeTarefa,
+  }),
+  tarefa_iniciada: z.strictObject({
+    claimId: uuid,
+    tipo: tipoTarefa,
+    tentativa: z.number().int().positive(),
+    maxTentativas: z.number().int().min(1).max(3),
+    artefatosIntegrais: contagem,
+    artefatosSoResumo: contagem,
+    conversaOmitida: contagem,
+  }),
+  tarefa_concluida: z.strictObject({
+    claimId: uuid,
+    tipo: tipoTarefa,
+    tentativa: z.number().int().positive(),
+    artefatoId: uuid,
+    bytes: contagem,
+    totalReferencias: contagem,
+    referenciasDescartadas: contagem,
+    duracaoMs: contagem,
+  }),
+  // contexto_excedido acontece antes do claim: claimId nulo e ator "sistema" (conferido em registrarEvento).
+  tarefa_falhou: z
+    .strictObject({
+      claimId: uuid.nullable(),
+      tipo: tipoTarefa,
+      tentativa: contagem,
+      codigoErro: z.enum(CODIGOS_ERRO_TAREFA),
+      definitiva: z.boolean(),
+    })
+    .refine((m) => (m.codigoErro === 'contexto_excedido') === (m.claimId === null), {
+      message: 'tarefa_falhou: claimId é nulo exatamente em contexto_excedido',
+    })
+    .refine((m) => m.codigoErro !== 'contexto_excedido' || m.definitiva, {
+      message: 'tarefa_falhou: contexto_excedido é sempre definitiva',
+    }),
+  tarefa_devolvida: z.strictObject({
+    claimId: uuid,
+    codigoErro: z.enum([
+      'frota_pausada',
+      'orcamento_excedido',
+      'custo_demanda_excedido',
+      'prazo_da_run',
+      'agente_nao_autorizado',
+      'agente_alterado',
     ]),
   }),
-  planejamento_falhou: z.strictObject({ codigoErro }),
+  tarefa_lease_expirado: z.strictObject({
+    claimId: uuid,
+    tentativa: contagem,
+    enviada: z.boolean(),
+    destino: z.enum(['pronta', 'falhou']),
+  }),
+  tarefa_resultado_descartado: z.strictObject({
+    claimId: uuid,
+    tentativa: z.number().int().positive(),
+    motivoDescarte: z.enum(['lease_perdido', 'tarefa_encerrada']),
+  }),
+  custo_demanda_excedido: z.strictObject({ comprometidoUsd: usd, reservaUsd: usd, limiteUsd: usd, operacao: operacaoCusto }),
+  custo_acima_da_reserva: z.strictObject({ operacao: operacaoCusto, reservaUsd: usd, custoRealUsd: usd }),
+  custo_adicional_autorizado: z.strictObject({ valorUsd: usd, limiteAnteriorUsd: usd, limiteNovoUsd: usd }),
+  gasto_retido_reconhecido: z.strictObject({ valorUsd: usd, operacao: operacaoCusto }),
 };
+
+// Onde a coluna tarefa_id é obrigatória, opcional ou proibida (coluna "tarefa_id" da seção 7 do plano). O
+// banco confere que a tarefa é da mesma demanda do evento (gatilho agent_events_confere_tarefa).
+const TAREFA_OBRIGATORIA: ReadonlySet<TipoEvento> = new Set([
+  'agente_selecionado',
+  'tarefa_iniciada',
+  'tarefa_concluida',
+  'tarefa_falhou',
+  'tarefa_devolvida',
+  'tarefa_lease_expirado',
+  'tarefa_resultado_descartado',
+]);
+const TAREFA_OPCIONAL: ReadonlySet<TipoEvento> = new Set([
+  'custo_demanda_excedido',
+  'custo_acima_da_reserva',
+  'gasto_retido_reconhecido',
+  'entrega_criada',
+  'politica_avaliada',
+]);
+
+// Regras que cruzam a metadata com as colunas do evento. Lança antes de qualquer escrita.
+function conferirColunas(e: NovoEvento, metadata: Record<string, unknown>): void {
+  const temTarefa = e.tarefaId !== undefined && e.tarefaId !== null;
+  if (temTarefa && !uuid.safeParse(e.tarefaId).success) {
+    throw new Error('tarefaId precisa ser um uuid.');
+  }
+  if (TAREFA_OBRIGATORIA.has(e.tipoEvento) && !temTarefa) {
+    throw new Error(`O evento ${e.tipoEvento} exige tarefaId.`);
+  }
+  if (!TAREFA_OBRIGATORIA.has(e.tipoEvento) && !TAREFA_OPCIONAL.has(e.tipoEvento) && temTarefa) {
+    throw new Error(`O evento ${e.tipoEvento} não leva tarefaId.`);
+  }
+  if (e.tipoEvento === 'tarefa_falhou' && (metadata.codigoErro === 'contexto_excedido') !== (e.ator === ATOR_SISTEMA)) {
+    throw new Error('tarefa_falhou: o ator é "sistema" exatamente em contexto_excedido.');
+  }
+  if (e.tipoEvento === 'politica_avaliada' && (metadata.claimId !== undefined) !== temTarefa) {
+    throw new Error('politica_avaliada: claimId vem junto com tarefaId, e só com ele.');
+  }
+}
 
 export interface NovoEvento {
   demandaId: string;
@@ -157,6 +386,8 @@ export interface NovoEvento {
   ator: string;
   metadata?: Record<string, unknown>;
   chaveIdempotencia: string;
+  // Fase 3.2: a tarefa do evento, quando houver (ver TAREFA_OBRIGATORIA e TAREFA_OPCIONAL).
+  tarefaId?: string | null;
 }
 
 export interface Evento {
@@ -173,6 +404,7 @@ export interface Evento {
   metadata: Record<string, unknown>;
   chaveIdempotencia: string;
   ocorridoEm: string;
+  tarefaId: string | null;
 }
 
 interface Linha {
@@ -189,10 +421,11 @@ interface Linha {
   metadata: Record<string, unknown>;
   chave_idempotencia: string;
   ocorrido_em: Date;
+  tarefa_id: string | null;
 }
 
 const COLUNAS = `id, demanda_id, correlacao_id, run_id, tentativa, sequencia_demanda, tipo_evento, schema_versao,
-  ator, resumo, metadata, chave_idempotencia, ocorrido_em`;
+  ator, resumo, metadata, chave_idempotencia, ocorrido_em, tarefa_id`;
 
 function mapear(l: Linha): Evento {
   return {
@@ -209,6 +442,7 @@ function mapear(l: Linha): Evento {
     metadata: l.metadata,
     chaveIdempotencia: l.chave_idempotencia,
     ocorridoEm: l.ocorrido_em.toISOString(),
+    tarefaId: l.tarefa_id,
   };
 }
 
@@ -238,7 +472,8 @@ export async function registrarEvento(pool: pg.Pool, e: NovoEvento): Promise<Eve
     throw new Error(`Tipo de evento não permitido: "${e.tipoEvento}".`);
   }
   const metadataValidada = METADATA_SCHEMAS[e.tipoEvento].parse(e.metadata ?? {}) as Record<string, unknown>;
-  const resumo = RESUMOS_POR_TIPO[e.tipoEvento];
+  conferirColunas(e, metadataValidada);
+  const resumo = resumoDo(e.tipoEvento, metadataValidada);
 
   const client = await pool.connect();
   try {
@@ -262,8 +497,8 @@ export async function registrarEvento(pool: pg.Pool, e: NovoEvento): Promise<Eve
 
     const inserida = await client.query<Linha>(
       `INSERT INTO agent_events (demanda_id, correlacao_id, run_id, tentativa, sequencia_demanda, tipo_evento,
-         schema_versao, ator, resumo, metadata, chave_idempotencia)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+         schema_versao, ator, resumo, metadata, chave_idempotencia, tarefa_id)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
        RETURNING ${COLUNAS}`,
       [
         e.demandaId,
@@ -277,6 +512,7 @@ export async function registrarEvento(pool: pg.Pool, e: NovoEvento): Promise<Eve
         resumo,
         JSON.stringify(metadataValidada),
         e.chaveIdempotencia,
+        e.tarefaId ?? null,
       ],
     );
     await client.query('COMMIT');
