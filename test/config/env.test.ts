@@ -68,6 +68,15 @@ describe('loadConfig', () => {
     expect(() => loadConfig({ ...valido, PUBLIC_BASE_URL: linha!.slice('PUBLIC_BASE_URL='.length).trim() })).toThrowError(/PUBLIC_BASE_URL/);
   });
 
+  it('deixa a orquestracao por tarefas desligada por padrao e aceita so os modos conhecidos', () => {
+    expect(loadConfig(valido).ORQUESTRACAO_TAREFAS).toBe('desligada');
+    expect(loadConfig({ ...valido, ORQUESTRACAO_TAREFAS: 'planejar' }).ORQUESTRACAO_TAREFAS).toBe('planejar');
+    // "executar" é da entrega 3.2 e ainda não existe: aceitar o valor ligaria algo que o código não faz.
+    for (const invalido of ['executar', 'PLANEJAR', 'ligada']) {
+      expect(() => loadConfig({ ...valido, ORQUESTRACAO_TAREFAS: invalido })).toThrow(/ORQUESTRACAO_TAREFAS/);
+    }
+  });
+
   it('converte numeros vindos como texto', () => {
     const cfg = loadConfig({ ...valido, PORT: '8080', MONTHLY_BUDGET_USD: '75.5', MAX_DEMANDAS_POR_RUN: '5' });
     expect(cfg.PORT).toBe(8080);

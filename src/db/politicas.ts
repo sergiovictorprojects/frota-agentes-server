@@ -11,8 +11,14 @@ export type EstagioPolitica = (typeof ESTAGIOS_POLITICA)[number];
 export const DECISOES_POLITICA = ['allow', 'warn', 'require_approval', 'deny'] as const;
 export type DecisaoPolitica = (typeof DECISOES_POLITICA)[number];
 
-// Os únicos dois pontos do fluxo real que chamam um modelo: a execução do trabalho e a auditoria.
-export const OPERACOES_AVALIADAS = ['execucao', 'auditoria'] as const;
+// Os pontos do fluxo que chamam um modelo: a execução do trabalho e a auditoria (desde a Fase 2) e o
+// planejamento do coordenador (Fase 3.1, modo "planejar"). A migration 005 acrescentou "planejamento" ao
+// CHECK politica_condicao_valida — só acrescentou, nada deixou de valer. "integracao" entra com a 3.2,
+// quando essa operação passar a ser executada.
+export const OPERACOES_AVALIADAS = ['execucao', 'auditoria', 'planejamento'] as const;
+// As operações que já existiam antes da Fase 3: mantêm a chave de idempotência e o formato do evento
+// politica_avaliada exatamente como eram.
+const OPERACOES_LEGADAS: ReadonlySet<OperacaoAvaliada> = new Set(['execucao', 'auditoria']);
 export type OperacaoAvaliada = (typeof OPERACOES_AVALIADAS)[number];
 
 const ATOR_RE = /^[a-z0-9][a-z0-9_.:-]{0,99}$/;
@@ -313,7 +319,12 @@ export async function avaliarEregistrar(
 
     // Evento seguro no ledger unificado: só decisão, estágio, ids/versionamento e código fechado — nunca
     // a condição da regra nem qualquer texto. Uma chave por estágio: esta avaliação acontece até três
-    // vezes por execução (pre/during/post), cada uma com sua própria idempotência.
+    // vezes por execução (pre/during/post), cada uma com sua própria idempotência. As operações novas
+    // (hoje, o planejamento) acontecem na MESMA run que a execução, com os mesmos estágios: sem a
+    // operação na chave, o "pre" do planejamento tomaria a chave do "pre" da execução e esse evento se
+    // perderia. Por isso elas levam a operação na chave e no metadata; as legadas ficam como eram.
+    const legada = OPERACOES_LEGADAS.has(contextoValidado.operacao);
+    const discriminador = legada ? params.estagio : `${contextoValidado.operacao}:${params.estagio}`;
     try {
       await registrarEvento(pool, {
         demandaId: params.demandaId,
@@ -322,13 +333,14 @@ export async function avaliarEregistrar(
         tentativa: params.tentativa,
         tipoEvento: 'politica_avaliada',
         ator: contextoValidado.agente,
-        chaveIdempotencia: montarChaveIdempotencia(params.correlacaoId, 'politica_avaliada', params.estagio),
+        chaveIdempotencia: montarChaveIdempotencia(params.correlacaoId, 'politica_avaliada', discriminador),
         metadata: {
           estagio: params.estagio,
           decisao,
           politicaId: regraVencedora?.politicaId ?? null,
           regraId: regraVencedora?.id ?? null,
           versaoRegra: regraVencedora?.versao ?? null,
+          ...(legada ? {} : { operacao: contextoValidado.operacao }),
         },
       });
     } catch (erro) {

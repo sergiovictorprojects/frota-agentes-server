@@ -6,6 +6,7 @@ import { adicionarMensagem, listarMensagens } from '../db/mensagens.ts';
 import { avaliarEregistrar, ESTADO_AGENTE_DESCONHECIDO, type EstagioPolitica, type OperacaoAvaliada } from '../db/politicas.ts';
 import { criarEntrega, registrarAprendizado, salvarRelatorio, type Metricas } from '../db/relatorios.ts';
 import { comTransacao } from '../db/tx.ts';
+import type { ModoOrquestracao } from '../domain/orquestracao.ts';
 import { CATEGORIAS, SETORES, type Categoria, type StatusDemanda } from '../domain/setores.ts';
 import { LlmError, type Llm } from '../llm/llm.ts';
 import { paginaDeTexto } from '../util/html.ts';
@@ -19,6 +20,7 @@ import {
   usuarioExecucao,
   type FalaDaConversa,
 } from './prompts.ts';
+import { PAPEL_COORDENADOR, planejarEmShadow } from './planejamento.ts';
 import { AuditoriaSchema, ResultadoExecucaoSchema, type ResultadoExecucao } from './schemas.ts';
 
 const MAX_TOKENS_EXECUCAO = 32_000;
@@ -33,6 +35,9 @@ export interface DependenciasDemanda {
   modeloTrabalho: string;
   modeloAuditoria: string;
   urlBase: string;
+  // Fase 3.1: "planejar" grava um plano de tarefas em shadow antes da execução legada; ausente ou
+  // "desligada", nada muda. Ver src/orchestrator/planejamento.ts.
+  orquestracao?: ModoOrquestracao;
   agora?: () => Date;
 }
 
@@ -421,6 +426,35 @@ export async function processarDemanda(d: DependenciasDemanda, demanda: Demanda,
 
   await checkpoint('Iniciando análise da demanda.', null);
   await emitir('processamento_iniciado', setor.papel);
+
+  // Carregada uma única vez: o planejador (quando ligado) e a execução recebem exatamente o mesmo contexto,
+  // inclusive a resposta do solicitante numa demanda retomada. Antes da Fase 3.1 esta leitura ficava dentro
+  // do try da chamada de trabalho; a falha dela continua registrada como chamada_trabalho_falhou (só o
+  // código fechado, nunca a mensagem do banco) e continua subindo para processar-fila.ts do mesmo jeito.
+  let conversa: FalaDaConversa[];
+  try {
+    conversa = await conversaDaDemanda(d.pool, demanda.id);
+  } catch (erro) {
+    await emitir('chamada_trabalho_falhou', setor.papel, { codigoErro: codigoDoErro(erro) });
+    throw erro;
+  }
+
+  // Fase 3.1, modo "planejar": só grava o plano (shadow). A demanda segue inteira pelo fluxo legado abaixo,
+  // com o mesmo resultado; uma falha no planejamento nunca a afeta.
+  if (d.orquestracao === 'planejar') {
+    await planejarEmShadow({
+      pool: d.pool,
+      llm: d.llm,
+      modelo: d.modeloTrabalho,
+      demanda,
+      conversa,
+      runId,
+      emitir,
+      avaliar: (estagio) =>
+        avaliarEstagio(d.pool, PAPEL_COORDENADOR, 'coordenador', demanda, 'planejamento', d.modeloTrabalho, estagio, runId, tentativaAtual),
+    });
+  }
+
   await checkpoint(`Executando o trabalho com ${setor.papel} (${d.modeloTrabalho}).`, setor.papel);
 
   // "pre": antes de iniciar a execução em si — modo shadow, nunca bloqueia.
@@ -439,7 +473,7 @@ export async function processarDemanda(d: DependenciasDemanda, demanda: Demanda,
       modelo: d.modeloTrabalho,
       papel: setor.papel,
       sistema: sistemaExecucao(setor),
-      usuario: usuarioExecucao(demanda, await conversaDaDemanda(d.pool, demanda.id)),
+      usuario: usuarioExecucao(demanda, conversa),
       schema: ResultadoExecucaoSchema,
       maxTokens: MAX_TOKENS_EXECUCAO,
       contexto,
