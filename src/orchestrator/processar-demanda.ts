@@ -428,8 +428,16 @@ export async function processarDemanda(d: DependenciasDemanda, demanda: Demanda,
   await emitir('processamento_iniciado', setor.papel);
 
   // Carregada uma única vez: o planejador (quando ligado) e a execução recebem exatamente o mesmo contexto,
-  // inclusive a resposta do solicitante numa demanda retomada.
-  const conversa = await conversaDaDemanda(d.pool, demanda.id);
+  // inclusive a resposta do solicitante numa demanda retomada. Antes da Fase 3.1 esta leitura ficava dentro
+  // do try da chamada de trabalho; a falha dela continua registrada como chamada_trabalho_falhou (só o
+  // código fechado, nunca a mensagem do banco) e continua subindo para processar-fila.ts do mesmo jeito.
+  let conversa: FalaDaConversa[];
+  try {
+    conversa = await conversaDaDemanda(d.pool, demanda.id);
+  } catch (erro) {
+    await emitir('chamada_trabalho_falhou', setor.papel, { codigoErro: codigoDoErro(erro) });
+    throw erro;
+  }
 
   // Fase 3.1, modo "planejar": só grava o plano (shadow). A demanda segue inteira pelo fluxo legado abaixo,
   // com o mesmo resultado; uma falha no planejamento nunca a afeta.
