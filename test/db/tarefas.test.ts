@@ -4,7 +4,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { atualizarAgente } from '../../src/db/agentes.ts';
 import { inserirArtefato } from '../../src/db/artefatos.ts';
 import { ATOR_SISTEMA, listarEventosDaDemanda, montarChaveIdempotencia, registrarEvento } from '../../src/db/eventos.ts';
-import { criarEnvelope, fixarRotaLegado, obterEnvelope, reterReservasVencidas } from '../../src/db/orquestracao.ts';
+import { bloquearPorCusto, criarEnvelope, fixarRotaLegado, obterEnvelope, reterReservasVencidas } from '../../src/db/orquestracao.ts';
 import {
   listarPlanosDaDemanda,
   obterPlanoAtivo,
@@ -38,7 +38,6 @@ import {
   contarPassos,
   demandaComEnvelope,
   enviar,
-  esperar,
   levarAteIntegracao,
   linhaDaTarefa,
   novaDemanda,
@@ -47,6 +46,7 @@ import {
   reivindicar,
   reivindicarEEnviar,
   UUID_RE,
+  vencerLease,
 } from '../helpers/execucao.ts';
 
 // Fase 3.2a: planos em execução e tarefas (migration 006, src/db/tarefas.ts). Nada disso é chamado pelo fluxo
@@ -273,7 +273,7 @@ describe('execucao por tarefas (migration 006)', () => {
       expect(resumo).toMatchObject({ estado: 'em_execucao', claimId: t.claimId, tentativas: 0, enviadaEm: null, iniciadaEm: null, agente: t.agente });
     });
 
-    it('claim_id e lease_token nunca vem de quem chama; o snapshot precisa casar com o catalogo e o lease precisa valer', async () => {
+    it('claim_id e lease_token nunca vem de quem chama; o snapshot precisa casar com o catalogo e o lease tem tamanho fechado', async () => {
       const p = await planoAtivoDeTeste(db.pool, [
         { chave: 'a', capacidade: 'd1' },
         { chave: 'b', capacidade: 'd1' },
@@ -285,23 +285,32 @@ describe('execucao por tarefas (migration 006)', () => {
             WHERE id = $1 RETURNING claim_id, lease_token`,
           [tarefaId, agente, papel],
         );
+      // Timeout de 480 segundos da especialista: o lease vai de 600 a 1.380 segundos a partir de agora.
+      const valido = "now() + interval '11 minutes'";
       const snapshot = 'tarefas: o snapshot do claim precisa ser de um agente ativo e compatível no catálogo';
 
-      await expect(claimCru(p.ids.a!, 'frota:code-explorer', 'executor', "now() + interval '1 hour'")).rejects.toThrow(snapshot);
-      await expect(claimCru(p.ids.a!, 'frota:architect', 'coordenador', "now() + interval '1 hour'")).rejects.toThrow(snapshot);
-      await expect(claimCru(p.ids.a!, 'frota:architect', 'executor', 'now()')).rejects.toThrow('tarefas: o claim exige um lease com validade');
-      await expect(claimCru(p.ids.integracao!, 'frota:gestores', 'coordenador', "now() + interval '1 hour'")).rejects.toThrow(
+      await expect(claimCru(p.ids.a!, 'frota:code-explorer', 'executor', valido)).rejects.toThrow(snapshot);
+      await expect(claimCru(p.ids.a!, 'frota:architect', 'coordenador', valido)).rejects.toThrow(snapshot);
+      for (const lease of ['now()', "now() + interval '599 seconds'", "now() + interval '1381 seconds'", "now() + interval '1 year'"]) {
+        await expect(claimCru(p.ids.a!, 'frota:architect', 'executor', lease), lease).rejects.toThrow(
+          'tarefas: o lease do claim vale o timeout mais uma folga de 120 a 900 segundos',
+        );
+      }
+      await expect(claimCru(p.ids.integracao!, 'frota:gestores', 'coordenador', valido)).rejects.toThrow(
         'tarefas: transição pendente → em_execucao não é permitida',
       );
       await expect(db.pool.query("UPDATE tarefas SET estado = 'pronta' WHERE id = $1", [p.ids.integracao])).rejects.toThrow(
         'tarefas: uma tarefa só fica pronta com todas as dependências concluídas',
       );
 
+      // Nos dois limites do lease, passa; o claim_id e o lease_token de quem chama são trocados pelos do banco.
       const meus = [randomUUID(), randomUUID()] as const;
-      const { rows } = await claimCru(p.ids.b!, 'frota:architect', 'executor', "now() + interval '1 hour'", `, claim_id = '${meus[0]}', lease_token = '${meus[1]}'`);
+      const { rows } = await claimCru(p.ids.b!, 'frota:architect', 'executor', "now() + interval '1380 seconds'", `, claim_id = '${meus[0]}', lease_token = '${meus[1]}'`);
       expect(rows[0]!.claim_id).toMatch(UUID_RE);
       expect(rows[0]!.claim_id).not.toBe(meus[0]);
       expect(rows[0]!.lease_token).not.toBe(meus[1]);
+      await claimCru(p.ids.a!, 'frota:architect', 'executor', "now() + interval '600 seconds'");
+      expect(await linha(p.ids.a!)).toMatchObject({ estado: 'em_execucao' });
     });
 
     it('pega a primeira tarefa pronta por chave e so libera a que nao tem dependencia pendente', async () => {
@@ -388,11 +397,8 @@ describe('execucao por tarefas (migration 006)', () => {
     it('nenhum envio sem reserva aberta do mesmo claim; a tentativa sobe so no envio e nunca desce', async () => {
       const p = await planoAtivoDeTeste(db.pool);
       const t = await reivindicar(db.pool, p.planoId);
-      const envioCru = (soma: number) =>
-        db.pool.query("UPDATE tarefas SET tentativas = tentativas + $2, lease_expira_em = now() + interval '10 minutes' WHERE id = $1", [
-          t.id,
-          soma,
-        ]);
+      const envioCru = (soma: number, lease = "now() + interval '11 minutes'") =>
+        db.pool.query(`UPDATE tarefas SET tentativas = tentativas + $2, lease_expira_em = ${lease} WHERE id = $1`, [t.id, soma]);
       const reservaCrua = (claimId: string) =>
         db.pool.query(
           `INSERT INTO reservas_custo (demanda_id, plano_id, tarefa_id, claim_id, operacao, modelo, valor_reservado_usd, expira_em)
@@ -417,6 +423,12 @@ describe('execucao por tarefas (migration 006)', () => {
         [p.demandaId, p.planoId, t2.id, t2.claimId],
       );
       await expect(envioCru(2)).rejects.toThrow('tarefas: o registro de envio soma exatamente uma tentativa');
+      // O lease renovado no envio tem a mesma faixa do claim.
+      for (const lease of ['now()', "now() + interval '1 year'"]) {
+        await expect(envioCru(1, lease), lease).rejects.toThrow(
+          'tarefas: o registro de envio renova o lease para o timeout mais uma folga de 120 a 900 segundos',
+        );
+      }
       await envioCru(1);
       await expect(envioCru(1)).rejects.toThrow('tarefas: uma tarefa em execução só aceita um registro de envio por claim');
       await expect(db.pool.query('UPDATE tarefas SET tentativas = 0 WHERE id = $1', [t.id])).rejects.toThrow('tarefas: tentativas nunca descem');
@@ -463,21 +475,43 @@ describe('execucao por tarefas (migration 006)', () => {
       await atualizarAgente(db.pool, agente, 'teste', { estado: 'suspenso' });
       try {
         await expect(
-          db.pool.query("UPDATE tarefas SET tentativas = tentativas + 1, lease_expira_em = now() + interval '10 minutes' WHERE id = $1", [t3.id]),
+          db.pool.query("UPDATE tarefas SET tentativas = tentativas + 1, lease_expira_em = now() + interval '11 minutes' WHERE id = $1", [t3.id]),
         ).rejects.toThrow('tarefas: o agente do claim não está mais autorizado');
       } finally {
         await atualizarAgente(db.pool, agente, 'teste', { estado: 'ativo' });
       }
     });
 
+    it('acima do limite de custo ou com a demanda bloqueada, o envio nao e registrado e nada e gravado', async () => {
+      const p = await planoAtivoDeTeste(db.pool, undefined, { tetoBaseUsd: '1.00' });
+      const t = await reivindicar(db.pool, p.planoId);
+      const envio = (valorReservadoUsd: string) =>
+        reservarERegistrarEnvio(db.pool, { tarefaId: t.id, leaseToken: t.leaseToken, valorReservadoUsd });
+
+      expect(await envio('1.000001')).toEqual({
+        registrado: false,
+        motivo: 'custo_demanda_excedido',
+        comprometidoUsd: '0.000000',
+        limiteUsd: '1.00',
+        reservaUsd: '1.000001',
+      });
+      await bloquearPorCusto(db.pool, p.demandaId);
+      expect(await envio('0.01')).toEqual({ registrado: false, motivo: 'demanda_bloqueada' });
+      expect(await linha(t.id)).toMatchObject({ estado: 'em_execucao', tentativas: 0, enviada_em: null });
+      const { rows } = await db.pool.query('SELECT count(*)::int AS n FROM reservas_custo WHERE tarefa_id = $1', [t.id]);
+      expect(rows[0].n).toBe(0);
+    });
+
     it('com o lease vencido, o envio nao e registrado', async () => {
       const p = await planoAtivoDeTeste(db.pool);
-      const t = await reivindicar(db.pool, p.planoId, -479);
-      await esperar(1_200);
+      const t = await reivindicar(db.pool, p.planoId);
+      await vencerLease(db.pool, t.id);
       expect(await reservarERegistrarEnvio(db.pool, { tarefaId: t.id, leaseToken: t.leaseToken, valorReservadoUsd: '0.05' })).toEqual({
         registrado: false,
         motivo: 'lease_perdido',
       });
+      const { rows } = await db.pool.query('SELECT count(*)::int AS n FROM reservas_custo WHERE tarefa_id = $1', [t.id]);
+      expect(rows[0].n).toBe(0);
     });
   });
 
@@ -504,15 +538,25 @@ describe('execucao por tarefas (migration 006)', () => {
       expect(await devolverTarefa(db.pool, { tarefaId: t2.id, leaseToken: t2.leaseToken })).toEqual({ devolvida: false });
     });
 
-    it('falharTentativa: depois do envio, volta para pronta com tentativa restante e falha na ultima', async () => {
+    it('falharTentativa: depois do envio, volta para pronta com tentativa restante; na ultima, falha e abandona o plano', async () => {
       const p = await planoAtivoDeTeste(db.pool);
       const t = await reivindicar(db.pool, p.planoId);
       const falhar = (x: TarefaReivindicada, codigoErro: 'llm_api' | 'llm_timeout') =>
         falharTentativa(db.pool, { tarefaId: x.id, leaseToken: x.leaseToken, codigoErro });
 
       expect(await falhar(t, 'llm_api')).toEqual({ registrada: false });
+      expect(await falharTentativa(db.pool, { tarefaId: randomUUID(), leaseToken: t.leaseToken, codigoErro: 'llm_api' })).toEqual({
+        registrada: false,
+      });
       await enviar(db.pool, t);
-      expect(await falhar(t, 'llm_api')).toEqual({ registrada: true, claimId: t.claimId, tentativa: 1, destino: 'pronta', definitiva: false });
+      expect(await falhar(t, 'llm_api')).toEqual({
+        registrada: true,
+        claimId: t.claimId,
+        tentativa: 1,
+        destino: 'pronta',
+        definitiva: false,
+        abandono: null,
+      });
       expect(await linha(t.id)).toMatchObject({
         estado: 'pronta',
         tentativas: 1,
@@ -525,7 +569,14 @@ describe('execucao por tarefas (migration 006)', () => {
 
       const { tarefa: t2 } = await reivindicarEEnviar(db.pool, p.planoId);
       expect(t2.claimId).not.toBe(t.claimId);
-      expect(await falhar(t2, 'llm_timeout')).toEqual({ registrada: true, claimId: t2.claimId, tentativa: 2, destino: 'falhou', definitiva: true });
+      expect(await falhar(t2, 'llm_timeout')).toEqual({
+        registrada: true,
+        claimId: t2.claimId,
+        tentativa: 2,
+        destino: 'falhou',
+        definitiva: true,
+        abandono: { planoId: p.planoId, demandaId: p.demandaId, versao: 1, tarefasCanceladas: 1 },
+      });
       expect(await linha(t.id)).toMatchObject({
         estado: 'falhou',
         tentativas: 2,
@@ -537,10 +588,48 @@ describe('execucao por tarefas (migration 006)', () => {
         // O snapshot fica: é o registro de quem executou a última tentativa.
         agente_chave: 'frota:architect',
       });
+      // Na mesma transação: plano abandonado, integração cancelada e rota fixada.
+      expect(await listarPlanosDaDemanda(db.pool, p.demandaId)).toMatchObject([{ estado: 'abandonado', motivoAbandono: 'tarefa_falhou' }]);
+      expect(await linha(p.ids.integracao!)).toMatchObject({ estado: 'cancelada' });
+      expect(await obterEnvelope(db.pool, p.demandaId)).toMatchObject({ rota: 'legado_fixo', motivoLegado: 'tarefa_falhou' });
       expect(await reivindicarProximaTarefa(db.pool, p.planoId)).toEqual({ reivindicada: false, motivo: 'sem_tarefa_pronta' });
+      expect(await falhar(t2, 'llm_timeout')).toEqual({ registrada: false });
       await expect(
         falharTentativa(db.pool, { tarefaId: t2.id, leaseToken: t2.leaseToken, codigoErro: 'contexto_excedido' as never }),
       ).rejects.toThrow('use falharPorContextoExcedido');
+    });
+
+    it('no COMMIT, uma tarefa que falhou exige o plano abandonado por tarefa_falhou', async () => {
+      const p = await planoAtivoDeTeste(db.pool);
+      const { tarefa: t } = await reivindicarEEnviar(db.pool, p.planoId);
+      const falharCru = (c: pg.Pool | pg.PoolClient) =>
+        c.query("UPDATE tarefas SET estado = 'falhou', codigo_erro = 'llm_api' WHERE id = $1", [t.id]);
+      const mensagem = 'tarefas: uma tarefa que falhou exige o plano abandonado por tarefa_falhou na mesma transação';
+
+      await expect(falharCru(db.pool)).rejects.toThrow(mensagem);
+      // Abandonar por outro motivo também não serve.
+      await expect(
+        comTransacao(db.pool, async (c) => {
+          await falharCru(c);
+          await abandonarPlano(c, { planoId: p.planoId, motivo: 'pendencia_humana' });
+        }),
+      ).rejects.toThrow(mensagem);
+      expect(await linha(t.id)).toMatchObject({ estado: 'em_execucao', claim_id: t.claimId });
+      expect(await obterPlanoAtivo(db.pool, p.demandaId)).toMatchObject({ id: p.planoId });
+    });
+
+    it('sem claim nao ha snapshot: cancelar ou falhar por contexto_excedido ignora o snapshot mandado no UPDATE', async () => {
+      const p = await planoAtivoDeTeste(db.pool);
+      const snapshot = ", agente_chave = 'frota:architect', agente_versao = 1, agente_papel = 'executor', modelo = 'claude-sonnet-5'";
+      await comTransacao(db.pool, async (c) => {
+        await c.query("UPDATE planos_demanda SET estado = 'abandonado', motivo_abandono = 'tarefa_falhou' WHERE id = $1", [p.planoId]);
+        await c.query(`UPDATE tarefas SET estado = 'falhou', codigo_erro = 'contexto_excedido'${snapshot} WHERE id = $1`, [p.ids.analise]);
+        await c.query(`UPDATE tarefas SET estado = 'cancelada'${snapshot} WHERE id = $1`, [p.ids.integracao]);
+        await fixarRotaLegado(c, { demandaId: p.demandaId, motivo: 'tarefa_falhou' });
+      });
+      for (const id of [p.ids.analise!, p.ids.integracao!]) {
+        expect(await linha(id)).toMatchObject({ agente_chave: null, agente_versao: null, agente_papel: null, modelo: null });
+      }
     });
 
     it('pronta → falhou so com contexto_excedido, e com o plano abandonado na mesma transacao', async () => {
@@ -565,6 +654,8 @@ describe('execucao por tarefas (migration 006)', () => {
         { chave: 'a', capacidade: 'd1' },
         { chave: 'b', capacidade: 'd2' },
       ]);
+      // Só uma tarefa pronta: a integração, ainda pendente, não falha por contexto.
+      expect(await falharPorContextoExcedido(db.pool, p.ids.integracao!)).toEqual({ registrada: false });
       expect(await falharPorContextoExcedido(db.pool, p.ids.a!)).toEqual({
         registrada: true,
         planoId: p.planoId,
@@ -610,47 +701,65 @@ describe('execucao por tarefas (migration 006)', () => {
       expect(evento).toMatchObject({ tarefaId: p.ids.a, ator: 'sistema', resumo: 'Tarefa falhou.' });
     });
 
-    it('recuperarLeasesVencidos: sem envio volta para pronta; com envio, pronta se ainda houver tentativa, senao falhou', async () => {
+    it('recuperarLeasesVencidos: sem envio, ou com tentativa restante, volta para pronta e o plano segue ativo', async () => {
       const p = await planoAtivoDeTeste(db.pool, [
         { chave: 'a', capacidade: 'd1' },
         { chave: 'b', capacidade: 'd2' },
-        { chave: 'c', capacidade: 'd3' },
       ]);
-      // a: claim com lease de 1 segundo, sem envio.
-      const ta = await reivindicar(db.pool, p.planoId, -479);
-      // b: envio com lease de 1 segundo; ainda resta uma tentativa.
+      // a: só o claim. b: claim e envio, com uma tentativa ainda restante. Os dois leases vencem.
+      const ta = await reivindicar(db.pool, p.planoId);
       const tb = await reivindicar(db.pool, p.planoId);
-      await enviar(db.pool, tb, { margemLeaseSegundos: -479 });
-      // c: a primeira tentativa falha; a segunda, a última, é enviada com lease de 1 segundo.
-      const tc1 = await reivindicar(db.pool, p.planoId);
-      await enviar(db.pool, tc1);
-      await falharTentativa(db.pool, { tarefaId: tc1.id, leaseToken: tc1.leaseToken, codigoErro: 'llm_api' });
-      const tc2 = await reivindicar(db.pool, p.planoId);
-      expect(tc2.id).toBe(tc1.id);
-      await enviar(db.pool, tc2, { margemLeaseSegundos: -479 });
+      await enviar(db.pool, tb);
+      await vencerLease(db.pool, ta.id);
+      await vencerLease(db.pool, tb.id);
 
-      await esperar(1_200);
       const esperado = [
         { tarefaId: ta.id, claimId: ta.claimId, tentativa: 0, enviada: false, destino: 'pronta' },
         { tarefaId: tb.id, claimId: tb.claimId, tentativa: 1, enviada: true, destino: 'pronta' },
-        { tarefaId: tc2.id, claimId: tc2.claimId, tentativa: 2, enviada: true, destino: 'falhou' },
       ].sort((x, y) => (x.tarefaId < y.tarefaId ? -1 : 1));
-      expect(await recuperarLeasesVencidos(db.pool, p.planoId)).toEqual(esperado);
+      expect(await recuperarLeasesVencidos(db.pool, p.planoId)).toEqual({ leases: esperado, abandono: null });
       expect(await linha(ta.id)).toMatchObject({ estado: 'pronta', tentativas: 0, claim_id: null, lease_token: null });
       expect(await linha(tb.id)).toMatchObject({ estado: 'pronta', tentativas: 1, claim_id: null, lease_token: null, enviada_em: null });
-      expect(await linha(tc2.id)).toMatchObject({ estado: 'falhou', codigo_erro: 'lease_expirado', claim_id: null, lease_token: null });
-      expect(await recuperarLeasesVencidos(db.pool, p.planoId)).toEqual([]);
+      expect(await obterPlanoAtivo(db.pool, p.demandaId)).toMatchObject({ id: p.planoId });
+      expect(await recuperarLeasesVencidos(db.pool, p.planoId)).toEqual({ leases: [], abandono: null });
 
-      // As reservas dos dois envios de lease curto venceram junto: a varredura as retém, e elas seguem contando.
+      // A reserva do envio venceu junto: a varredura a retém, e ela segue contando.
       const retidas = (await reterReservasVencidas(db.pool)).filter((r) => r.demandaId === p.demandaId);
-      expect(retidas.map((r) => r.tarefaId).sort()).toEqual([tb.id, tc2.id].sort());
+      expect(retidas.map((r) => r.tarefaId)).toEqual([tb.id]);
+    });
+
+    it('recuperarLeasesVencidos: sem tentativa restante, a tarefa falha e o plano e abandonado na mesma transacao', async () => {
+      const p = await planoAtivoDeTeste(db.pool, [
+        { chave: 'a', capacidade: 'd1' },
+        { chave: 'b', capacidade: 'd2' },
+      ]);
+      // a: a primeira tentativa falha; a segunda, a última, é enviada e o lease vence. b: claim ainda valendo.
+      const ta1 = await reivindicar(db.pool, p.planoId);
+      await enviar(db.pool, ta1);
+      await falharTentativa(db.pool, { tarefaId: ta1.id, leaseToken: ta1.leaseToken, codigoErro: 'llm_api' });
+      const ta2 = await reivindicar(db.pool, p.planoId);
+      expect(ta2.id).toBe(ta1.id);
+      await enviar(db.pool, ta2);
+      const tb = await reivindicar(db.pool, p.planoId);
+      await vencerLease(db.pool, ta2.id);
+
+      expect(await recuperarLeasesVencidos(db.pool, p.planoId)).toEqual({
+        leases: [{ tarefaId: ta2.id, claimId: ta2.claimId, tentativa: 2, enviada: true, destino: 'falhou' }],
+        abandono: { planoId: p.planoId, demandaId: p.demandaId, versao: 1, tarefasCanceladas: 2 },
+      });
+      expect(await linha(ta2.id)).toMatchObject({ estado: 'falhou', codigo_erro: 'lease_expirado', claim_id: null, lease_token: null });
+      expect(await linha(tb.id)).toMatchObject({ estado: 'cancelada', claim_id: null, lease_token: null });
+      expect(await listarPlanosDaDemanda(db.pool, p.demandaId)).toMatchObject([{ estado: 'abandonado', motivoAbandono: 'tarefa_falhou' }]);
+      expect(await obterEnvelope(db.pool, p.demandaId)).toMatchObject({ rota: 'legado_fixo', motivoLegado: 'tarefa_falhou' });
+      expect(await recuperarLeasesVencidos(db.pool, p.planoId)).toEqual({ leases: [], abandono: null });
     });
 
     it('um lease ainda valido nao e tocado pela recuperacao', async () => {
       const p = await planoAtivoDeTeste(db.pool);
       const t = await reivindicar(db.pool, p.planoId);
-      expect(await recuperarLeasesVencidos(db.pool, p.planoId)).toEqual([]);
+      expect(await recuperarLeasesVencidos(db.pool, p.planoId)).toEqual({ leases: [], abandono: null });
       expect(await linha(t.id)).toMatchObject({ estado: 'em_execucao', claim_id: t.claimId });
+      expect(await recuperarLeasesVencidos(db.pool, randomUUID())).toEqual({ leases: [], abandono: null });
     });
 
     it('erros sem uso (devolucao, falha antes do envio, contexto_excedido) nao geram agent_step', async () => {

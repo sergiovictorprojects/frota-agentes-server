@@ -2,7 +2,7 @@ import type pg from 'pg';
 import { inserirArtefato, type ArtefatoValidado } from './artefatos.ts';
 import type { CodigoErroTarefa } from './eventos.ts';
 import { fixarRotaLegado, reservarCustoNaTransacao, type MotivoLegado } from './orquestracao.ts';
-import type { EstadoTarefa, MotivoAbandono } from './planos.ts';
+import type { EstadoPlano, EstadoTarefa, MotivoAbandono } from './planos.ts';
 import { criarEntrega } from './relatorios.ts';
 import { comTransacao, type Db } from './tx.ts';
 
@@ -14,10 +14,14 @@ import { comTransacao, type Db } from './tx.ts';
 // claim. Nunca vai para evento, log ou interface. claim_id pode ir: identifica o claim, não autoriza nada.
 // objetivo é texto do modelo: só listarTarefasParaPrompt o devolve, para a serialização canônica.
 //
-// Ordem de locks, a mesma de src/db/orquestracao.ts: plano, tarefa, agente e envelope.
+// Ordem de locks, a mesma de src/db/orquestracao.ts: plano, tarefa, agente e envelope. Falhar, concluir,
+// recuperar leases e contexto_excedido travam primeiro a linha do plano (travarPlano): essas transações ficam em
+// série por plano, e a promoção das tarefas prontas sempre vê as conclusões anteriores. O claim, o registro de
+// envio e a devolução mexem numa tarefa só e não travam o plano; o gatilho confere que ele está ativo.
+// Tudo aqui assume READ COMMITTED, o padrão do PostgreSQL e o que comTransacao usa.
 
 // Folga do lease além do timeout da chamada. Maior que a margem de persistência de 2 minutos (seção 5.1): o
-// lease sempre dura mais que a chamada mais a gravação do resultado.
+// lease sempre dura mais que a chamada mais a gravação do resultado. O banco só aceita de 120 a 900 segundos.
 export const MARGEM_LEASE_SEGUNDOS = 180;
 
 export type TipoTarefa = 'especialista' | 'integracao';
@@ -69,8 +73,10 @@ export async function ativarPlano(
   });
 }
 
-// pendente → pronta para toda tarefa cujas dependências estão concluídas. Roda na transação de quem ativa o
-// plano ou conclui uma tarefa. Devolve quantas ficaram prontas.
+// pendente → pronta para toda tarefa cujas dependências estão concluídas. Roda na transação de quem travou o
+// plano: ativarPlano (o próprio UPDATE do plano) ou a conclusão de uma especialista (travarPlano). Sem esse
+// lock, duas conclusões paralelas (3.3) poderiam não ver uma à outra e deixar a integração pendente para
+// sempre. Devolve quantas ficaram prontas.
 export async function promoverTarefasProntas(db: Db, planoId: string): Promise<number> {
   const { rowCount } = await db.query(
     `UPDATE tarefas t SET estado = 'pronta'
@@ -84,16 +90,34 @@ export async function promoverTarefasProntas(db: Db, planoId: string): Promise<n
   return rowCount ?? 0;
 }
 
+// Primeiro lock das transações que mudam tarefas pelo resultado de uma chamada: a linha do plano, em FOR NO KEY
+// UPDATE. Põe essas transações em série por plano sem bloquear as FKs de quem só referencia o plano
+// (reservas_custo e agent_steps travam em FOR KEY SHARE, que não conflita com este lock).
+async function travarPlano(
+  cliente: pg.PoolClient,
+  planoId: string,
+): Promise<{ planoId: string; demandaId: string; estado: EstadoPlano } | undefined> {
+  const { rows } = await cliente.query<{ id: string; demanda_id: string; estado: EstadoPlano }>(
+    'SELECT id, demanda_id, estado FROM planos_demanda WHERE id = $1 FOR NO KEY UPDATE',
+    [planoId],
+  );
+  const l = rows[0];
+  return l ? { planoId: l.id, demandaId: l.demanda_id, estado: l.estado } : undefined;
+}
+
+async function travarPlanoDaTarefa(
+  cliente: pg.PoolClient,
+  tarefaId: string,
+): Promise<{ planoId: string; demandaId: string; estado: EstadoPlano } | undefined> {
+  const { rows } = await cliente.query<{ plano_id: string }>('SELECT plano_id FROM tarefas WHERE id = $1', [tarefaId]);
+  return rows[0] ? travarPlano(cliente, rows[0].plano_id) : undefined;
+}
+
 // Claim numa transação curta (seção 5.2, passo 3): trava a primeira tarefa pronta por chave (collation "C"),
 // escolhe no catálogo, com FOR SHARE, o agente ativo da capacidade e grava o snapshot e o lease. O banco gera
 // claim_id e lease_token e confere o agente de novo. A tentativa ainda não conta. Sem agente elegível, nada é
 // gravado e o motivo volta para quem chama (que abandona o plano com agente_indisponivel).
-export async function reivindicarProximaTarefa(
-  pool: pg.Pool,
-  planoId: string,
-  opcoes: { margemLeaseSegundos?: number } = {},
-): Promise<ResultadoClaim> {
-  const margem = opcoes.margemLeaseSegundos ?? MARGEM_LEASE_SEGUNDOS;
+export async function reivindicarProximaTarefa(pool: pg.Pool, planoId: string): Promise<ResultadoClaim> {
   return comTransacao(pool, async (cliente) => {
     const { rows: prontas } = await cliente.query<{ id: string; capacidade: string }>(
       `SELECT t.id, t.capacidade
@@ -137,7 +161,7 @@ export async function reivindicarProximaTarefa(
         WHERE id = $1
         RETURNING id, plano_id, chave, tipo, capacidade, claim_id, lease_token, lease_expira_em, tentativas, max_tentativas,
                   timeout_segundos`,
-      [pronta.id, agente.chave, agente.versao, agente.papel, agente.modelo_permitido, margem],
+      [pronta.id, agente.chave, agente.versao, agente.papel, agente.modelo_permitido, MARGEM_LEASE_SEGUNDOS],
     );
     const t = rows[0]!;
     const { rows: plano } = await cliente.query<{ demanda_id: string }>('SELECT demanda_id FROM planos_demanda WHERE id = $1', [
@@ -177,9 +201,8 @@ export type ResultadoEnvio =
 // Qualquer recusa volta sem gravar nada; quem chama devolve a tarefa (devolverTarefa) quando for o caso.
 export async function reservarERegistrarEnvio(
   pool: pg.Pool,
-  p: { tarefaId: string; leaseToken: string; valorReservadoUsd: string; margemLeaseSegundos?: number },
+  p: { tarefaId: string; leaseToken: string; valorReservadoUsd: string },
 ): Promise<ResultadoEnvio> {
-  const margem = p.margemLeaseSegundos ?? MARGEM_LEASE_SEGUNDOS;
   return comTransacao(pool, async (cliente) => {
     const { rows: tarefas } = await cliente.query<{
       plano_id: string;
@@ -219,7 +242,7 @@ export async function reservarERegistrarEnvio(
       operacao: t.tipo === 'especialista' ? 'execucao' : 'integracao',
       modelo: t.modelo,
       valorReservadoUsd: p.valorReservadoUsd,
-      validadeSegundos: t.timeout_segundos + margem,
+      validadeSegundos: t.timeout_segundos + MARGEM_LEASE_SEGUNDOS,
     });
     if (!reserva.reservada) {
       return reserva.motivo === 'custo_demanda_excedido'
@@ -237,7 +260,7 @@ export async function reservarERegistrarEnvio(
       `UPDATE tarefas SET tentativas = tentativas + 1, lease_expira_em = now() + make_interval(secs => timeout_segundos + $3)
         WHERE id = $1 AND lease_token = $2
         RETURNING tentativas, lease_expira_em`,
-      [p.tarefaId, p.leaseToken, margem],
+      [p.tarefaId, p.leaseToken, MARGEM_LEASE_SEGUNDOS],
     );
     return {
       registrado: true,
@@ -270,39 +293,56 @@ export async function devolverTarefa(
   return rows[0] ? { devolvida: true, claimId: rows[0].claim_id } : { devolvida: false };
 }
 
+// O abandono feito na mesma transação de uma falha definitiva, para o evento plano_abandonado (motivo
+// tarefa_falhou): as outras tarefas abertas foram canceladas e a rota ficou legado_fixo.
+export interface AbandonoPorFalha {
+  planoId: string;
+  demandaId: string;
+  versao: number;
+  tarefasCanceladas: number;
+}
+
 export type ResultadoFalhaTentativa =
-  | { registrada: true; claimId: string; tentativa: number; destino: 'pronta' | 'falhou'; definitiva: boolean }
+  | { registrada: true; claimId: string; tentativa: number; destino: 'pronta'; definitiva: false; abandono: null }
+  | { registrada: true; claimId: string; tentativa: number; destino: 'falhou'; definitiva: true; abandono: AbandonoPorFalha }
   | { registrada: false };
 
-// Falha depois do envio (a tentativa já contou): volta para pronta se ainda houver tentativa; senão, falhou
-// com o código. Condicional ao token. Uma falha definitiva de verdade leva ao abandono do plano, que quem chama
-// faz na mesma transação (abandonarPlano). contexto_excedido nunca passa por aqui: é antes do claim
-// (falharPorContextoExcedido).
+// Falha depois do envio (a tentativa já contou), numa transação condicional ao token: volta para pronta se
+// ainda houver tentativa; senão, falhou com o código, e o plano é abandonado por tarefa_falhou na mesma
+// transação. O banco recusa o COMMIT de uma tarefa que falhou com o plano ainda ativo (gatilho adiado).
+// contexto_excedido nunca passa por aqui: é antes do claim (falharPorContextoExcedido).
 export async function falharTentativa(
-  db: Db,
+  pool: pg.Pool,
   p: { tarefaId: string; leaseToken: string; codigoErro: Exclude<CodigoErroTarefa, 'contexto_excedido'> },
 ): Promise<ResultadoFalhaTentativa> {
   if ((p.codigoErro as CodigoErroTarefa) === 'contexto_excedido') {
     throw new Error('contexto_excedido é detectado antes do claim: use falharPorContextoExcedido.');
   }
-  const { rows } = await db.query<{ claim_id: string; tentativas: number; estado: EstadoTarefa }>(
-    `WITH antes AS (
-       SELECT id, claim_id, tentativas, max_tentativas FROM tarefas
-        WHERE id = $1 AND lease_token = $2 AND estado = 'em_execucao' AND enviada_em IS NOT NULL
-        FOR UPDATE
-     )
-     UPDATE tarefas t
-        SET estado = CASE WHEN antes.tentativas < antes.max_tentativas THEN 'pronta' ELSE 'falhou' END,
-            codigo_erro = CASE WHEN antes.tentativas < antes.max_tentativas THEN NULL ELSE $3 END
-       FROM antes
-      WHERE t.id = antes.id
-     RETURNING antes.claim_id, antes.tentativas, t.estado`,
-    [p.tarefaId, p.leaseToken, p.codigoErro],
-  );
-  const l = rows[0];
-  if (!l) return { registrada: false };
-  const destino = l.estado === 'pronta' ? 'pronta' : 'falhou';
-  return { registrada: true, claimId: l.claim_id, tentativa: l.tentativas, destino, definitiva: destino === 'falhou' };
+  return comTransacao(pool, async (cliente) => {
+    const plano = await travarPlanoDaTarefa(cliente, p.tarefaId);
+    if (!plano) return { registrada: false };
+    const { rows } = await cliente.query<{ claim_id: string; tentativas: number; estado: EstadoTarefa }>(
+      `WITH antes AS (
+         SELECT id, claim_id, tentativas, max_tentativas FROM tarefas
+          WHERE id = $1 AND lease_token = $2 AND estado = 'em_execucao' AND enviada_em IS NOT NULL
+          FOR UPDATE
+       )
+       UPDATE tarefas t
+          SET estado = CASE WHEN antes.tentativas < antes.max_tentativas THEN 'pronta' ELSE 'falhou' END,
+              codigo_erro = CASE WHEN antes.tentativas < antes.max_tentativas THEN NULL ELSE $3 END
+         FROM antes
+        WHERE t.id = antes.id
+       RETURNING antes.claim_id, antes.tentativas, t.estado`,
+      [p.tarefaId, p.leaseToken, p.codigoErro],
+    );
+    const l = rows[0];
+    if (!l) return { registrada: false };
+    if (l.estado === 'pronta') {
+      return { registrada: true, claimId: l.claim_id, tentativa: l.tentativas, destino: 'pronta', definitiva: false, abandono: null };
+    }
+    const abandono = await abandonarPorFalha(cliente, plano.planoId);
+    return { registrada: true, claimId: l.claim_id, tentativa: l.tentativas, destino: 'falhou', definitiva: true, abandono };
+  });
 }
 
 export type ResultadoConclusao =
@@ -326,12 +366,14 @@ interface TarefaDoClaim {
   tentativas: number;
 }
 
-// Trava a tarefa do claim, com envio registrado. Sem ela, diz por que o resultado é descartado.
+// Trava o plano e depois a tarefa do claim, com envio registrado. Sem ela, diz por que o resultado é
+// descartado.
 async function travarTarefaDoClaim(
   cliente: pg.PoolClient,
   tarefaId: string,
   leaseToken: string,
 ): Promise<TarefaDoClaim | { motivoDescarte: 'lease_perdido' | 'tarefa_encerrada' }> {
+  await travarPlanoDaTarefa(cliente, tarefaId);
   const { rows } = await cliente.query<TarefaDoClaim>(
     `SELECT t.plano_id, p.demanda_id, t.tipo, t.claim_id, t.tentativas
        FROM tarefas t JOIN planos_demanda p ON p.id = t.plano_id
@@ -433,7 +475,8 @@ async function cancelarTarefasAbertas(cliente: pg.PoolClient, planoId: string): 
 }
 
 // Abandona o plano ativo, cancela as tarefas abertas e, para tarefa_falhou e agente_indisponivel, fixa a rota
-// legado_fixo. Roda na transação de quem chama, que pode juntar a falha da tarefa ou a pendência humana. O
+// legado_fixo. Roda na transação de quem chama, que pode juntar a falha da tarefa ou a pendência humana e trava
+// o plano antes de qualquer tarefa (quando nada foi travado antes, o UPDATE do plano aqui é esse lock). O
 // gatilho adiado recusa o COMMIT se sobrar tarefa aberta ou rota sem fixar.
 export async function abandonarPlano(
   cliente: pg.PoolClient,
@@ -448,6 +491,14 @@ export async function abandonarPlano(
   return { abandonado: true, demandaId: plano.demanda_id, versao: plano.versao, tarefasCanceladas, rotaFixada };
 }
 
+// Abandono por tarefa_falhou, com o plano já travado por quem chama. Uma tarefa em execução só existe com o plano
+// ativo, então o abandono sempre acontece; se não acontecer, algo quebrou o invariante e a transação é desfeita.
+async function abandonarPorFalha(cliente: pg.PoolClient, planoId: string): Promise<AbandonoPorFalha> {
+  const r = await abandonarPlano(cliente, { planoId, motivo: 'tarefa_falhou' });
+  if (!r.abandonado) throw new Error('O plano da tarefa que falhou não estava ativo.');
+  return { planoId, demandaId: r.demandaId, versao: r.versao, tarefasCanceladas: r.tarefasCanceladas };
+}
+
 export type ResultadoContextoExcedido =
   | { registrada: true; planoId: string; demandaId: string; versao: number; tipo: TipoTarefa; tentativa: number; tarefasCanceladas: number }
   | { registrada: false };
@@ -457,24 +508,23 @@ export type ResultadoContextoExcedido =
 // tarefa_falhou, as demais tarefas abertas são canceladas e a rota fica legado_fixo. Nada se repete sozinho.
 export async function falharPorContextoExcedido(pool: pg.Pool, tarefaId: string): Promise<ResultadoContextoExcedido> {
   return comTransacao(pool, async (cliente) => {
-    const { rows } = await cliente.query<{ plano_id: string; demanda_id: string; tipo: TipoTarefa; tentativas: number }>(
-      `SELECT t.plano_id, p.demanda_id, t.tipo, t.tentativas
-         FROM tarefas t JOIN planos_demanda p ON p.id = t.plano_id
-        WHERE t.id = $1 AND t.estado = 'pronta' AND p.estado = 'ativo'
-        FOR UPDATE OF t`,
+    const plano = await travarPlanoDaTarefa(cliente, tarefaId);
+    if (plano?.estado !== 'ativo') return { registrada: false };
+    const { rows } = await cliente.query<{ tipo: TipoTarefa; tentativas: number }>(
+      "SELECT tipo, tentativas FROM tarefas WHERE id = $1 AND estado = 'pronta' FOR UPDATE",
       [tarefaId],
     );
     const t = rows[0];
     if (!t) return { registrada: false };
-    const plano = (await marcarAbandono(cliente, t.plano_id, 'tarefa_falhou'))!;
+    const abandono = (await marcarAbandono(cliente, plano.planoId, 'tarefa_falhou'))!;
     await cliente.query("UPDATE tarefas SET estado = 'falhou', codigo_erro = 'contexto_excedido' WHERE id = $1", [tarefaId]);
-    const tarefasCanceladas = await cancelarTarefasAbertas(cliente, t.plano_id);
-    await fixarRotaLegado(cliente, { demandaId: t.demanda_id, motivo: 'tarefa_falhou' });
+    const tarefasCanceladas = await cancelarTarefasAbertas(cliente, plano.planoId);
+    await fixarRotaLegado(cliente, { demandaId: plano.demandaId, motivo: 'tarefa_falhou' });
     return {
       registrada: true,
-      planoId: t.plano_id,
-      demandaId: t.demanda_id,
-      versao: plano.versao,
+      planoId: plano.planoId,
+      demandaId: plano.demandaId,
+      versao: abandono.versao,
       tipo: t.tipo,
       tentativa: t.tentativas,
       tarefasCanceladas,
@@ -487,38 +537,53 @@ export interface LeaseRecuperado {
   claimId: string;
   tentativa: number;
   enviada: boolean;
+  // O destino da recuperação do lease. Se outra tarefa do mesmo plano falhou na mesma recuperação, o abandono
+  // que vem depois cancela as que voltaram para pronta (contadas em abandono.tarefasCanceladas).
   destino: 'pronta' | 'falhou';
 }
 
-// Retomada (seção 5.3): tarefa em execução com lease vencido. Sem envio registrado, nada foi enviado e ela volta
-// para pronta. Com envio, a tentativa já contou: volta para pronta se ainda houver tentativa; senão, falhou com
-// lease_expirado. Devolve o claim de cada uma para o evento tarefa_lease_expirado. Um lease ainda válido não é
-// tocado.
-export async function recuperarLeasesVencidos(db: Db, planoId: string): Promise<LeaseRecuperado[]> {
-  const { rows } = await db.query<{ id: string; claim_id: string; tentativas: number; enviada: boolean; estado: EstadoTarefa }>(
-    `WITH vencidas AS (
-       SELECT id, claim_id, tentativas, max_tentativas, enviada_em IS NOT NULL AS enviada
-         FROM tarefas
-        WHERE plano_id = $1 AND estado = 'em_execucao' AND lease_expira_em < now()
-        FOR UPDATE SKIP LOCKED
-     )
-     UPDATE tarefas t
-        SET estado = CASE WHEN NOT v.enviada OR v.tentativas < v.max_tentativas THEN 'pronta' ELSE 'falhou' END,
-            codigo_erro = CASE WHEN NOT v.enviada OR v.tentativas < v.max_tentativas THEN NULL ELSE 'lease_expirado' END
-       FROM vencidas v
-      WHERE t.id = v.id
-     RETURNING t.id, v.claim_id, v.tentativas, v.enviada, t.estado`,
-    [planoId],
-  );
-  return rows
-    .map((l) => ({
+export interface RecuperacaoDeLeases {
+  leases: LeaseRecuperado[];
+  abandono: AbandonoPorFalha | null;
+}
+
+// Retomada (seção 5.3), numa transação que trava o plano primeiro: tarefa em execução com lease vencido. Sem
+// envio registrado, nada foi enviado e ela volta para pronta. Com envio, a tentativa já contou: volta para
+// pronta se ainda houver tentativa; senão, falhou com lease_expirado, e o plano é abandonado por tarefa_falhou
+// na mesma transação. Devolve o claim de cada uma para o evento tarefa_lease_expirado. Um lease ainda válido
+// não é tocado.
+export async function recuperarLeasesVencidos(pool: pg.Pool, planoId: string): Promise<RecuperacaoDeLeases> {
+  return comTransacao(pool, async (cliente) => {
+    const plano = await travarPlano(cliente, planoId);
+    if (plano?.estado !== 'ativo') return { leases: [], abandono: null };
+    const { rows } = await cliente.query<{ id: string; claim_id: string; tentativas: number; enviada: boolean; estado: EstadoTarefa }>(
+      `WITH vencidas AS (
+         SELECT id, claim_id, tentativas, max_tentativas, enviada_em IS NOT NULL AS enviada
+           FROM tarefas
+          WHERE plano_id = $1 AND estado = 'em_execucao' AND lease_expira_em < now()
+          FOR UPDATE SKIP LOCKED
+       ),
+       recuperadas AS (
+         UPDATE tarefas t
+            SET estado = CASE WHEN NOT v.enviada OR v.tentativas < v.max_tentativas THEN 'pronta' ELSE 'falhou' END,
+                codigo_erro = CASE WHEN NOT v.enviada OR v.tentativas < v.max_tentativas THEN NULL ELSE 'lease_expirado' END
+           FROM vencidas v
+          WHERE t.id = v.id
+         RETURNING t.id, v.claim_id, v.tentativas, v.enviada, t.estado
+       )
+       SELECT id, claim_id, tentativas, enviada, estado FROM recuperadas ORDER BY id`,
+      [planoId],
+    );
+    const leases = rows.map((l) => ({
       tarefaId: l.id,
       claimId: l.claim_id,
       tentativa: l.tentativas,
       enviada: l.enviada,
       destino: l.estado === 'pronta' ? ('pronta' as const) : ('falhou' as const),
-    }))
-    .sort((a, b) => (a.tarefaId < b.tarefaId ? -1 : a.tarefaId > b.tarefaId ? 1 : 0));
+    }));
+    const abandono = leases.some((l) => l.destino === 'falhou') ? await abandonarPorFalha(cliente, planoId) : null;
+    return { leases, abandono };
+  });
 }
 
 export interface TarefaResumo {

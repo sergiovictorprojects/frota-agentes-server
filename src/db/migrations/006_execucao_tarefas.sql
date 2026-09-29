@@ -280,6 +280,8 @@ ALTER TABLE tarefas DROP CONSTRAINT tarefas_estado_check;
 -- claim_id: uuid novo a cada claim, gerado pelo banco. Não é credencial: identifica o claim para idempotência
 -- e correlação, mas não autoriza persistência. lease_token: também gerado pelo banco no claim; só ele autoriza
 -- persistir o resultado (condição de WHERE no repositório) e nunca vai para evento, log ou interface.
+-- lease_expira_em: no claim e no registro de envio, o timeout mais uma folga de 120 a 900 segundos. Nunca menos
+-- que a margem de persistência de 2 minutos, nem tão longo que prenda a tarefa longe da recuperação.
 -- agente_chave, agente_versao, agente_papel e modelo: o snapshot do catálogo gravado no claim.
 ALTER TABLE tarefas
   ADD COLUMN objetivo text,
@@ -413,14 +415,17 @@ BEGIN
        OR NEW.agente_papel IS DISTINCT FROM OLD.agente_papel OR NEW.modelo IS DISTINCT FROM OLD.modelo THEN
       RAISE EXCEPTION 'tarefas: o snapshot do claim é imutável';
     END IF;
-    IF NEW.lease_expira_em IS NULL OR NEW.lease_expira_em <= now() THEN
-      RAISE EXCEPTION 'tarefas: o registro de envio exige um lease renovado';
+    IF NEW.lease_expira_em IS NULL
+       OR NEW.lease_expira_em < now() + make_interval(secs => OLD.timeout_segundos + 120)
+       OR NEW.lease_expira_em > now() + make_interval(secs => OLD.timeout_segundos + 900) THEN
+      RAISE EXCEPTION 'tarefas: o registro de envio renova o lease para o timeout mais uma folga de 120 a 900 segundos';
     END IF;
     IF v_plano.estado <> 'ativo' THEN
       RAISE EXCEPTION 'tarefas: o registro de envio exige o plano ativo';
     END IF;
     SELECT * INTO v_agente FROM agentes WHERE chave = OLD.agente_chave FOR SHARE;
-    IF v_agente.estado <> 'ativo' OR v_agente.versao <> OLD.agente_versao OR v_agente.modelo_permitido <> OLD.modelo THEN
+    IF NOT FOUND OR v_agente.estado IS DISTINCT FROM 'ativo' OR v_agente.versao IS DISTINCT FROM OLD.agente_versao
+       OR v_agente.modelo_permitido IS DISTINCT FROM OLD.modelo THEN
       RAISE EXCEPTION 'tarefas: o agente do claim não está mais autorizado';
     END IF;
     IF NOT EXISTS (
@@ -456,8 +461,10 @@ BEGIN
     IF OLD.tentativas >= OLD.max_tentativas THEN
       RAISE EXCEPTION 'tarefas: sem tentativa restante, a tarefa não pode ser reivindicada';
     END IF;
-    IF NEW.lease_expira_em IS NULL OR NEW.lease_expira_em <= now() THEN
-      RAISE EXCEPTION 'tarefas: o claim exige um lease com validade';
+    IF NEW.lease_expira_em IS NULL
+       OR NEW.lease_expira_em < now() + make_interval(secs => OLD.timeout_segundos + 120)
+       OR NEW.lease_expira_em > now() + make_interval(secs => OLD.timeout_segundos + 900) THEN
+      RAISE EXCEPTION 'tarefas: o lease do claim vale o timeout mais uma folga de 120 a 900 segundos';
     END IF;
     SELECT * INTO v_agente FROM agentes WHERE chave = NEW.agente_chave FOR SHARE;
     IF NOT FOUND OR v_agente.estado <> 'ativo' OR v_agente.categoria <> NEW.capacidade
@@ -477,6 +484,11 @@ BEGIN
     IF v_plano.estado <> 'abandonado' OR v_plano.motivo_abandono <> 'tarefa_falhou' THEN
       RAISE EXCEPTION 'tarefas: contexto_excedido exige o plano abandonado por tarefa_falhou na mesma transação';
     END IF;
+    -- Sem claim, sem snapshot: o que vier nessas colunas é ignorado.
+    NEW.agente_chave := OLD.agente_chave;
+    NEW.agente_versao := OLD.agente_versao;
+    NEW.agente_papel := OLD.agente_papel;
+    NEW.modelo := OLD.modelo;
 
   ELSIF OLD.estado = 'em_execucao' AND NEW.estado IN ('concluida','pronta','falhou','cancelada') THEN
     IF NEW.estado = 'concluida' THEN
@@ -532,6 +544,10 @@ BEGIN
     IF v_plano.estado <> 'abandonado' THEN
       RAISE EXCEPTION 'tarefas: cancelar exige o plano abandonado na mesma transação';
     END IF;
+    NEW.agente_chave := OLD.agente_chave;
+    NEW.agente_versao := OLD.agente_versao;
+    NEW.agente_papel := OLD.agente_papel;
+    NEW.modelo := OLD.modelo;
 
   ELSE
     RAISE EXCEPTION 'tarefas: transição % → % não é permitida', OLD.estado, NEW.estado;
@@ -542,6 +558,27 @@ END;
 $$ LANGUAGE plpgsql;
 
 -- O gatilho tarefas_controla da 005 já aponta para tarefas_controlar(): o CREATE OR REPLACE acima basta.
+
+-- No COMMIT: uma tarefa que falhou deixa o plano abandonado por tarefa_falhou na mesma transação (e, pelo gatilho
+-- adiado do plano, a rota legado_fixo fixada). Uma especialista que falhou nunca deixa a integração ficar pronta:
+-- sem isto, o plano ficaria ativo para sempre, sem tarefa capaz de concluí-lo.
+CREATE FUNCTION tarefas_conferir_no_commit() RETURNS trigger AS $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM planos_demanda p
+     WHERE p.id = NEW.plano_id AND p.estado = 'abandonado' AND p.motivo_abandono = 'tarefa_falhou'
+  ) THEN
+    RAISE EXCEPTION 'tarefas: uma tarefa que falhou exige o plano abandonado por tarefa_falhou na mesma transação';
+  END IF;
+  RETURN NULL;
+END;
+$$ LANGUAGE plpgsql;
+
+CREATE CONSTRAINT TRIGGER tarefas_confere_no_commit
+  AFTER UPDATE ON tarefas
+  DEFERRABLE INITIALLY DEFERRED
+  FOR EACH ROW WHEN (NEW.estado = 'falhou' AND OLD.estado <> 'falhou')
+  EXECUTE FUNCTION tarefas_conferir_no_commit();
 
 -- =====================================================================================================
 -- 4. tarefas_dependencias: grafo congelado depois da ativação
@@ -745,7 +782,9 @@ CREATE TRIGGER agent_steps_confere_plano
 -- gravada com o envelope travado e só se o comprometido mais ela couber no limite; o gatilho repete a conta,
 -- então nem SQL direto passa do limite. Uma reserva de tarefa pertence ao claim atual (uma por claim) e é
 -- exigida pelo registro de envio. Liquidar exige o agent_step da mesma chamada, com o custo real (FK e UNIQUE:
--- um passo liquida no máximo uma reserva). Cancelar ou reter nunca cria agent_step.
+-- um passo fica ligado a no máximo uma reserva). Cancelar ou reter nunca cria agent_step. Uma resposta que chega
+-- depois de a reserva ter sido retida, reconhecida ou cancelada grava o passo (o gasto aconteceu) e o liga à
+-- reserva uma única vez, como passo tardio, sem mudar o estado dela: repetir essa liquidação devolve o mesmo passo.
 CREATE TABLE reservas_custo (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   demanda_id uuid NOT NULL REFERENCES orquestracao_demandas(demanda_id) ON DELETE RESTRICT,
@@ -769,8 +808,12 @@ CREATE TABLE reservas_custo (
   CONSTRAINT reservas_custo_operacao_tarefa_check CHECK (
     (operacao <> 'integracao' OR tarefa_id IS NOT NULL) AND (tarefa_id IS NULL OR operacao IN ('execucao','integracao'))
   ),
+  -- Liquidada tem o passo e o custo real; aberta não tem passo; retida, reconhecida e cancelada podem ter o passo
+  -- tardio, sem custo real (o custo fica no próprio agent_steps).
   CONSTRAINT reservas_custo_liquidada_check CHECK (
-    (estado = 'liquidada') = (custo_real_usd IS NOT NULL) AND (estado = 'liquidada') = (agent_step_id IS NOT NULL)
+    (estado = 'liquidada') = (custo_real_usd IS NOT NULL)
+    AND (estado <> 'liquidada' OR agent_step_id IS NOT NULL)
+    AND (estado <> 'aberta' OR agent_step_id IS NULL)
   ),
   CONSTRAINT reservas_custo_reconhecida_check CHECK ((estado = 'reconhecida') = (reconhecida_por IS NOT NULL)),
   CONSTRAINT reservas_custo_encerrada_check CHECK ((estado = 'aberta') = (encerrada_em IS NULL)),
@@ -799,7 +842,16 @@ BEGIN
     IF NEW.estado <> 'aberta' OR num_nonnulls(NEW.custo_real_usd, NEW.agent_step_id, NEW.reconhecida_por, NEW.encerrada_em) > 0 THEN
       RAISE EXCEPTION 'reservas_custo: uma reserva nasce aberta';
     END IF;
+    -- Em REPEATABLE READ, a soma abaixo usaria o snapshot do começo da transação e não veria as reservas que outra
+    -- transação gravou enquanto esta esperava o lock do envelope: duas reservas concorrentes passariam do limite.
+    -- READ COMMITTED (o padrão, que o repositório usa) relê depois do lock, e SERIALIZABLE aborta uma das duas.
+    IF current_setting('transaction_isolation') = 'repeatable read' THEN
+      RAISE EXCEPTION 'reservas_custo: a reserva não é gravada em REPEATABLE READ (use READ COMMITTED ou SERIALIZABLE)';
+    END IF;
     SELECT * INTO v_envelope FROM orquestracao_demandas WHERE demanda_id = NEW.demanda_id FOR UPDATE;
+    IF NOT FOUND THEN
+      RAISE EXCEPTION 'reservas_custo: a demanda não tem envelope de orquestração';
+    END IF;
     IF v_envelope.bloqueada_por_custo THEN
       RAISE EXCEPTION 'reservas_custo: a demanda está bloqueada por custo';
     END IF;
@@ -837,6 +889,10 @@ BEGIN
      OR NEW.expira_em <> OLD.expira_em OR NEW.criada_em <> OLD.criada_em THEN
     RAISE EXCEPTION 'reservas_custo: a identidade da reserva é imutável';
   END IF;
+  -- O passo é gravado uma vez só: na liquidação ou como passo tardio. Depois, nunca muda.
+  IF OLD.agent_step_id IS NOT NULL AND NEW.agent_step_id IS DISTINCT FROM OLD.agent_step_id THEN
+    RAISE EXCEPTION 'reservas_custo: o passo ligado à reserva é imutável';
+  END IF;
 
   IF OLD.estado = 'aberta' AND NEW.estado = 'liquidada' THEN
     IF NOT EXISTS (
@@ -848,6 +904,21 @@ BEGIN
       RAISE EXCEPTION 'reservas_custo: a liquidação exige o agent_step da mesma chamada, com o custo real';
     END IF;
     NEW.encerrada_em := now();
+  ELSIF OLD.estado = NEW.estado AND OLD.estado IN ('cancelada','retida','reconhecida')
+        AND OLD.agent_step_id IS NULL AND NEW.agent_step_id IS NOT NULL THEN
+    -- Passo tardio: a resposta chegou depois do encerramento. Liga o agent_step da mesma chamada e nada mais muda.
+    IF NOT EXISTS (
+      SELECT 1 FROM agent_steps s
+       WHERE s.id = NEW.agent_step_id AND s.demanda_id = NEW.demanda_id AND s.modelo = NEW.modelo
+         AND s.operacao = NEW.operacao
+         AND s.plano_id IS NOT DISTINCT FROM NEW.plano_id AND s.tarefa_id IS NOT DISTINCT FROM NEW.tarefa_id
+    ) THEN
+      RAISE EXCEPTION 'reservas_custo: o passo tardio precisa ser o agent_step da mesma chamada';
+    END IF;
+    NEW.reconhecida_por := OLD.reconhecida_por;
+    NEW.encerrada_em := OLD.encerrada_em;
+  ELSIF NEW.agent_step_id IS DISTINCT FROM OLD.agent_step_id THEN
+    RAISE EXCEPTION 'reservas_custo: o passo só é ligado na liquidação ou, numa reserva já encerrada, como passo tardio';
   ELSIF OLD.estado = 'aberta' AND NEW.estado IN ('cancelada','retida') THEN
     NEW.encerrada_em := now();
   ELSIF OLD.estado = 'retida' AND NEW.estado = 'reconhecida' THEN

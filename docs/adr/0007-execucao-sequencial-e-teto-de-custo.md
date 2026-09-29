@@ -42,28 +42,37 @@ esta traz o banco, os repositórios e as funções puras, testados, sem mudar o 
    | De | Para | Condição imposta pelo banco |
    |---|---|---|
    | `pendente` | `pronta` | Plano ativo e todas as dependências concluídas |
-   | `pronta` | `em_execucao` | Claim: plano ativo, tentativa restante, lease com validade e snapshot de um agente `ativo` da capacidade, com versão, papel e modelo do catálogo. O banco gera `claim_id` e `lease_token` |
-   | `em_execucao` | `em_execucao` | Registro de envio, uma vez por claim e com o plano ativo: a tentativa sobe exatamente 1, o lease é renovado, o agente do snapshot continua ativo, na mesma versão e com o mesmo modelo, e existe uma reserva aberta do mesmo claim |
+   | `pronta` | `em_execucao` | Claim: plano ativo, tentativa restante, lease do tamanho fechado (decisão 5) e snapshot de um agente `ativo` da capacidade, com versão, papel e modelo do catálogo. O banco gera `claim_id` e `lease_token` |
+   | `em_execucao` | `em_execucao` | Registro de envio, uma vez por claim e com o plano ativo: a tentativa sobe exatamente 1, o lease é renovado com o mesmo tamanho fechado, o agente do snapshot continua ativo, na mesma versão e com o mesmo modelo, e existe uma reserva aberta do mesmo claim |
    | `em_execucao` | `concluida` | Envio registrado, plano ativo e artefato gravado. Integração: entrega da mesma demanda |
    | `em_execucao` | `pronta` | Ainda há tentativa e o plano está ativo. O snapshot é limpo |
-   | `em_execucao` | `falhou` | Código fechado, nunca `contexto_excedido` |
-   | `pronta` | `falhou` | Só `contexto_excedido`, com o plano abandonado por `tarefa_falhou` na mesma transação |
-   | `pendente`, `pronta`, `em_execucao` | `cancelada` | Plano já abandonado na mesma transação |
+   | `em_execucao` | `falhou` | Código fechado, nunca `contexto_excedido`. No `COMMIT`, o plano abandonado por `tarefa_falhou` |
+   | `pronta` | `falhou` | Só `contexto_excedido`, com o plano abandonado por `tarefa_falhou` na mesma transação. Sem snapshot |
+   | `pendente`, `pronta`, `em_execucao` | `cancelada` | Plano já abandonado na mesma transação. Sem claim, sem snapshot |
 
    A tentativa nunca desce e só sobe no registro de envio, nunca no claim. Em toda saída de `em_execucao`, o gatilho
    limpa `claim_id`, `lease_token` e `lease_expira_em`, então nenhum caminho os esquece; cada repositório devolve o
-   `claimId` lido antes da transição, para o evento. O timeout é do banco: 480 segundos para especialista e 720 para
-   integração. O objetivo (decisão 1B) tem de 1 a 300 caracteres, sem caracteres de controle (C0, DEL, C1, U+2028 e
-   U+2029), sem `<` e sem `>`, e é imutável.
+   `claimId` lido antes da transição, para o evento. Uma tarefa que termina `falhou` exige, no `COMMIT` (gatilho
+   adiado), o plano abandonado por `tarefa_falhou` na mesma transação: uma especialista que falhou nunca deixa a
+   integração ficar pronta, e o plano ficaria ativo para sempre. Por isso `falharTentativa`, `recuperarLeasesVencidos`
+   e `falharPorContextoExcedido` abandonam o plano, cancelam as outras tarefas abertas e fixam a rota na própria
+   transação, e devolvem o abandono para o evento `plano_abandonado`. O timeout é do banco: 480 segundos para
+   especialista e 720 para integração. O objetivo (decisão 1B) tem de 1 a 300 caracteres, sem caracteres de controle
+   (C0, DEL, C1, U+2028 e U+2029), sem `<` e sem `>`, e é imutável.
 5. **Lease e sigilo.** O lease vale o timeout mais 180 segundos (`MARGEM_LEASE_SEGUNDOS`), mais que a margem de
-   persistência de 2 minutos do plano. Só o `lease_token` autoriza persistir (condição de `WHERE`); ele sai do
-   repositório só para o processo que fez o claim e nunca vai para evento, log, interface ou listagem. O `claim_id`
-   pode ir para eventos e avaliações: identifica o claim, mas não autoriza nada.
+   persistência de 2 minutos do plano. O banco só aceita, no claim e no registro de envio, de 120 a 900 segundos
+   além do timeout: nem SQL direto cria um lease que vença antes da gravação do resultado ou que prenda a tarefa
+   longe da recuperação. Só o `lease_token` autoriza persistir (condição de `WHERE`); ele sai do repositório só para
+   o processo que fez o claim e nunca vai para evento, log, interface ou listagem. O `claim_id` pode ir para eventos e
+   avaliações: identifica o claim, mas não autoriza nada.
 6. **Artefatos** (`artefatos_tarefa`). Um por tarefa, append-only, aceito só com a tarefa em execução e com o envio
    registrado. O servidor calcula `sha256` e `bytes`, e o banco confere os dois. Limite de 65.536 bytes para
    especialista e 131.072 para integração, JSON válido quando o formato é `json`, até 10 referências em três formas
    fechadas (`url`, `fonte`, `artefato`) validadas por uma função SQL equivalente ao Zod, e referência a artefato só
-   para uma dependência direta. `classificacao` é sempre `interna`. **Duplicação deliberada:** o artefato da
+   para uma dependência direta. `classificacao` é sempre `interna`. O JSON que a aplicação aceita o `jsonb` também
+   aceita: o `JSON.parse` do Node aceita o que o banco recusa (`1e200000`, `1e-99999`, aninhamento que estoura a
+   pilha), então a validação exige até 64 níveis, números com até 64 caracteres e expoente de -300 a 300, todos
+   finitos, e nunca lança. **Duplicação deliberada:** o artefato da
    integração é o resultado da execução sem o conteúdo da entrega, o que depois vai também para `relatorios`. A cópia
    existe para a retomada: se o processo cair entre a integração e o relatório, a próxima execução só faz a
    auditoria, sem nova integração nem nova entrega. O conteúdo de artefato nunca vai para eventos, logs, dossiê ou
@@ -75,12 +84,17 @@ esta traz o banco, os repositórios e as funções puras, testados, sem mudar o 
    - **Reserva** (`reservas_custo`): gravada com o envelope travado e só se couber no limite. O gatilho repete a
      conta sob o mesmo lock, então nem SQL direto passa do limite nem reserva numa demanda bloqueada. Uma reserva
      de tarefa pertence ao claim atual, antes do envio, com o modelo e a operação do snapshot, e é única por claim.
-     Estados `aberta → liquidada | cancelada | retida` e `retida → reconhecida`.
+     Estados `aberta → liquidada | cancelada | retida` e `retida → reconhecida`. O banco recusa gravar reserva em
+     `REPEATABLE READ`: nesse nível a soma usaria o snapshot do começo da transação e não veria as reservas que outra
+     transação gravou enquanto esta esperava o lock do envelope. `READ COMMITTED` (o padrão, que os repositórios
+     usam) relê depois do lock, e `SERIALIZABLE` aborta uma das duas.
    - **Liquidação:** o `agent_steps` com o custo real e a liquidação na mesma transação. `agent_step_id` é FK para
-     `agent_steps` e `UNIQUE`: um passo liquida no máximo uma reserva, e o banco confere que o passo é da mesma
-     chamada (demanda, plano, tarefa, operação, modelo e custo). Liquidar de novo uma reserva já liquidada devolve o
-     passo gravado, sem contar o gasto duas vezes. Uma resposta que chega depois de a reserva ter sido retida grava
-     o custo real mesmo assim e deixa a reserva retida: a demanda conta os dois, o lado seguro.
+     `agent_steps` e `UNIQUE`: um passo fica ligado a no máximo uma reserva, e o banco confere que o passo é da mesma
+     chamada (demanda, plano, tarefa, operação, modelo e, na liquidação, custo). Uma resposta que chega depois de a
+     reserva ter sido retida, reconhecida ou cancelada grava o custo real mesmo assim e liga o passo à reserva, uma
+     única vez, como passo tardio, sem mudar o estado dela: a demanda conta os dois, o lado seguro. Liquidar de novo
+     uma reserva que já tem passo, liquidada ou tardio, devolve o passo gravado, sem contar o gasto duas vezes; o
+     passo ligado nunca muda.
    - **Cancelar e reter nunca criam `agent_steps`**: erro sem uso não gera passo artificial.
    - **Autorização** (`autorizacoes_custo`, append-only): de US$ 0,50 a 5,00 no Zod e no banco, só para demanda
      bloqueada, com `limite_anterior_usd` conferido sob lock contra o limite atual e `limite_novo_usd` igual ao
@@ -125,10 +139,16 @@ esta traz o banco, os repositórios e as funções puras, testados, sem mudar o 
     claims repetidos antes do envio geram avaliações distintas. `avaliarEregistrar` continua fail-open: se o banco
     recusar a avaliação, ela devolve `allow` e nada é gravado. As avaliações sem tarefa ficam exatamente como eram.
 13. **Ordem de locks**, a mesma em todas as funções que travam mais de uma linha: plano, tarefa, agente e envelope.
-    Funções que recebem um cliente (`reservarCustoNaTransacao`, `autorizarCustoAdicional`, `bloquearPorCusto`,
-    `abandonarPlano`, `promoverTarefasProntas`, `fixarRotaLegado`) rodam na transação de quem chama, para a 3.2b
-    compor as transações únicas do plano (por exemplo: devolver a tarefa, bloquear a demanda e mudar o estado dela).
-    As demais abrem uma transação curta própria. Nenhuma fica aberta durante uma chamada ao modelo.
+    Falhar, concluir, recuperar leases e `contexto_excedido` travam primeiro a linha do plano, em `FOR NO KEY UPDATE`:
+    essas transações ficam em série por plano, e a promoção das tarefas prontas sempre vê as conclusões anteriores
+    (duas conclusões paralelas, na 3.3, não deixam a integração pendente). Esse lock não conflita com o
+    `FOR KEY SHARE` das FKs que apontam para o plano, como as de `reservas_custo` e `agent_steps`. O claim, o registro
+    de envio e a devolução mexem numa tarefa só e não travam o plano; o gatilho confere que ele está ativo. Tudo
+    assume `READ COMMITTED`, o padrão do PostgreSQL. Funções que recebem um cliente (`reservarCustoNaTransacao`,
+    `autorizarCustoAdicional`, `bloquearPorCusto`, `abandonarPlano`, `promoverTarefasProntas`, `fixarRotaLegado`)
+    rodam na transação de quem chama, para a 3.2b compor as transações únicas do plano (por exemplo: devolver a
+    tarefa, bloquear a demanda e mudar o estado dela). As demais abrem uma transação curta própria. Nenhuma fica
+    aberta durante uma chamada ao modelo.
 14. **Testes em PostgreSQL 16.** O `embedded-postgres` dos testes passou de 18 para 16.14, a versão principal do
     template padrão de PostgreSQL do Railway. A versão do banco de produção não foi conferida (não há acesso a ele
     a partir deste trabalho). A migration usa só recursos presentes desde o PostgreSQL 13 (`gen_random_uuid`,
@@ -140,15 +160,22 @@ esta traz o banco, os repositórios e as funções puras, testados, sem mudar o 
 
 ## Divergências em relação ao texto do plano
 
-Todas apertam uma regra; nenhuma afrouxa:
+Todas apertam uma garantia. A única que amplia um `CHECK` é a do passo tardio, e ela existe para fechar uma contagem
+dupla:
 
 - `em_execucao → falhou` recusa `contexto_excedido` (o plano só exigia um código). Mantém o banco coerente com o
   evento `tarefa_falhou`.
-- A margem do lease foi fixada em 180 segundos (o plano só dizia "maior que o timeout mais a margem").
+- A margem do lease foi fixada em 180 segundos (o plano só dizia "maior que o timeout mais a margem"), e o banco
+  aceita só de 120 a 900 segundos além do timeout (o plano só pedia um lease com validade).
+- Uma tarefa que falhou exige, no `COMMIT`, o plano abandonado por `tarefa_falhou`, e as funções de falha fazem o
+  abandono na própria transação (o plano deixava o abandono a cargo de quem chama).
 - `reservarCusto` valida os parâmetros antes de qualquer lock e lança erro para parâmetro fora do formato, em vez de
   devolvê-lo como motivo de recusa.
-- A liquidação repetida é idempotente, e a liquidação depois da retenção conta os dois valores (casos que a tabela
-  6.3 do plano não cobria).
+- A liquidação repetida é idempotente, e a liquidação depois da retenção ou do cancelamento conta os dois valores
+  (casos que a tabela 6.3 do plano não cobria). Para isso, o `CHECK` de `reservas_custo` aceita `agent_step_id`
+  também em `retida`, `reconhecida` e `cancelada`, o passo tardio (o plano só o previa em `liquidada`). Sem ele,
+  cada repetição de uma liquidação atrasada gravaria um passo novo e contaria o mesmo gasto de novo.
+- O banco recusa gravar reserva em `REPEATABLE READ` (o plano não tratava do nível de isolamento).
 
 ## Fronteiras: o que a 3.2a não faz
 
@@ -176,6 +203,10 @@ Todas apertam uma regra; nenhuma afrouxa:
 - A tabela de modelos tem o alias `claude-haiku-4-5`; o identificador com data (`claude-haiku-4-5-20251001`) não
   está cadastrado e seria recusado no boot, falhando fechado.
 - A versão do PostgreSQL de produção não foi confirmada (decisão 14).
+- Os limites de JSON do artefato (decisão 6) recusam, como `artefato_invalido`, casos que o banco aceitaria, como
+  `1e301`. São conservadores de propósito.
+- `listarTarefasDoPlano` devolve a `chave` da tarefa: um identificador de formato fechado, que desde a 3.1 fica fora
+  do ledger por ser proposto pelo modelo. Se ela aparece no dossiê é uma decisão da 3.4.
 
 ## Alternativas descartadas
 

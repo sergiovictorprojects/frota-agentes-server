@@ -11,6 +11,7 @@ import {
   reservarERegistrarEnvio,
   type TarefaReivindicada,
 } from '../../src/db/tarefas.ts';
+import { comTransacao } from '../../src/db/tx.ts';
 
 // Fixtures da Fase 3.2a: demanda com envelope, plano em execução registrado ou ativo, claim e envio. Tudo pelo
 // código de produção, para os testes passarem pelos mesmos caminhos que a PR 3.2b vai usar. SQL direto fica nos
@@ -80,10 +81,8 @@ export async function planoAtivoDeTeste(
   return plano;
 }
 
-// margemLeaseSegundos -479 deixa um lease de 1 segundo (timeout de 480 da especialista): o jeito de ver um
-// lease vencer sem mexer no relógio do banco.
-export async function reivindicar(pool: pg.Pool, planoId: string, margemLeaseSegundos?: number): Promise<TarefaReivindicada> {
-  const r = await reivindicarProximaTarefa(pool, planoId, margemLeaseSegundos === undefined ? {} : { margemLeaseSegundos });
+export async function reivindicar(pool: pg.Pool, planoId: string): Promise<TarefaReivindicada> {
+  const r = await reivindicarProximaTarefa(pool, planoId);
   if (!r.reivindicada) throw new Error(`claim de teste falhou: ${r.motivo}`);
   return r.tarefa;
 }
@@ -91,16 +90,36 @@ export async function reivindicar(pool: pg.Pool, planoId: string, margemLeaseSeg
 export async function enviar(
   pool: pg.Pool,
   tarefa: TarefaReivindicada,
-  opcoes: { valorReservadoUsd?: string; margemLeaseSegundos?: number } = {},
+  opcoes: { valorReservadoUsd?: string } = {},
 ): Promise<{ reservaId: string; tentativa: number }> {
   const envio = await reservarERegistrarEnvio(pool, {
     tarefaId: tarefa.id,
     leaseToken: tarefa.leaseToken,
     valorReservadoUsd: opcoes.valorReservadoUsd ?? '0.050000',
-    ...(opcoes.margemLeaseSegundos === undefined ? {} : { margemLeaseSegundos: opcoes.margemLeaseSegundos }),
   });
   if (!envio.registrado) throw new Error(`envio de teste falhou: ${envio.motivo}`);
   return { reservaId: envio.reservaId, tentativa: envio.tentativa };
+}
+
+// Simula a passagem do tempo: o lease da tarefa e a reserva aberta do claim, se houver, vencem agora. O banco não
+// aceita lease curto (de 120 a 900 segundos além do timeout), então só dá para vencer um lease sem esperar
+// desligando os gatilhos nesta transação (session_replication_role, que exige o superusuário dos testes). Os
+// CHECK continuam valendo. Uso exclusivo dos testes; nada no código de produção faz isso.
+export async function vencerLease(pool: pg.Pool, tarefaId: string): Promise<void> {
+  await comTransacao(pool, async (c) => {
+    await c.query('SET LOCAL session_replication_role = replica');
+    const { rowCount } = await c.query(
+      "UPDATE tarefas SET lease_expira_em = now() - interval '1 second' WHERE id = $1 AND estado = 'em_execucao'",
+      [tarefaId],
+    );
+    if (rowCount !== 1) throw new Error('vencerLease: a tarefa não está em execução');
+    await c.query(
+      `UPDATE reservas_custo r SET expira_em = r.criada_em + interval '1 microsecond'
+         FROM tarefas t
+        WHERE t.id = $1 AND r.tarefa_id = t.id AND r.claim_id = t.claim_id AND r.estado = 'aberta'`,
+      [tarefaId],
+    );
+  });
 }
 
 export async function reivindicarEEnviar(

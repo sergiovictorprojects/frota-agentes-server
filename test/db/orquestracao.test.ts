@@ -205,6 +205,23 @@ describe('envelope, reservas e autorizacoes de custo (migration 006)', () => {
           [d.demandaId],
         ),
       ).rejects.toThrow('reservas_custo: a reserva passaria do limite da demanda');
+
+      // Gasto anterior acima do teto: o disponível fica em zero, nunca negativo.
+      const cara = await novaDemanda(db.pool);
+      await registrarPasso(db.pool, {
+        runId: cara.runId,
+        demandaId: cara.demandaId,
+        papel: 'frota:architect',
+        modelo: 'claude-sonnet-5',
+        tokensIn: 1,
+        tokensOut: 1,
+        cacheRead: 0,
+        cacheWrite: 0,
+        custoUsd: 2.5,
+        duracaoMs: 10,
+      });
+      await criarEnvelope(db.pool, { demandaId: cara.demandaId, tetoBaseUsd: '2.00' });
+      expect(await situacaoDeCusto(db.pool, cara.demandaId)).toEqual({ limiteUsd: '2.00', comprometidoUsd: '2.500000', disponivelUsd: '0.000000' });
     });
 
     it('recusa agente nao autorizado, demanda bloqueada ou sem envelope e parametros fora do formato', async () => {
@@ -398,15 +415,141 @@ describe('envelope, reservas e autorizacoes de custo (migration 006)', () => {
       ).rejects.toThrow('Reserva inexistente.');
     });
 
-    it('resposta que chega depois da reserva retida: o custo real e gravado e a reserva fica como esta (conta os dois)', async () => {
+    it('resposta que chega depois da reserva retida ou cancelada: grava o custo real e liga o passo tardio uma vez so', async () => {
+      const d = await demandaComEnvelope(db.pool);
+      const passo = { runId: d.runId, papel: 'frota:gestores', uso: uso(10_000, 1_000), duracaoMs: 5 };
+      const id = await reservaAberta(d.demandaId, '0.10');
+      await reterReserva(db.pool, id);
+      const { rows: antes } = await db.pool.query('SELECT encerrada_em FROM reservas_custo WHERE id = $1', [id]);
+
+      const l = await liquidarReserva(db.pool, { reservaId: id, passo });
+      expect(l).toMatchObject({ liquidada: false, estadoReserva: 'retida', custoRealUsd: '0.030000', acimaDaReserva: false });
+      const { rows: depois } = await db.pool.query('SELECT estado, agent_step_id, custo_real_usd, encerrada_em FROM reservas_custo WHERE id = $1', [id]);
+      expect(depois[0]).toEqual({ estado: 'retida', agent_step_id: l.agentStepId, custo_real_usd: null, encerrada_em: antes[0].encerrada_em });
+      // A reserva retida e o passo contam os dois, o lado seguro. Repetir a liquidação não conta o gasto de novo.
+      expect(await situacaoDeCusto(db.pool, d.demandaId)).toMatchObject({ comprometidoUsd: '0.130000' });
+      expect(await liquidarReserva(db.pool, { reservaId: id, passo })).toEqual(l);
+      expect(await contarPassos(db.pool, d.demandaId)).toBe(1);
+
+      // Reconhecido o gasto, o passo continua ligado, e liquidar de novo ainda devolve o mesmo passo.
+      await reconhecerReserva(db.pool, { reservaId: id, reconhecidaPor: 'admin' });
+      expect(await liquidarReserva(db.pool, { reservaId: id, passo })).toEqual({ ...l, estadoReserva: 'reconhecida' });
+
+      // Cancelada: a reserva deixa de contar, e o passo tardio conta o gasto que aconteceu.
+      const cancelada = await reservaAberta(d.demandaId, '0.10');
+      await cancelarReserva(db.pool, cancelada);
+      const lc = await liquidarReserva(db.pool, { reservaId: cancelada, passo });
+      expect(lc).toMatchObject({ liquidada: false, estadoReserva: 'cancelada', custoRealUsd: '0.030000' });
+      expect(await liquidarReserva(db.pool, { reservaId: cancelada, passo })).toEqual(lc);
+      expect(await contarPassos(db.pool, d.demandaId)).toBe(2);
+      expect(await situacaoDeCusto(db.pool, d.demandaId)).toMatchObject({ comprometidoUsd: '0.160000' });
+    });
+
+    it('liquidacao que espera o lock de outra que ligou o passo tardio devolve esse passo, com o custo dele', async () => {
       const d = await demandaComEnvelope(db.pool);
       const id = await reservaAberta(d.demandaId, '0.10');
       await reterReserva(db.pool, id);
-      const l = await liquidarReserva(db.pool, { reservaId: id, passo: { runId: d.runId, papel: 'frota:gestores', uso: uso(10_000, 1_000), duracaoMs: 5 } });
-      expect(l).toMatchObject({ liquidada: false, estadoReserva: 'retida', custoRealUsd: '0.030000', acimaDaReserva: false });
-      expect(await estadoDa(id)).toBe('retida');
+      const c1 = await db.pool.connect();
+      try {
+        await c1.query('BEGIN');
+        await c1.query('SELECT 1 FROM reservas_custo WHERE id = $1 FOR UPDATE', [id]);
+        const segunda = liquidarReserva(db.pool, {
+          reservaId: id,
+          passo: { runId: d.runId, papel: 'frota:gestores', uso: uso(10_000, 1_000), duracaoMs: 5 },
+        });
+        await esperar(200);
+        const { rows } = await c1.query<{ id: string }>(
+          "INSERT INTO agent_steps (demanda_id, papel, modelo, custo_usd, operacao) VALUES ($1, 'frota:gestores', 'claude-sonnet-5', 0.03, 'planejamento') RETURNING id",
+          [d.demandaId],
+        );
+        await c1.query('UPDATE reservas_custo SET agent_step_id = $2 WHERE id = $1', [id, rows[0]!.id]);
+        await c1.query('COMMIT');
+        expect(await segunda).toEqual({
+          agentStepId: rows[0]!.id,
+          custoRealUsd: '0.030000',
+          reservaUsd: '0.100000',
+          acimaDaReserva: false,
+          liquidada: false,
+          estadoReserva: 'retida',
+        });
+      } finally {
+        c1.release();
+      }
       expect(await contarPassos(db.pool, d.demandaId)).toBe(1);
-      expect(await situacaoDeCusto(db.pool, d.demandaId)).toMatchObject({ comprometidoUsd: '0.130000' });
+    });
+
+    it('o passo tardio: so numa reserva encerrada sem liquidacao, da mesma chamada, uma vez, e nunca muda', async () => {
+      const d = await demandaComEnvelope(db.pool);
+      const passo = async (operacao = 'planejamento') => {
+        const { rows } = await db.pool.query<{ id: string }>(
+          "INSERT INTO agent_steps (demanda_id, papel, modelo, custo_usd, operacao) VALUES ($1, 'frota:gestores', 'claude-sonnet-5', 0.01, $2) RETURNING id",
+          [d.demandaId, operacao],
+        );
+        return rows[0]!.id;
+      };
+      const ligar = (reservaId: string, stepId: string, extra = '') =>
+        db.pool.query(`UPDATE reservas_custo SET agent_step_id = $2${extra} WHERE id = $1`, [reservaId, stepId]);
+      const soNaLiquidacao = 'reservas_custo: o passo só é ligado na liquidação ou, numa reserva já encerrada, como passo tardio';
+
+      // Aberta: o passo só entra com a liquidação, e nunca junto com outra transição.
+      const aberta = await reservaAberta(d.demandaId);
+      await expect(ligar(aberta, await passo())).rejects.toThrow(soNaLiquidacao);
+      await expect(ligar(aberta, await passo(), ", estado = 'retida'")).rejects.toThrow(soNaLiquidacao);
+
+      const retida = await reservaAberta(d.demandaId);
+      await reterReserva(db.pool, retida);
+      await expect(ligar(retida, await passo('auditoria'))).rejects.toThrow('reservas_custo: o passo tardio precisa ser o agent_step da mesma chamada');
+      await expect(ligar(retida, await passo(), ', custo_real_usd = 0.01')).rejects.toThrow(/reservas_custo_liquidada_check/);
+      await expect(ligar(retida, await passo(), ", estado = 'reconhecida', reconhecida_por = 'admin'")).rejects.toThrow(soNaLiquidacao);
+      const certo = await passo();
+      await ligar(retida, certo, ", encerrada_em = now() + interval '1 day', reconhecida_por = 'admin'");
+      const { rows } = await db.pool.query(
+        'SELECT estado, agent_step_id, reconhecida_por, encerrada_em < now() + interval \'1 hour\' AS encerrada_antes FROM reservas_custo WHERE id = $1',
+        [retida],
+      );
+      expect(rows[0]).toEqual({ estado: 'retida', agent_step_id: certo, reconhecida_por: null, encerrada_antes: true });
+      await expect(ligar(retida, await passo())).rejects.toThrow('reservas_custo: o passo ligado à reserva é imutável');
+      await expect(db.pool.query('UPDATE reservas_custo SET agent_step_id = NULL WHERE id = $1', [retida])).rejects.toThrow(
+        'reservas_custo: o passo ligado à reserva é imutável',
+      );
+
+      // Um passo fica ligado a uma reserva só.
+      const outra = await reservaAberta(d.demandaId);
+      await cancelarReserva(db.pool, outra);
+      await expect(ligar(outra, certo)).rejects.toThrow(/reservas_custo_agent_step_id_key/);
+      // Uma reserva liquidada não troca de passo.
+      const liquidada = await reservaAberta(d.demandaId);
+      const l = await liquidarReserva(db.pool, { reservaId: liquidada, passo: { runId: d.runId, papel: 'frota:gestores', uso: uso(1_000, 100), duracaoMs: 5 } });
+      await expect(ligar(liquidada, await passo())).rejects.toThrow('reservas_custo: o passo ligado à reserva é imutável');
+      expect(l.liquidada).toBe(true);
+    });
+
+    it('o banco recusa gravar reserva em REPEATABLE READ ou sem envelope; READ COMMITTED e SERIALIZABLE gravam', async () => {
+      const d = await demandaComEnvelope(db.pool);
+      const inserir =
+        "INSERT INTO reservas_custo (demanda_id, operacao, modelo, valor_reservado_usd, expira_em) VALUES ($1, 'auditoria', 'claude-sonnet-5', 0.01, now() + interval '1 hour')";
+      const noNivel = async (nivel: string, demandaId = d.demandaId) => {
+        const c = await db.pool.connect();
+        try {
+          await c.query(`BEGIN ISOLATION LEVEL ${nivel}`);
+          await c.query(inserir, [demandaId]);
+          await c.query('COMMIT');
+        } catch (erro) {
+          await c.query('ROLLBACK');
+          throw erro;
+        } finally {
+          c.release();
+        }
+      };
+      await expect(noNivel('REPEATABLE READ')).rejects.toThrow(
+        'reservas_custo: a reserva não é gravada em REPEATABLE READ (use READ COMMITTED ou SERIALIZABLE)',
+      );
+      await noNivel('READ COMMITTED');
+      await noNivel('SERIALIZABLE');
+      expect(await situacaoDeCusto(db.pool, d.demandaId)).toMatchObject({ comprometidoUsd: '0.020000' });
+      await expect(noNivel('READ COMMITTED', (await novaDemanda(db.pool)).demandaId)).rejects.toThrow(
+        'reservas_custo: a demanda não tem envelope de orquestração',
+      );
     });
 
     it('agent_step_id e FK e UNIQUE: a liquidacao exige o passo da mesma chamada, e um passo liquida uma reserva so', async () => {

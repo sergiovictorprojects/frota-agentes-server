@@ -81,8 +81,50 @@ export function filtrarReferencias(
   return { referencias, descartadas: propostas.length - referencias.length };
 }
 
-// JSON que o jsonb do Postgres aceita: JSON.parse aceita, e nenhuma string (nem chave) tem NUL ou substituto
-// UTF-16 solto, que o banco recusa.
+// O JSON.parse do Node aceita o que o jsonb do Postgres recusa: número fora da faixa do numeric (1e200000 vira
+// Infinity, 1e-99999 vira 0) e aninhamento que estoura a pilha do banco. Estes limites, bem abaixo dos do banco e
+// acima do que um artefato precisa, fazem o que passa aqui passar também em texto_e_json (migration 006).
+export const PROFUNDIDADE_MAXIMA_JSON = 64;
+const NUMERO_JSON_MAX_CARACTERES = 64;
+const EXPOENTE_JSON_MAX = 300;
+
+const caractereDeNumero = (c: string): boolean => (c >= '0' && c <= '9') || c === '-' || c === '+' || c === '.' || c === 'e' || c === 'E';
+
+// Uma passada no texto, fora das strings: a profundidade de [ e { e cada número, com até 64 caracteres e expoente
+// de -300 a 300. Roda depois de JSON.parse aceitar o texto, então a gramática já está garantida.
+function jsonDentroDosLimites(texto: string): boolean {
+  let profundidade = 0;
+  let i = 0;
+  while (i < texto.length) {
+    const c = texto[i]!;
+    if (c === '"') {
+      i++;
+      while (i < texto.length && texto[i] !== '"') i += texto[i] === '\\' ? 2 : 1;
+      i++;
+    } else if (c === '[' || c === '{') {
+      profundidade++;
+      if (profundidade > PROFUNDIDADE_MAXIMA_JSON) return false;
+      i++;
+    } else if (c === ']' || c === '}') {
+      profundidade--;
+      i++;
+    } else if (c === '-' || (c >= '0' && c <= '9')) {
+      const inicio = i;
+      while (i < texto.length && caractereDeNumero(texto[i]!)) i++;
+      const numero = texto.slice(inicio, i);
+      if (numero.length > NUMERO_JSON_MAX_CARACTERES) return false;
+      const expoente = /[eE]([-+]?\d+)$/.exec(numero);
+      if (expoente && Math.abs(Number(expoente[1])) > EXPOENTE_JSON_MAX) return false;
+    } else {
+      i++;
+    }
+  }
+  return true;
+}
+
+// JSON que o jsonb do Postgres aceita: JSON.parse aceita, a estrutura cabe nos limites acima, todo número é
+// finito e nenhuma string (nem chave) tem NUL ou substituto UTF-16 solto, que o banco recusa. Nunca lança: com a
+// profundidade limitada, a visita recursiva não estoura a pilha.
 export function jsonAceitoPeloBanco(texto: string): boolean {
   let valor: unknown;
   try {
@@ -90,8 +132,10 @@ export function jsonAceitoPeloBanco(texto: string): boolean {
   } catch {
     return false;
   }
+  if (!jsonDentroDosLimites(texto)) return false;
   const visitar = (v: unknown): boolean => {
     if (typeof v === 'string') return textoArmazenavel(v);
+    if (typeof v === 'number') return Number.isFinite(v);
     if (Array.isArray(v)) return v.every(visitar);
     if (v !== null && typeof v === 'object') return Object.entries(v).every(([k, x]) => textoArmazenavel(k) && visitar(x));
     return true;

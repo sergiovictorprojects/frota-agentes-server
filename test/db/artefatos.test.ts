@@ -3,10 +3,12 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import {
   filtrarReferencias,
   inserirArtefato,
+  jsonAceitoPeloBanco,
   LIMITE_BYTES_ARTEFATO_ESPECIALISTA,
   LIMITE_BYTES_ARTEFATO_INTEGRACAO,
   LIMITE_REFERENCIAS,
   listarArtefatosDasDependencias,
+  PROFUNDIDADE_MAXIMA_JSON,
   ReferenciaSchema,
   sha256Hex,
   urlDeReferenciaValida,
@@ -52,6 +54,8 @@ describe('validarArtefato e filtrarReferencias (sem banco)', () => {
     ['formato json com texto que nao e JSON', proposto({ formato: 'json', conteudo: 'nao e json' }), 'especialista'],
     ['formato json com NUL numa string', proposto({ formato: 'json', conteudo: '{"a":"\\u0000"}' }), 'especialista'],
     ['formato json com substituto solto numa chave', proposto({ formato: 'json', conteudo: '{"\\ud800":1}' }), 'especialista'],
+    ['formato json com numero fora da faixa do banco', proposto({ formato: 'json', conteudo: '{"a":1e200000}' }), 'especialista'],
+    ['formato json aninhado demais', proposto({ formato: 'json', conteudo: '['.repeat(65) + ']'.repeat(65) }), 'especialista'],
   ] as const)('recusa com artefato_invalido: %s', (_caso, artefato, tipo) => {
     expect(validarArtefato(artefato, tipo, semDependencias)).toEqual({ valido: false, codigoErro: 'artefato_invalido' });
   });
@@ -185,6 +189,42 @@ describe('artefatos_tarefa (migration 006)', () => {
       for (const caso of casos) {
         const { rows } = await db.pool.query<{ ok: boolean }>('SELECT artefato_referencias_validas($1::jsonb) AS ok', [JSON.stringify(caso)]);
         expect(rows[0]!.ok, JSON.stringify(caso).slice(0, 80)).toBe(valida(caso));
+      }
+    });
+
+    it('o JSON que jsonAceitoPeloBanco aceita, texto_e_json tambem aceita; e ela nunca lanca', async () => {
+      const aninhado = (n: number) => '['.repeat(n) + ']'.repeat(n);
+      const aceitos = [
+        '{"a":[1,2,{"b":null}],"c":true,"d":false}',
+        '"texto"',
+        '-0',
+        '1.5e300',
+        '-1.5E-300',
+        '123456789012345678901234567890123456789012345678901234567890',
+        '{"a":"\\u00e7\\ud83d\\ude00"}',
+        // Número dentro de string não é número, nem com aspas escapadas antes.
+        '["1e999999", "aspas \\" e 1e999999"]',
+        aninhado(PROFUNDIDADE_MAXIMA_JSON),
+      ];
+      const recusados = [
+        aninhado(PROFUNDIDADE_MAXIMA_JSON + 1),
+        aninhado(100_000),
+        '1e200000',
+        '[1e-99999]',
+        '1e301',
+        `1${'0'.repeat(64)}`,
+        '1e308000',
+        '{"a":"\\u0000"}',
+        '{"\\ud800":1}',
+        'nao e json',
+        '[1,]',
+        '',
+      ];
+      for (const texto of aceitos) expect(jsonAceitoPeloBanco(texto), texto.slice(0, 40)).toBe(true);
+      for (const texto of recusados) expect(jsonAceitoPeloBanco(texto), texto.slice(0, 40)).toBe(false);
+      for (const texto of aceitos) {
+        const { rows } = await db.pool.query<{ ok: boolean }>('SELECT texto_e_json($1) AS ok', [texto]);
+        expect(rows[0]!.ok, texto.slice(0, 40)).toBe(true);
       }
     });
   });

@@ -8,8 +8,9 @@ import { comTransacao, type Db } from './tx.ts';
 // Nada aqui é chamado pelo fluxo real nesta entrega: a PR 3.2b liga. O banco repete cada regra (migration 006),
 // então nem um SQL direto passa do limite, destrava sem autorização ou apaga histórico.
 //
-// Ordem de locks, a mesma em todas as funções que travam mais de uma linha: tarefa, agente e envelope. Quem
-// devolve uma tarefa e bloqueia a demanda na mesma transação (PR 3.2b) devolve a tarefa antes de bloquear.
+// Ordem de locks, a mesma de src/db/tarefas.ts: plano, tarefa, agente e envelope. As funções daqui não travam
+// plano. Quem devolve uma tarefa e bloqueia a demanda na mesma transação (PR 3.2b) devolve a tarefa antes de
+// bloquear. Tudo assume READ COMMITTED; o banco recusa gravar reserva em REPEATABLE READ (ver a migration 006).
 //
 // Dinheiro é sempre texto decimal (numeric no banco, bigint em src/llm/reserva.ts); nunca ponto flutuante.
 
@@ -262,15 +263,16 @@ export type ResultadoLiquidacao = {
   reservaUsd: string;
   // Custo real maior que o reservado: vira o evento custo_acima_da_reserva (PR 3.2b).
   acimaDaReserva: boolean;
-} & ({ liquidada: true } | { liquidada: false; estadoReserva: Exclude<EstadoReserva, 'aberta'> });
+} & ({ liquidada: true } | { liquidada: false; estadoReserva: Exclude<EstadoReserva, 'aberta' | 'liquidada'> });
 
 // Contabiliza uma resposta com uso: grava o agent_steps com o custo real (decimal, da tabela fechada) e
 // liquida a reserva, na mesma transação. O passo herda demanda, plano, tarefa, operação e modelo da própria
 // reserva, então sempre casa com ela. Se a reserva já não estava aberta (a varredura a reteve depois de uma
-// parada longa), o custo real é gravado assim mesmo, porque o gasto aconteceu, e a reserva fica como está: a
-// demanda passa a contar os dois, o lado seguro. Idempotente para a reserva já liquidada: uma reserva cobre
-// exatamente um envio, então liquidar de novo (a resposta do COMMIT se perdeu e quem chama repetiu) devolve o
-// passo já gravado, em vez de contar o mesmo gasto duas vezes.
+// parada longa, ou ela foi cancelada), o custo real é gravado assim mesmo, porque o gasto aconteceu, e o passo
+// fica ligado à reserva como passo tardio, sem mudar o estado dela: a demanda passa a contar os dois, o lado
+// seguro. Idempotente: uma reserva cobre exatamente uma chamada, então liquidar de novo uma reserva que já tem
+// passo (a resposta do COMMIT se perdeu e quem chama repetiu) devolve o passo gravado, em vez de contar o mesmo
+// gasto duas vezes.
 export async function liquidarReserva(
   pool: pg.Pool,
   p: { reservaId: string; passo: PassoDaChamada },
@@ -284,25 +286,29 @@ export async function liquidarReserva(
       modelo: string;
       estado: EstadoReserva;
       valor: string;
-      custo_real: string | null;
       agent_step_id: string | null;
     }>(
-      `SELECT demanda_id, plano_id, tarefa_id, operacao, modelo, estado, valor_reservado_usd::text AS valor,
-              custo_real_usd::text AS custo_real, agent_step_id
+      `SELECT demanda_id, plano_id, tarefa_id, operacao, modelo, estado, valor_reservado_usd::text AS valor, agent_step_id
          FROM reservas_custo WHERE id = $1 FOR UPDATE`,
       [p.reservaId],
     );
     const r = rows[0];
     if (!r) throw new Error('Reserva inexistente.');
-    if (r.estado === 'liquidada') {
-      const custo = r.custo_real!;
-      return {
-        agentStepId: r.agent_step_id!,
-        custoRealUsd: custo,
-        reservaUsd: r.valor,
-        acimaDaReserva: usdParaMicro(custo) > usdParaMicro(r.valor),
-        liquidada: true,
-      };
+    const contabilizado = (agentStepId: string, custo: string) => ({
+      agentStepId,
+      custoRealUsd: custo,
+      reservaUsd: r.valor,
+      acimaDaReserva: usdParaMicro(custo) > usdParaMicro(r.valor),
+    });
+    // Já tem passo: liquidada (o custo real é o do passo, conferido pelo banco) ou com o passo tardio. O custo é
+    // lido numa consulta própria, depois do lock, e não num JOIN da consulta acima: quem esperou o lock de uma
+    // liquidação concorrente recebe a linha nova da reserva, mas o JOIN ficaria com o passo de antes, que não havia.
+    if (r.estado === 'liquidada' || (r.estado !== 'aberta' && r.agent_step_id !== null)) {
+      const { rows: gravado } = await cliente.query<{ custo: string }>('SELECT custo_usd::text AS custo FROM agent_steps WHERE id = $1', [
+        r.agent_step_id,
+      ]);
+      const base = contabilizado(r.agent_step_id!, gravado[0]!.custo);
+      return r.estado === 'liquidada' ? { ...base, liquidada: true } : { ...base, liquidada: false, estadoReserva: r.estado };
     }
     const custoReal = custoRealUsd(r.modelo, p.passo.uso);
     const { rows: passo } = await cliente.query<{ id: string }>(
@@ -326,19 +332,16 @@ export async function liquidarReserva(
       ],
     );
     const agentStepId = passo[0]!.id;
-    const base = {
-      agentStepId,
-      custoRealUsd: custoReal,
-      reservaUsd: r.valor,
-      acimaDaReserva: usdParaMicro(custoReal) > usdParaMicro(r.valor),
-    };
-    if (r.estado !== 'aberta') return { ...base, liquidada: false, estadoReserva: r.estado };
+    if (r.estado !== 'aberta') {
+      await cliente.query('UPDATE reservas_custo SET agent_step_id = $2 WHERE id = $1', [p.reservaId, agentStepId]);
+      return { ...contabilizado(agentStepId, custoReal), liquidada: false, estadoReserva: r.estado };
+    }
     await cliente.query("UPDATE reservas_custo SET estado = 'liquidada', custo_real_usd = $2, agent_step_id = $3 WHERE id = $1", [
       p.reservaId,
       custoReal,
       agentStepId,
     ]);
-    return { ...base, liquidada: true };
+    return { ...contabilizado(agentStepId, custoReal), liquidada: true };
   });
 }
 
