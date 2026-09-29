@@ -50,6 +50,7 @@ npm run typecheck
 | `CRON_PROCESSAR_FILA` | não | `*/10 * * * *` | Frequência das execuções |
 | `MAX_DEMANDAS_POR_RUN` | não | `3` | Demandas por execução |
 | `MODEL_WORK` / `MODEL_AUDIT` | não | `claude-sonnet-5` | Modelos de execução e de auditoria |
+| `ORQUESTRACAO_TAREFAS` | não | `desligada` | `planejar` grava um plano de tarefas em shadow antes da execução (uma chamada a mais ao modelo por demanda); a demanda segue pelo fluxo atual. Ver `docs/adr/0006-orquestracao-por-tarefas.md` |
 | `STALE_CLAIM_MINUTES` | não | `90` | Quando uma demanda presa volta para a fila (maior que o prazo de 60 min do job) |
 | `PORT` | não | `3000` | Porta HTTP |
 | `NOTIFY_CHANNEL` | não | `console` | `email` para receber os avisos por e-mail (além do log) |

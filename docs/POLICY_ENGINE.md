@@ -64,7 +64,7 @@ Cada regra tem:
   | `categoria` | um dos 19 valores de `Categoria` (`gestores`, `d1`..`d18`) — sempre a categoria **da demanda**, inclusive no estágio de auditoria (permite filtrar políticas de auditoria pelo tipo de demanda) |
   | `estado` | `ativo`, `suspenso`, `sob_demanda` (o estado do agente) ou `desconhecido` (agente fora do catálogo — ver abaixo) |
   | `modelo` | o modelo permitido/chamado — identificador no mesmo formato de `agente` |
-  | `operacao` | `execucao` ou `auditoria` — os dois únicos pontos do fluxo real que chamam um modelo |
+  | `operacao` | `execucao`, `auditoria`, `planejamento` (a chamada do coordenador que propõe o plano de tarefas, só com `ORQUESTRACAO_TAREFAS=planejar`) ou `integracao` (reservado para a entrega 3.2). Os dois últimos entraram pela migration 005 — ver ADR 0006 |
   | `prioridade` | `CRITICAL`, `HIGH`, `MEDIUM`, `LOW` |
 
   Todos os campos são opcionais; uma condição casa com um contexto quando **todo campo presente na
@@ -137,6 +137,12 @@ contexto) em três pontos:
 | `pre` | Início de `processarDemanda`, antes de qualquer chamada ao modelo de execução | `execucao` |
 | `during` | Início de `auditar()`, antes do laço de tentativas de auditoria | `auditoria` |
 | `post` | Depois do resultado — nos dois retornos antecipados de `tratarPendencia` (ação humana, insumo B) **e** no retorno final de `processarDemanda` | `execucao` |
+
+Com `ORQUESTRACAO_TAREFAS=planejar`, o planejamento (`src/orchestrator/planejamento.ts`) acrescenta seus
+próprios `pre`, `during` e `post`, com `operacao: planejamento` e o agente `frota:gestores`, antes da execução.
+Como acontecem na mesma run e com os mesmos estágios, o evento `politica_avaliada` dessas avaliações leva a
+operação na chave de idempotência (`planejamento:pre`) e no metadata (`operacao`); as operações legadas
+continuam com a chave só pelo estágio.
 
 Em nenhum dos três pontos o resultado de `avaliarEstagio()` é usado para decidir o que fazer — a chamada é
 puramente observacional, exatamente como uma emissão de evento no ledger. Nenhum prompt foi alterado,

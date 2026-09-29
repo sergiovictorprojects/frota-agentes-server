@@ -18,6 +18,7 @@ describe('migration 002_agent_events', () => {
       '002_agent_events.sql',
       '003_agentes.sql',
       '004_policy_engine.sql',
+      '005_planos_tarefas.sql',
     ]);
   });
 });

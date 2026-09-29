@@ -4,6 +4,20 @@
 
 Implementar por fatias verticais, com migrations aditivas, testes e rollback. Não iniciar cidade 3D, centenas de agentes ou aprendizado autônomo antes de haver uma trilha operacional confiável.
 
+## Situação atual (2026-09-29)
+
+| Fase | Situação |
+|---|---|
+| 0 — Diagnóstico e baseline | Concluída |
+| 1 — Modelo Operacional Auditável | Concluída: ledger `agent_events` (002), dossiê ao vivo e CI |
+| 2 — Catálogo e Policy Engine shadow | Concluída: catálogo e histórico de agentes (003); Policy Engine shadow (004) |
+| Hotfix — URL de entrega segura | Concluído (ADR 0005) |
+| **3 — Orquestração Real por Tarefas** | Em andamento: entrega 3.1 (modo `planejar`, migration 005, ADR 0006). 3.2 a 3.4 planejadas |
+| 4 a 9 | Sem mudança |
+
+Continuam pendentes, sem data: `agent_permissions`, estados `idle` e `retired` no catálogo e o snapshot
+versionado do dossiê (`dossier_snapshots`).
+
 ## Fase 0 — Diagnóstico e baseline
 
 ### Objetivo
@@ -91,23 +105,46 @@ Aplicar regras sem bloquear produção.
 
 As avaliações aparecem no dossiê e nos eventos, sem alterar ainda a continuidade do workflow.
 
-## Fase 3 — Catálogo real de agentes
+## Fase 3 — Orquestração Real por Tarefas
+
+Substitui a antiga "Catálogo real de agentes": o catálogo e o histórico já existem (migration 003), e o que
+restava dela (seleção por capacidade e disponibilidade, limite de concorrência e eventos de seleção) entra
+aqui. Decisões e rollback em `docs/adr/0006-orquestracao-por-tarefas.md`.
 
 ### Objetivo
 
-Introduzir agentes individuais sem quebrar a estrutura de setores atual.
+Trocar a execução de uma demanda por uma única chamada por um plano de tarefas especialistas com
+dependências e uma tarefa de integração que produz a entrega única, sem quebrar o fluxo atual.
 
-### Escopo
+### Princípios
 
-- Criar agents, agent_capabilities, agent_permissions e agent_runtime_config.
-- Criar adaptador entre setores legados e agentes.
-- Criar seletor por capacidade, risco, disponibilidade e limite de concorrência.
-- Adicionar estados active, idle, on_demand, suspended e retired.
-- Registrar seleção e ativação de agentes em eventos.
+- Nenhuma transação aberta durante chamada ao modelo: claim curto com lease e token, chamada fora da
+  transação e persistência condicional ao lease.
+- Chamada ao modelo é at-least-once; estado, artefato e entrega final são idempotentes.
+- A flag `ORQUESTRACAO_TAREFAS` controla tudo, e `desligada` devolve o fluxo legado inteiro.
+
+### Entregas
+
+- **3.1 — Somente `planejar` (implementada).** O coordenador propõe o plano, a validação é determinística e o
+  plano é gravado em shadow. A demanda segue pelo fluxo legado. Migration 005 (`planos_demanda`, `tarefas`,
+  `tarefas_dependencias` e `operacao` ampliada com `planejamento` e `integracao`).
+- **3.2 — Execução sequencial.** Claim com lease e token, persistência condicional, `artefatos_tarefa`
+  (contrato estrito, limite de tamanho, hash no servidor, append-only, fora do dossiê), integração com entrega
+  única, `tarefa_id` nas avaliações de política e nos eventos, uma categoria ligada por vez.
+- **3.3 — Concorrência.** `agentes.max_concorrencia` com gatilho, histórico, Zod e testes; lock da linha do
+  agente no claim; paralelismo de 2; estado `aguardando_agente`, que não consome tentativa e escala para
+  humano no prazo.
+- **3.4 — Dossiê.** Seções Participantes e Etapas, só com metadados de tarefas e artefatos.
+
+### Não fazer
+
+- Não executar tarefas antes da 3.2, nem paralelizar antes da 3.3.
+- Não criar fila pg-boss por tarefa, SSE, cidade 3D ou Policy Engine em enforce nesta fase.
 
 ### Critério de aceite
 
-Uma demanda pode selecionar um agente de catálogo de forma controlada, mantendo compatibilidade com o fluxo atual.
+Uma demanda de uma categoria ligada percorre plano, tarefas, integração e entrega única, com eventos e
+avaliações por tarefa. Com a flag desligada, o fluxo é idêntico ao legado.
 
 ## Fase 4 — Skills e conhecimento versionados
 

@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import { problemaNaOrigemPublica } from '../domain/links-entrega.ts';
+import { MODOS_ORQUESTRACAO } from '../domain/orquestracao.ts';
 
 // Uma variável presente mas vazia (`CHAVE=`) conta como ausente.
 const opcional = <T extends z.ZodType>(esquema: T) => z.preprocess((v) => (v === '' ? undefined : v), esquema.optional());
@@ -26,6 +27,9 @@ const schema = z.object({
   MODEL_AUDIT: z.string().min(1).default('claude-sonnet-5'),
   // Maior que o prazo do job no agendador (60 min): uma run só é dada como morta depois de o job expirar.
   STALE_CLAIM_MINUTES: z.coerce.number().int().min(5).default(90),
+  // Fase 3.1: "planejar" grava, em shadow, o plano de tarefas proposto pelo coordenador antes da execução
+  // atual (uma chamada a mais ao modelo por demanda). "desligada" (padrão) não muda nada.
+  ORQUESTRACAO_TAREFAS: z.enum(MODOS_ORQUESTRACAO).default('desligada'),
   // Sem canal de e-mail configurado, os avisos ficam só no log do serviço.
   NOTIFY_CHANNEL: z.enum(['console', 'email']).default('console'),
   RESEND_API_KEY: opcional(z.string().min(10, 'curta demais')),

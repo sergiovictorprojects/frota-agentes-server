@@ -20,6 +20,9 @@ export const TIPOS_EVENTO = [
   'demanda_devolvida_para_fila',
   'demanda_falhou',
   'politica_avaliada',
+  'plano_registrado',
+  'plano_rejeitado',
+  'planejamento_falhou',
 ] as const;
 const TIPOS_EVENTO_VALIDOS = new Set<string>(TIPOS_EVENTO);
 export type TipoEvento = (typeof TIPOS_EVENTO)[number];
@@ -60,6 +63,9 @@ const RESUMOS_POR_TIPO: Readonly<Record<TipoEvento, string>> = {
   demanda_devolvida_para_fila: 'Demanda devolvida para a fila.',
   demanda_falhou: 'Limite de tentativas atingido.',
   politica_avaliada: 'Política avaliada (modo shadow — não bloqueia).',
+  plano_registrado: 'Plano de tarefas registrado (modo planejar — não executa).',
+  plano_rejeitado: 'Plano de tarefas rejeitado pela validação.',
+  planejamento_falhou: 'Planejamento de tarefas falhou; a demanda segue pelo fluxo atual.',
 };
 
 const categoria = z.enum(CATEGORIAS);
@@ -107,7 +113,32 @@ const METADATA_SCHEMAS: Readonly<Record<TipoEvento, z.ZodType>> = {
     politicaId: uuid.nullable(),
     regraId: uuid.nullable(),
     versaoRegra: z.number().int().positive().nullable(),
+    // Só nas operações da Fase 3 (planejamento, integração): as legadas mantêm o formato original.
+    operacao: z.enum(['planejamento', 'integracao']).optional(),
   }),
+  // Fase 3.1 (modo "planejar"): só ids, versão, contagens e códigos fechados — nunca a chave de uma
+  // tarefa, texto do modelo ou da demanda.
+  plano_registrado: z.strictObject({
+    planoId: uuid,
+    versao: z.number().int().positive(),
+    modo: z.enum(['shadow', 'execucao']),
+    totalTarefas: contagem,
+    totalDependencias: contagem,
+  }),
+  plano_rejeitado: z.strictObject({
+    planoId: uuid,
+    versao: z.number().int().positive(),
+    motivoRejeicao: z.enum([
+      'sem_tarefas',
+      'limite_tarefas',
+      'chave_duplicada',
+      'chave_reservada',
+      'dependencia_inexistente',
+      'autodependencia',
+      'ciclo',
+    ]),
+  }),
+  planejamento_falhou: z.strictObject({ codigoErro }),
 };
 
 export interface NovoEvento {
