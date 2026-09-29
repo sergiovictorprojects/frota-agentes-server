@@ -70,6 +70,7 @@ async function main(): Promise<void> {
     pool,
     usuario: config.UI_USER,
     senha: config.UI_PASSWORD,
+    origemPublica: config.PUBLIC_BASE_URL,
     disparar: () => scheduler.dispararAgora(),
   });
   await app.listen({ host: '0.0.0.0', port: config.PORT });

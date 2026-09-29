@@ -15,7 +15,7 @@ import { createTestDb, type TestDb } from '../helpers/db.ts';
 import { LlmFalso, USO_PADRAO } from '../helpers/fakes.ts';
 
 const PAPEL_AUDITOR = 'frota:agent-evaluator';
-const URL_BASE = 'https://frota.exemplo.com';
+const URL_BASE = 'https://frota.minhaempresa.com.br';
 
 const execucaoPadrao = {
   plano: 'Entregar análise',
@@ -73,6 +73,11 @@ describe('processarDemanda', () => {
     expect(r.entregaUrl).toMatch(new RegExp(`^${URL_BASE}/entregas/[0-9a-f-]{36}$`));
     const entrega = await obterEntrega(db.pool, r.entregaUrl!.split('/').pop()!);
     expect(entrega?.conteudo).toBe('<h1>Olá</h1>');
+    // Hotfix de URL de entrega: o formato gravado continua o mesmo (URL absoluta com a origem configurada),
+    // a entrega é da própria demanda, e a URL passa na regra do linkSeguro() anterior (/^https?:\/\//):
+    // voltar ao código anterior não esconde uma entrega criada com o hotfix.
+    expect(entrega?.demandaId).toBe(demanda.id);
+    expect(r.entregaUrl).toMatch(/^https?:\/\//);
 
     expect(await obterDemanda(db.pool, demanda.id)).toMatchObject({
       status: 'Concluída',

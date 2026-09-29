@@ -14,6 +14,9 @@ export interface DependenciasApp {
   senha: string;
   disparar?: () => Promise<boolean>;
   limitePorMinuto?: number;
+  // PUBLIC_BASE_URL validada no boot. Os links de entrega da UI são verificados contra ela e contra a
+  // tabela `entregas`, nunca contra o header Host.
+  origemPublica: string;
 }
 
 const TAMANHO_MAXIMO_CORPO = 64 * 1024;

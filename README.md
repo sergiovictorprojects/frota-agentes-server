@@ -18,7 +18,7 @@ relógio interno (pg-boss, dentro do Postgres)
 - **Orçamento:** toda chamada ao modelo passa por `src/llm/orcamento.ts`. Avisos em 50% e 80% do teto mensal; ao chegar a 100% a frota é pausada sozinha e só volta quando você retomar.
 - **Estados da demanda:** `Nova`, `Em andamento`, `Aguardando humano`, `Aguardando insumo`, `Concluída`, `Arquivada`, `Falhou`.
 - **Interface:** `/` (fila), `/demandas/nova`, `/demandas/<id>` (o que cada agente fez), `/relatorios`. Login por senha (HTTP Basic).
-- **Entregas:** `/entregas/<uuid>` abre sem senha (o UUID é o segredo). A página é uma moldura com o aviso "conteúdo gerado por IA", e o HTML do modelo roda dentro dela num iframe em sandbox: sem rede, sem cookies do site e sem poder navegar a página principal.
+- **Entregas:** `/entregas/<uuid>` abre sem senha (o UUID é o segredo). A página é uma moldura com o aviso "conteúdo gerado por IA", e o HTML do modelo roda dentro dela num iframe em sandbox: sem rede, sem cookies do site e sem poder navegar a página principal. Na interface, "Abrir entrega" só aparece quando a entrega existe na tabela `entregas` e é da mesma demanda; links antigos de artefato do `claude.ai` aparecem como artefato externo, e qualquer outro link fica como "não verificado" (ver `docs/adr/0005-links-de-entrega-verificados.md`).
 - **Saúde:** `GET /health` (sem senha) informa se o banco responde, se a frota está pausada e a última execução.
 
 ## Rodando localmente
@@ -44,7 +44,7 @@ npm run typecheck
 | `DATABASE_URL` | sim | — | Postgres do serviço |
 | `ANTHROPIC_API_KEY` | sim | — | Chave **dedicada** a este serviço (`sk-ant-…`) |
 | `UI_PASSWORD` | sim | — | Senha da interface: mínimo de 16 caracteres; use uma aleatória de 24 ou mais |
-| `PUBLIC_BASE_URL` | sim | — | URL pública, usada nos links das entregas |
+| `PUBLIC_BASE_URL` | sim | — | Origem pública do serviço (`https://…`, sem caminho), usada nos links das entregas e nos e-mails. O serviço não sobe com domínio de exemplo ou reservado (`exemplo.com`, `example.com`, `.invalid`, `.test`…); `http:` só em `localhost`, `127.0.0.1` e `[::1]` |
 | `UI_USER` | não | `frota` | Usuário da interface |
 | `MONTHLY_BUDGET_USD` | não | `50` | Teto de gasto mensal com o modelo |
 | `CRON_PROCESSAR_FILA` | não | `*/10 * * * *` | Frequência das execuções |
@@ -65,7 +65,7 @@ O serviço **não sobe** se faltar uma variável obrigatória ou se o modelo nã
 2. **Projeto.** No Railway: *New Project → Deploy from GitHub repo* (ou `railway up`). O `railway.json` já manda usar o `Dockerfile` e o health check em `/health`.
 3. **Banco.** No mesmo projeto: *New → Database → PostgreSQL*.
 4. **Variáveis do serviço.** `DATABASE_URL` com a referência ao Postgres do projeto (rede privada), `ANTHROPIC_API_KEY`, `UI_PASSWORD`, `MONTHLY_BUDGET_USD` e `PUBLIC_BASE_URL`.
-5. **Domínio.** *Settings → Networking → Generate Domain* (ou um domínio próprio). Use essa URL em `PUBLIC_BASE_URL` e faça um novo deploy.
+5. **Domínio.** *Settings → Networking → Generate Domain* (ou um domínio próprio). Use essa URL em `PUBLIC_BASE_URL` e faça um novo deploy. O valor do `.env.example` (`https://frota.example.invalid`) é recusado de propósito: sem trocar, o serviço não sobe e o health check falha.
 6. **Conferir.** Abra `https://<domínio>/health` (deve responder `{"status":"ok",…}`) e entre na interface com o `UI_USER` e a `UI_PASSWORD`.
 7. **Vigiar.** Coloque um monitor de uptime gratuito em `/health` e, se puder, um alerta para "nenhuma execução nas últimas 90 minutos" (`ultimaRun.iniciadoEm` no `/health`). Sem isso, o serviço pode cair em silêncio.
 

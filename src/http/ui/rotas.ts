@@ -14,12 +14,14 @@ import { listarEventosDaDemanda } from '../../db/eventos.ts';
 import { adicionarMensagem, listarMensagens } from '../../db/mensagens.ts';
 import { obterFlags, pausarFrota, retomarFrota, ultimaRun } from '../../db/operacao.ts';
 import { listarRelatorios, relatorioMaisRecente } from '../../db/relatorios.ts';
+import type { LinkEntrega } from '../../domain/links-entrega.ts';
 import { CATEGORIAS, PRIORIDADES, STATUS } from '../../domain/setores.ts';
 import { criarEmissor } from '../../orchestrator/processar-demanda.ts';
 import { log } from '../../util/log.ts';
 import { credenciaisValidas, origemConfiavel } from '../auth.ts';
 import type { Bruto } from './html.ts';
 import { pagina, type Aba, type EstadoFrota } from './layout.ts';
+import { resolverLinksDeEntrega } from './links-entrega.ts';
 import { paginaDetalhe, paginaDossie, paginaFila, paginaMensagem, paginaNova, paginaRelatorios } from './paginas.ts';
 
 export interface DependenciasUi {
@@ -27,6 +29,8 @@ export interface DependenciasUi {
   usuario: string;
   senha: string;
   disparar?: () => Promise<boolean>;
+  // Origem pública já validada no boot (PUBLIC_BASE_URL). Nunca derivada do header Host.
+  origemPublica: string;
 }
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -131,6 +135,14 @@ function registrarAutenticacao(app: FastifyInstance, d: DependenciasUi): void {
   });
 }
 
+async function linksPorId(
+  d: DependenciasUi,
+  itens: readonly { id: string; demandaId: string; entregaUrl: string | null }[],
+): Promise<Map<string, LinkEntrega | null>> {
+  const links = await resolverLinksDeEntrega(d.pool, d.origemPublica, itens);
+  return new Map(itens.map((item, i) => [item.id, links[i] ?? null]));
+}
+
 function registrarFila(app: FastifyInstance, d: DependenciasUi, r: Respostas): void {
   app.get('/', async (req, reply) => {
     const consulta = z.object({ status: z.enum(STATUS).optional(), disparo: z.string().optional() }).safeParse(req.query);
@@ -141,13 +153,16 @@ function registrarFila(app: FastifyInstance, d: DependenciasUi, r: Respostas): v
       contarPorStatus(d.pool),
       obterFlags(d.pool),
     ]);
-    const corpo = paginaFila({ demandas, contagem, filtro, pausado: flags.pausado, podeExecutar: d.disparar !== undefined });
+    const links = await linksPorId(d, demandas.map((x) => ({ id: x.id, demandaId: x.id, entregaUrl: x.entregaUrl })));
+    const corpo = paginaFila({ demandas, links, contagem, filtro, pausado: flags.pausado, podeExecutar: d.disparar !== undefined });
     return r.enviar(reply, 200, 'Fila', 'fila', corpo, aviso);
   });
 
-  app.get('/relatorios', async (_req, reply) =>
-    r.enviar(reply, 200, 'Relatórios', 'relatorios', paginaRelatorios({ relatorios: await listarRelatorios(d.pool, 100) })),
-  );
+  app.get('/relatorios', async (_req, reply) => {
+    const relatorios = await listarRelatorios(d.pool, 100);
+    const links = await linksPorId(d, relatorios.map((x) => ({ id: x.id, demandaId: x.demandaId, entregaUrl: x.entregaUrl })));
+    return r.enviar(reply, 200, 'Relatórios', 'relatorios', paginaRelatorios({ relatorios, links }));
+  });
 }
 
 function registrarCriacao(app: FastifyInstance, d: DependenciasUi, r: Respostas): void {
@@ -175,8 +190,12 @@ function registrarDetalheEAcoes(app: FastifyInstance, d: DependenciasUi, r: Resp
   app.get<{ Params: { id: string } }>('/demandas/:id', async (req, reply) => {
     const demanda = UUID.test(req.params.id) ? await obterDemanda(d.pool, req.params.id) : null;
     if (!demanda) return r.naoEncontrada(reply);
-    const [mensagens, relatorio] = await Promise.all([listarMensagens(d.pool, demanda.id), relatorioMaisRecente(d.pool, demanda.id)]);
-    return r.enviar(reply, 200, demanda.titulo, 'fila', paginaDetalhe({ demanda, mensagens, relatorio }));
+    const [mensagens, relatorio, [linkEntrega]] = await Promise.all([
+      listarMensagens(d.pool, demanda.id),
+      relatorioMaisRecente(d.pool, demanda.id),
+      resolverLinksDeEntrega(d.pool, d.origemPublica, [{ demandaId: demanda.id, entregaUrl: demanda.entregaUrl }]),
+    ]);
+    return r.enviar(reply, 200, demanda.titulo, 'fila', paginaDetalhe({ demanda, mensagens, relatorio, linkEntrega: linkEntrega ?? null }));
   });
 
   // Somente-leitura: nenhuma escrita, nenhum efeito colateral. Timeline ordenada pelo cursor global id
@@ -197,12 +216,14 @@ function registrarDetalheEAcoes(app: FastifyInstance, d: DependenciasUi, r: Resp
   app.get<{ Params: { id: string } }>('/demandas/:id/dossie', async (req, reply) => {
     const demanda = UUID.test(req.params.id) ? await obterDemanda(d.pool, req.params.id) : null;
     if (!demanda) return r.naoEncontrada(reply);
-    const [mensagens, relatorio, eventos] = await Promise.all([
+    const [mensagens, relatorio, eventos, [linkEntrega]] = await Promise.all([
       listarMensagens(d.pool, demanda.id),
       relatorioMaisRecente(d.pool, demanda.id),
       listarEventosDaDemanda(d.pool, demanda.id),
+      resolverLinksDeEntrega(d.pool, d.origemPublica, [{ demandaId: demanda.id, entregaUrl: demanda.entregaUrl }]),
     ]);
-    return r.enviar(reply, 200, `Dossiê — ${demanda.titulo}`, 'fila', paginaDossie({ demanda, mensagens, relatorio, eventos }));
+    const corpo = paginaDossie({ demanda, mensagens, relatorio, eventos, linkEntrega: linkEntrega ?? null });
+    return r.enviar(reply, 200, `Dossiê — ${demanda.titulo}`, 'fila', corpo);
   });
 
   app.post<{ Params: { id: string } }>('/demandas/:id/responder', async (req, reply) => {

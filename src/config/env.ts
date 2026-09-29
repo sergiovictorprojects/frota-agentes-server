@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { problemaNaOrigemPublica } from '../domain/links-entrega.ts';
 
 // Uma variável presente mas vazia (`CHAVE=`) conta como ausente.
 const opcional = <T extends z.ZodType>(esquema: T) => z.preprocess((v) => (v === '' ? undefined : v), esquema.optional());
@@ -7,10 +8,15 @@ const schema = z.object({
   DATABASE_URL: z.string().regex(/^postgres(ql)?:\/\//, 'deve comecar com postgres:// ou postgresql://'),
   ANTHROPIC_API_KEY: z.string().startsWith('sk-ant-', 'deve comecar com sk-ant-').min(20, 'curta demais'),
   UI_PASSWORD: z.string().min(16, 'deve ter ao menos 16 caracteres'),
+  // Só a origem (https, ou http em localhost). Um domínio de exemplo aqui virava links de entrega que
+  // levavam para fora do sistema: o boot recusa em vez de gravar esses links (ver src/domain/links-entrega.ts).
   PUBLIC_BASE_URL: z
     .string()
-    .url('deve ser uma URL valida')
-    .transform((u) => u.replace(/\/+$/, '')),
+    .superRefine((u, ctx) => {
+      const problema = problemaNaOrigemPublica(u);
+      if (problema) ctx.addIssue({ code: 'custom', message: problema });
+    })
+    .transform((u) => new URL(u).origin),
   PORT: z.coerce.number().int().min(1).max(65535).default(3000),
   UI_USER: z.string().min(1).default('frota'),
   CRON_PROCESSAR_FILA: z.string().min(1).default('*/10 * * * *'),
