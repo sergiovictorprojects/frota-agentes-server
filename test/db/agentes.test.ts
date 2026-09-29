@@ -5,6 +5,7 @@ import {
   listarAgentesAtivos,
   listarAgentesSobDemanda,
   listarHistoricoDoAgente,
+  obterAgenteAutorizado,
   obterAgentePorChave,
   seedAgentesPadrao,
 } from '../../src/db/agentes.ts';
@@ -462,12 +463,18 @@ describe('catalogo de agentes (Fase 2, Entrega 1)', () => {
   describe('agenteEstaAutorizado', () => {
     it('agente ativo, com o modelo certo, esta autorizado', async () => {
       expect(await agenteEstaAutorizado(db.pool, SETORES.d6.papel, MODELO_TRABALHO)).toBe(true);
+      expect(await obterAgenteAutorizado(db.pool, SETORES.d6.papel, MODELO_TRABALHO)).toMatchObject({
+        chave: SETORES.d6.papel,
+        estado: 'ativo',
+        modeloPermitido: MODELO_TRABALHO,
+      });
     });
 
     it('agente suspenso nao pode ser acionado', async () => {
       const chave = SETORES.d7.papel;
       await atualizarAgente(db.pool, chave, ATOR_TESTE, { estado: 'suspenso' });
       expect(await agenteEstaAutorizado(db.pool, chave, MODELO_TRABALHO)).toBe(false);
+      expect(await obterAgenteAutorizado(db.pool, chave, MODELO_TRABALHO)).toBeNull();
       await atualizarAgente(db.pool, chave, ATOR_TESTE, { estado: 'ativo' });
     });
 

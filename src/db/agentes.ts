@@ -124,9 +124,13 @@ export async function listarAgentesSobDemanda(pool: pg.Pool): Promise<Agente[]> 
 // exige acionamento explícito, que esta entrega não implementa) e o modelo da chamada bate exatamente com
 // modelo_permitido. Um agente configurado para um modelo não pode ser acionado com outro — torna
 // modelo_permitido efetivo, não apenas descritivo.
-export async function agenteEstaAutorizado(pool: pg.Pool, chave: string, modelo: string): Promise<boolean> {
+export async function obterAgenteAutorizado(pool: pg.Pool, chave: string, modelo: string): Promise<Agente | null> {
   const agente = await obterAgentePorChave(pool, chave);
-  return agente?.estado === 'ativo' && agente.modeloPermitido === modelo;
+  return agente?.estado === 'ativo' && agente.modeloPermitido === modelo ? agente : null;
+}
+
+export async function agenteEstaAutorizado(pool: pg.Pool, chave: string, modelo: string): Promise<boolean> {
+  return (await obterAgenteAutorizado(pool, chave, modelo)) !== null;
 }
 
 export function papelDoSetor(categoria: Categoria): PapelAgente {

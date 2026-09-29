@@ -1,6 +1,6 @@
 import type pg from 'pg';
 import { prepararArtefatosEntregaveis } from '../artifacts/servico.ts';
-import { agenteEstaAutorizado, obterAgentePorChave, papelDoSetor, type PapelAgente } from '../db/agentes.ts';
+import { agenteEstaAutorizado, obterAgenteAutorizado, obterAgentePorChave, papelDoSetor, type PapelAgente } from '../db/agentes.ts';
 import { inserirArtefatosEntregaveis } from '../db/artefatos-entregaveis.ts';
 import { atualizarDemanda, registrarTentativa, type Demanda } from '../db/demandas.ts';
 import { montarChaveIdempotencia, registrarEvento, type TipoEvento } from '../db/eventos.ts';
@@ -511,10 +511,8 @@ export async function processarDemanda(d: DependenciasDemanda, demanda: Demanda,
     // modeloTrabalho desta chamada (ver seedAgentesPadrao em src/db/agentes.ts), então isto é um no-op
     // para o comportamento atual — só passa a barrar de verdade se um operador suspender o agente ou
     // mudar seu modelo_permitido.
-    const agenteExecucao = await obterAgentePorChave(d.pool, setor.papel);
-    if (agenteExecucao?.estado !== 'ativo' || agenteExecucao.modeloPermitido !== d.modeloTrabalho) {
-      throw new AgenteNaoAutorizadoError(setor.papel);
-    }
+    const agenteExecucao = await obterAgenteAutorizado(d.pool, setor.papel, d.modeloTrabalho);
+    if (!agenteExecucao) throw new AgenteNaoAutorizadoError(setor.papel);
     ({ valor: exec } = await d.llm.gerar({
       modelo: d.modeloTrabalho,
       papel: setor.papel,
