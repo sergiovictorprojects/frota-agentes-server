@@ -746,20 +746,32 @@ CREATE TRIGGER artefatos_tarefa_controla
   FOR EACH ROW EXECUTE FUNCTION artefatos_tarefa_controlar();
 
 -- =====================================================================================================
--- 6. agent_steps: plano, tarefa e operação
+-- 6. agent_steps: plano, tarefa e operação; append-only e sem valores negativos
 -- =====================================================================================================
 
+-- agent_steps é a fonte do gasto realizado: do teto de custo da demanda (orquestracao_comprometido_usd) e do
+-- orçamento mensal (gastoDoMes). Por isso só aceita contagens, custo e duração que não sejam negativos. No numeric,
+-- NaN é maior que qualquer número e passaria em custo_usd >= 0, contaminando as somas: também é recusado. Os CHECK
+-- validam as linhas que já existem: se a produção tiver uma linha fora do domínio (só um bug, SQL manual ou o
+-- relógio do servidor voltando durante uma chamada a gravariam), a 006 inteira falha no boot e nada é aplicado.
 ALTER TABLE agent_steps
   ADD COLUMN plano_id uuid REFERENCES planos_demanda(id) ON DELETE RESTRICT,
   ADD COLUMN tarefa_id uuid,
   ADD COLUMN operacao text CHECK (operacao IN ('planejamento','execucao','integracao','auditoria')),
   ADD CONSTRAINT agent_steps_tarefa_plano_fkey FOREIGN KEY (tarefa_id, plano_id) REFERENCES tarefas(id, plano_id) ON DELETE RESTRICT,
   ADD CONSTRAINT agent_steps_tarefa_check CHECK (tarefa_id IS NULL OR plano_id IS NOT NULL),
-  ADD CONSTRAINT agent_steps_plano_operacao_check CHECK (plano_id IS NULL OR operacao IS NOT NULL);
+  ADD CONSTRAINT agent_steps_plano_operacao_check CHECK (plano_id IS NULL OR operacao IS NOT NULL),
+  ADD CONSTRAINT agent_steps_tokens_in_check CHECK (tokens_in >= 0),
+  ADD CONSTRAINT agent_steps_tokens_out_check CHECK (tokens_out >= 0),
+  ADD CONSTRAINT agent_steps_cache_read_check CHECK (cache_read >= 0),
+  ADD CONSTRAINT agent_steps_cache_write_check CHECK (cache_write >= 0),
+  ADD CONSTRAINT agent_steps_custo_usd_check CHECK (custo_usd >= 0 AND custo_usd <> 'NaN'),
+  ADD CONSTRAINT agent_steps_duracao_ms_check CHECK (duracao_ms IS NULL OR duracao_ms >= 0);
 
 CREATE INDEX agent_steps_demanda_idx ON agent_steps (demanda_id);
 
--- Um passo com plano pertence à mesma demanda do plano. Os passos legados (sem plano) nem entram aqui.
+-- Um passo com plano pertence à mesma demanda do plano. Os passos legados (sem plano) nem entram aqui. Só no
+-- INSERT: nenhum passo muda depois de gravado (abaixo).
 CREATE FUNCTION agent_steps_conferir_plano() RETURNS trigger AS $$
 BEGIN
   IF NOT EXISTS (SELECT 1 FROM planos_demanda p WHERE p.id = NEW.plano_id AND p.demanda_id = NEW.demanda_id) THEN
@@ -770,9 +782,30 @@ END;
 $$ LANGUAGE plpgsql;
 
 CREATE TRIGGER agent_steps_confere_plano
-  BEFORE INSERT OR UPDATE ON agent_steps
+  BEFORE INSERT ON agent_steps
   FOR EACH ROW WHEN (NEW.plano_id IS NOT NULL)
   EXECUTE FUNCTION agent_steps_conferir_plano();
+
+-- Append-only de verdade, como agent_events (002): nenhum UPDATE nem DELETE, nem por SQL direto. Um passo é o
+-- registro de um gasto que aconteceu; mudar custo, demanda, modelo, plano ou tarefa, ou apagá-lo, reduziria o
+-- comprometido ou desfaria o passo que liquidou uma reserva. Nenhum código atualiza ou apaga agent_steps.
+-- Consequência deliberada: apagar uma run ou uma demanda que tenha passos passa a ser recusado, porque o
+-- ON DELETE SET NULL de run_id e demanda_id (001) é um UPDATE nesta tabela. Nenhum código apaga runs ou demandas
+-- (arquivar é um UPDATE de status), e agent_events já recusa o mesmo. TRUNCATE ... CASCADE, usado na limpeza dos
+-- testes, continua funcionando: gatilho de linha não dispara no TRUNCATE.
+CREATE FUNCTION agent_steps_bloquear_alteracao() RETURNS trigger AS $$
+BEGIN
+  RAISE EXCEPTION 'agent_steps é append-only: % não é permitido', TG_OP;
+END;
+$$ LANGUAGE plpgsql;
+
+CREATE TRIGGER agent_steps_impede_update
+  BEFORE UPDATE ON agent_steps
+  FOR EACH ROW EXECUTE FUNCTION agent_steps_bloquear_alteracao();
+
+CREATE TRIGGER agent_steps_impede_delete
+  BEFORE DELETE ON agent_steps
+  FOR EACH ROW EXECUTE FUNCTION agent_steps_bloquear_alteracao();
 
 -- =====================================================================================================
 -- 7. reservas_custo

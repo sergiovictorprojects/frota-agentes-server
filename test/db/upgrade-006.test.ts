@@ -3,7 +3,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { criarDemanda } from '../../src/db/demandas.ts';
 import { listarEventosDaDemanda } from '../../src/db/eventos.ts';
 import { migrate } from '../../src/db/migrate.ts';
-import { iniciarRun, registrarPasso } from '../../src/db/operacao.ts';
+import { gastoDoMes, iniciarRun, registrarPasso } from '../../src/db/operacao.ts';
 import { criarEnvelope, situacaoDeCusto } from '../../src/db/orquestracao.ts';
 import { listarPlanosDaDemanda, registrarPlanoShadow, validarPlano, type TarefaPlanejada } from '../../src/db/planos.ts';
 import { listarAvaliacoesDaDemanda } from '../../src/db/politicas.ts';
@@ -287,6 +287,59 @@ describe('upgrade 005 → 006 com dados shadow existentes', () => {
     await criarEnvelope(db.pool, { demandaId, tetoBaseUsd: '2.00' });
     expect(await situacaoDeCusto(db.pool, demandaId)).toEqual({ limiteUsd: '2.00', comprometidoUsd: '0.323456', disponivelUsd: '1.676544' });
   });
+
+  it('os passos gravados antes da 006 passam nos CHECK novos e ficam imutaveis depois do upgrade', async () => {
+    const { rows: passos } = await db.pool.query<{ id: string }>('SELECT id FROM agent_steps WHERE demanda_id = $1', [demandaId]);
+    expect(passos).toHaveLength(2);
+    for (const { id } of passos) {
+      for (const set of ['custo_usd = 0', 'demanda_id = NULL', "modelo = 'claude-haiku-4-5'"]) {
+        await expect(db.pool.query(`UPDATE agent_steps SET ${set} WHERE id = $1`, [id]), set).rejects.toThrow(
+          'agent_steps é append-only: UPDATE não é permitido',
+        );
+      }
+      await expect(db.pool.query('DELETE FROM agent_steps WHERE id = $1', [id])).rejects.toThrow('agent_steps é append-only: DELETE não é permitido');
+    }
+    expect(await situacaoDeCusto(db.pool, demandaId)).toEqual({ limiteUsd: '2.00', comprometidoUsd: '0.323456', disponivelUsd: '1.676544' });
+  });
+});
+
+describe('upgrade 005 → 006 com um passo fora do dominio', () => {
+  let db: TestDb;
+
+  beforeAll(async () => {
+    db = await createTestDb({ ate: '005_planos_tarefas.sql' });
+  });
+  afterAll(async () => {
+    await db.drop();
+  });
+
+  it('a 006 falha inteira, sem aplicar nada, e so entra depois que a linha e corrigida', async () => {
+    await registrarPasso(db.pool, {
+      runId: await iniciarRun(db.pool),
+      demandaId: null,
+      papel: 'frota:architect',
+      modelo: 'claude-sonnet-5',
+      tokensIn: 100,
+      tokensOut: 10,
+      cacheRead: 0,
+      cacheWrite: 0,
+      custoUsd: 0.1,
+      duracaoMs: -5,
+    });
+    const antes = (await db.pool.query('SELECT * FROM agent_steps')).rows;
+
+    await expect(migrate(db.pool)).rejects.toThrow('check constraint "agent_steps_duracao_ms_check" of relation "agent_steps" is violated by some row');
+    const { rows: migradas } = await db.pool.query<{ name: string }>('SELECT name FROM schema_migrations ORDER BY name');
+    expect(migradas.map((l) => l.name).at(-1)).toBe('005_planos_tarefas.sql');
+    const { rows: tabela } = await db.pool.query<{ t: string | null }>("SELECT to_regclass('public.reservas_custo')::text AS t");
+    expect(tabela[0]!.t).toBeNull();
+    expect(await colunasDe(db.pool, 'agent_steps')).not.toContain('plano_id');
+    expect((await db.pool.query('SELECT * FROM agent_steps')).rows).toEqual(antes);
+
+    // Na 005 agent_steps ainda aceita UPDATE: corrigida a linha, a 006 entra.
+    await db.pool.query('UPDATE agent_steps SET duracao_ms = NULL WHERE duracao_ms < 0');
+    expect(await migrate(db.pool)).toEqual(['006_execucao_tarefas.sql']);
+  });
 });
 
 describe('migration 006 num banco novo', () => {
@@ -335,6 +388,49 @@ describe('migration 006 num banco novo', () => {
       { tgname: 'orquestracao_demandas_confere_no_commit', tgdeferrable: true, tginitdeferred: true },
       { tgname: 'planos_demanda_confere_no_commit', tgdeferrable: true, tginitdeferred: true },
     ]);
+  });
+
+  it('agent_steps: CHECK de dominio validados, plano conferido so no INSERT e gatilhos contra UPDATE e DELETE', async () => {
+    const { rows: checks } = await db.pool.query(
+      "SELECT conname, convalidated FROM pg_constraint WHERE conrelid = 'agent_steps'::regclass AND contype = 'c' ORDER BY conname",
+    );
+    expect(checks).toEqual(
+      [
+        'agent_steps_cache_read_check',
+        'agent_steps_cache_write_check',
+        'agent_steps_custo_usd_check',
+        'agent_steps_duracao_ms_check',
+        'agent_steps_operacao_check',
+        'agent_steps_plano_operacao_check',
+        'agent_steps_tarefa_check',
+        'agent_steps_tokens_in_check',
+        'agent_steps_tokens_out_check',
+      ].map((conname) => ({ conname, convalidated: true })),
+    );
+    const { rows: gatilhos } = await db.pool.query<{ def: string }>(
+      "SELECT pg_get_triggerdef(oid) AS def FROM pg_trigger WHERE tgrelid = 'agent_steps'::regclass AND NOT tgisinternal ORDER BY tgname",
+    );
+    expect(gatilhos.map((l) => l.def)).toEqual([
+      'CREATE TRIGGER agent_steps_confere_plano BEFORE INSERT ON public.agent_steps FOR EACH ROW WHEN ((new.plano_id IS NOT NULL)) EXECUTE FUNCTION agent_steps_conferir_plano()',
+      'CREATE TRIGGER agent_steps_impede_delete BEFORE DELETE ON public.agent_steps FOR EACH ROW EXECUTE FUNCTION agent_steps_bloquear_alteracao()',
+      'CREATE TRIGGER agent_steps_impede_update BEFORE UPDATE ON public.agent_steps FOR EACH ROW EXECUTE FUNCTION agent_steps_bloquear_alteracao()',
+    ]);
+  });
+
+  it('o caminho legado grava e soma passos, com duracao zero ou nula', async () => {
+    const passo = {
+      runId: await iniciarRun(db.pool),
+      demandaId: (await criarDemanda(db.pool, { titulo: 'Banco novo', categoria: 'd1' })).id,
+      papel: 'frota:architect',
+      modelo: 'claude-sonnet-5',
+      tokensIn: 100,
+      tokensOut: 10,
+      cacheRead: 0,
+      cacheWrite: 0,
+    };
+    await registrarPasso(db.pool, { ...passo, custoUsd: 0.25, duracaoMs: 0 });
+    await registrarPasso(db.pool, { ...passo, custoUsd: 0, duracaoMs: null });
+    expect(await gastoDoMes(db.pool)).toBeCloseTo(0.25, 6);
   });
 
   it('migrar de novo nao aplica nada, e parar numa migration inexistente falha antes de tocar no banco', async () => {

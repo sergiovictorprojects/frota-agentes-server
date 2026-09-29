@@ -7,7 +7,6 @@ import {
   obterFlags,
   pausarFrota,
   registrarAlerta,
-  registrarPasso,
   retomarFrota,
   ultimaRun,
 } from '../../src/db/operacao.ts';
@@ -25,19 +24,6 @@ describe('operacao', () => {
   beforeEach(async () => {
     await db.pool.query('TRUNCATE runs, agent_steps CASCADE');
     await db.pool.query("UPDATE system_flags SET pausado = false, pausado_motivo = NULL, alertas_enviados = '{}'");
-  });
-
-  const passo = (custoUsd: number) => ({
-    runId: null,
-    demandaId: null,
-    papel: 'frota:architect',
-    modelo: 'claude-sonnet-5',
-    tokensIn: 100,
-    tokensOut: 50,
-    cacheRead: 0,
-    cacheWrite: 0,
-    custoUsd,
-    duracaoMs: 1200,
   });
 
   it('registra o ciclo de vida de uma run', async () => {
@@ -60,15 +46,16 @@ describe('operacao', () => {
 
   it('soma o gasto so do mes corrente (UTC)', async () => {
     const agora = new Date('2026-09-21T12:00:00Z');
-    await registrarPasso(db.pool, passo(1.25));
-    await registrarPasso(db.pool, passo(0.75));
-    await registrarPasso(db.pool, passo(9));
-    await db.pool.query(
-      `UPDATE agent_steps SET criado_em = '2026-08-31T23:59:59Z' WHERE custo_usd = 9`,
-    );
-    await db.pool.query(
-      `UPDATE agent_steps SET criado_em = '2026-09-10T10:00:00Z' WHERE custo_usd < 9`,
-    );
+    // agent_steps é append-only (migration 006): a data de cada passo vai no próprio INSERT.
+    const passoEm = (custoUsd: number, criadoEm: string) =>
+      db.pool.query(
+        `INSERT INTO agent_steps (papel, modelo, tokens_in, tokens_out, custo_usd, duracao_ms, criado_em)
+         VALUES ('frota:architect', 'claude-sonnet-5', 100, 50, $1, 1200, $2)`,
+        [custoUsd, criadoEm],
+      );
+    await passoEm(1.25, '2026-09-10T10:00:00Z');
+    await passoEm(0.75, '2026-09-10T10:00:00Z');
+    await passoEm(9, '2026-08-31T23:59:59Z');
 
     expect(await gastoDoMes(db.pool, agora)).toBeCloseTo(2, 6);
     expect(await gastoDoMes(db.pool, new Date('2026-08-15T00:00:00Z'))).toBeCloseTo(9, 6);

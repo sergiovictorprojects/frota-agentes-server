@@ -21,9 +21,11 @@ esta traz o banco, os repositórios e as funções puras, testados, sem mudar o 
 
 1. **Migration 006 aditiva** (`src/db/migrations/006_execucao_tarefas.sql`). Nenhuma coluna existente é removida ou
    muda de significado, nenhuma linha existente é alterada e não há backfill. As colunas novas são anuláveis ou têm
-   padrão (`tarefas.tentativas` 0 e `max_tentativas` 2). Os `CHECK` antigos são trocados por versões que só ampliam.
-   Os gatilhos da 005 são substituídos por versões que mantêm o comportamento dela para planos e tarefas shadow,
-   que continuam imutáveis. Todas as FKs novas são `ON DELETE RESTRICT`, e nenhuma tabela nova aceita `DELETE`.
+   padrão (`tarefas.tentativas` 0 e `max_tentativas` 2). Os `CHECK` antigos são trocados por versões que só ampliam;
+   os únicos `CHECK` novos em colunas antigas são os de domínio de `agent_steps` (decisão 7), que recusam valores
+   negativos. Os gatilhos da 005 são substituídos por versões que mantêm o comportamento dela para planos e tarefas
+   shadow, que continuam imutáveis. Todas as FKs novas são `ON DELETE RESTRICT`, nenhuma tabela nova aceita `DELETE`
+   e `agent_steps` deixa de aceitar `UPDATE` e `DELETE` (decisão 7).
 2. **Envelope da demanda** (`orquestracao_demandas`). Criado na primeira vez que a demanda entra na orquestração e
    nunca apagado. O teto base (`numeric(8,2)`, de 1,00 a 20,00) e a identidade são imutáveis. A rota só muda de
    `tarefas` para `legado_fixo`, uma vez, com o motivo. O bloqueio por custo só sai com uma linha de
@@ -81,6 +83,14 @@ esta traz o banco, os repositórios e as funções puras, testados, sem mudar o 
    `agent_steps` da demanda (com o histórico inteiro, inclusive de antes do envelope) mais as reservas `aberta`,
    `retida` e `reconhecida`. Nada zera o comprometido. As duas contas são funções SQL únicas
    (`orquestracao_limite_usd` e `orquestracao_comprometido_usd`), usadas pelo gatilho e pelo repositório.
+   - **Passos (`agent_steps`), a fonte do gasto realizado.** Append-only no banco, como `agent_events`: nenhum
+     `UPDATE` nem `DELETE`, nem por SQL direto, em qualquer coluna e com qualquer valor, inclusive o mesmo. As
+     contagens (`tokens_in`, `tokens_out`, `cache_read`, `cache_write`) e `custo_usd` nunca são negativos,
+     `custo_usd` nunca é `NaN` (no `numeric`, `NaN` é maior que qualquer número, passaria no `>= 0` e contaminaria as
+     somas) e `duracao_ms` é nula ou não negativa. Assim o comprometido e o gasto do mês só crescem: nem um passo
+     negativo, nem alterar ou apagar um passo os reduz, e o passo ligado a uma reserva nunca muda. O gatilho que
+     confere o plano do passo roda só no `INSERT`. `TRUNCATE`, que não dispara gatilho de linha, continua
+     funcionando; só a limpeza dos testes o usa.
    - **Reserva** (`reservas_custo`): gravada com o envelope travado e só se couber no limite. O gatilho repete a
      conta sob o mesmo lock, então nem SQL direto passa do limite nem reserva numa demanda bloqueada. Uma reserva
      de tarefa pertence ao claim atual, antes do envio, com o modelo e a operação do snapshot, e é única por claim.
@@ -157,7 +167,9 @@ esta traz o banco, os repositórios e as funções puras, testados, sem mudar o 
 15. **Teste de upgrade 005 → 006.** `migrate(pool, { ate })` (só os testes usam) monta um banco parado na 005, com
     planos shadow, tarefas, arestas, `agent_steps`, avaliações e eventos gravados pelo SQL da 3.1. Depois da 006,
     todas as colunas antigas continuam com os mesmos valores, os planos shadow continuam imutáveis, o SQL da 3.1
-    continua gravando planos shadow válidos e o código novo lê as linhas antigas.
+    continua gravando planos shadow válidos e o código novo lê as linhas antigas. Os passos antigos passam nos
+    `CHECK` novos e ficam imutáveis. Um passo fora do domínio faz a 006 falhar inteira, sem aplicar nada; corrigida
+    a linha, ela entra.
 
 ## Divergências em relação ao texto do plano
 
@@ -177,11 +189,14 @@ dupla:
   também em `retida`, `reconhecida` e `cancelada`, o passo tardio (o plano só o previa em `liquidada`). Sem ele,
   cada repetição de uma liquidação atrasada gravaria um passo novo e contaria o mesmo gasto de novo.
 - O banco recusa gravar reserva em `REPEATABLE READ` (o plano não tratava do nível de isolamento).
+- `agent_steps` fica append-only e ganha `CHECK` de domínio (o plano só acrescentava colunas). Veio da revisão da
+  PR #11: sem isso, SQL direto reduzia o comprometido com um passo negativo ou alterando ou apagando um passo.
 
 ## Fronteiras: o que a 3.2a não faz
 
 - Não aceita `ORQUESTRACAO_TAREFAS=executar` nem lê `ORQUESTRACAO_CATEGORIA` ou `ORQUESTRACAO_CUSTO_MAX_USD`.
-- Não muda `processar-demanda`, `processar-fila`, os prompts, o cliente da API ou `LlmComOrcamento`.
+- Não muda `processar-demanda`, `processar-fila`, os prompts, o cliente da API ou `LlmComOrcamento`. O passo do
+  fluxo legado continua gravado pelo mesmo `INSERT`, agora sujeito aos `CHECK` da decisão 7.
 - Não cria endpoint nem tela. A única mudança visível fora dos testes é a leitura de eventos: o JSON de
   `GET /demandas/:id/eventos` ganha `tarefaId`, nulo em todos os eventos de hoje.
 - Com a flag em `planejar`, o plano shadow é gravado como na 3.1 (a coluna `objetivo` fica nula).
@@ -208,6 +223,14 @@ dupla:
   `1e301`. São conservadores de propósito.
 - `listarTarefasDoPlano` devolve a `chave` da tarefa: um identificador de formato fechado, que desde a 3.1 fica fora
   do ledger por ser proposto pelo modelo. Se ela aparece no dossiê é uma decisão da 3.4.
+- A duração do passo legado é medida com o relógio de parede (`Date.now()` em `src/llm/llm.ts`). Se o relógio do
+  servidor voltar durante uma chamada, a duração sai negativa e o banco recusa o passo: a chamada, já cobrada, fica
+  fora do gasto do mês e a demanda recebe erro. Medir com relógio monotônico mexe no cliente da API, fora da 3.2a.
+  A 3.2b precisa medir assim a duração que passa para `liquidarReserva`.
+- Os gatilhos que tornam `agent_steps` e as outras tabelas append-only valem para todo `INSERT`, `UPDATE` e
+  `DELETE`, mas o dono da tabela pode desligá-los por DDL (`ALTER TABLE ... DISABLE TRIGGER`), e um superusuário
+  também com `session_replication_role`. Os `CHECK` continuam valendo nos dois casos. Nos testes,
+  `session_replication_role` só aparece para vencer leases, nunca em `agent_steps`.
 
 ## Alternativas descartadas
 
@@ -230,8 +253,22 @@ dupla:
 ## Consequências
 
 - No próximo deploy, a 006 roda no boot, numa transação: troca gatilhos, acrescenta colunas e cria índices,
-  inclusive `agent_steps (demanda_id)`. O índice é criado sem `CONCURRENTLY`, então `agent_steps` fica travada para
-  escrita durante a criação; com o volume de hoje isso leva pouco tempo.
+  inclusive `agent_steps (demanda_id)`. O índice é criado sem `CONCURRENTLY` e os `CHECK` novos varrem
+  `agent_steps` uma vez para validar as linhas existentes, então a tabela fica travada para escrita durante a
+  migração; com o volume de hoje isso leva pouco tempo.
+- Se a produção tiver um passo fora do domínio, a 006 falha inteira no boot, nada é aplicado e o serviço novo não
+  sobe. Só um bug, SQL manual ou o relógio do servidor voltando durante uma chamada (limites conhecidos) gravariam
+  um passo assim. A consulta abaixo, só de leitura, confere antes do deploy, e o resultado esperado é 0:
+
+  ```sql
+  SELECT count(*) FROM agent_steps
+   WHERE tokens_in < 0 OR tokens_out < 0 OR cache_read < 0 OR cache_write < 0
+      OR custo_usd < 0 OR custo_usd = 'NaN' OR duracao_ms < 0;
+  ```
+
+- Apagar uma run ou uma demanda que tenha passos passa a ser recusado: o `ON DELETE SET NULL` de
+  `agent_steps.run_id` e `demanda_id` (001) é um `UPDATE`, que o gatilho recusa. Nenhum código apaga runs ou
+  demandas (arquivar é um `UPDATE` de status), e `agent_events` já recusava o mesmo.
 - A suíte de testes cresce e roda no PostgreSQL 16 embutido.
 - A 3.2b encontra prontos o banco, os repositórios, a serialização, os limites e a conta de custo; o que ela
   acrescenta é o fluxo que os usa.
@@ -242,7 +279,7 @@ dupla:
 - **Código:** reverter a PR é seguro com a 006 já aplicada. O código anterior grava e lê planos shadow, eventos,
   avaliações e `agent_steps` pelas colunas que já existiam (o teste de upgrade roda o SQL da 3.1 sobre a 006), e as
   tabelas novas ficam vazias. `schema_migrations` guarda a 006; reaplicar a 3.2a depois não roda a migration de
-  novo.
+  novo. Os gatilhos e os `CHECK` de `agent_steps` continuam valendo com o código anterior, que só faz `INSERT` nela.
 - **Migration:** não há migration de volta. Apagar colunas, tabelas ou gatilhos seria destrutivo e não é
   necessário para o rollback.
 - O procedimento de rollback da 3.2b (planos ativos, demandas bloqueadas, reservas abertas e retidas) está na seção
