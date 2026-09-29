@@ -134,6 +134,45 @@ Quando a etapa gerar material grande, grave:
 
 `politica_avaliada` ganhou `operacao` opcional, hoje só `planejamento`, presente só nas operações novas. Nenhuma chave de tarefa entra no ledger: ela é texto vindo do modelo.
 
+**Schemas da Fase 3.2a** (execução por tarefas). Os schemas, a coluna `tarefa_id` e as regras já existem e estão
+testados; quem emite estes eventos é a entrega 3.2b. Ver
+[`docs/adr/0007-execucao-sequencial-e-teto-de-custo.md`](adr/0007-execucao-sequencial-e-teto-de-custo.md).
+
+| Evento | `tarefa_id` | Metadata |
+|---|---|---|
+| `rota_definida` | proibida | `rota`, `motivoRota` |
+| `plano_ativado` | proibida | `planoId`, `versao`, `totalTarefas` |
+| `plano_retomado` | proibida | `planoId`, `versao`, `tarefasConcluidas`, `tarefasRestantes` |
+| `plano_abandonado` | proibida | `planoId`, `versao`, `motivoAbandono`, `tarefasCanceladas` |
+| `plano_concluido` | proibida | `planoId`, `versao`, `entregaId` |
+| `fallback_legado` | proibida | `planoId` (ou nulo), `motivoFallback`, `codigoErro` (ou nulo) |
+| `agente_selecionado` | obrigatória | `claimId`, `agente`, `versaoAgente`, `capacidade` |
+| `tarefa_iniciada` | obrigatória | `claimId`, `tipo`, `tentativa`, `maxTentativas`, `artefatosIntegrais`, `artefatosSoResumo`, `conversaOmitida` |
+| `tarefa_concluida` | obrigatória | `claimId`, `tipo`, `tentativa`, `artefatoId`, `bytes`, `totalReferencias`, `referenciasDescartadas`, `duracaoMs` |
+| `tarefa_falhou` | obrigatória | `claimId` (nulo em `contexto_excedido`), `tipo`, `tentativa`, `codigoErro`, `definitiva` |
+| `tarefa_devolvida` | obrigatória | `claimId`, `codigoErro` (só paradas antes do envio) |
+| `tarefa_lease_expirado` | obrigatória | `claimId`, `tentativa`, `enviada`, `destino` |
+| `tarefa_resultado_descartado` | obrigatória | `claimId`, `tentativa`, `motivoDescarte` |
+| `custo_demanda_excedido` | opcional | `comprometidoUsd`, `reservaUsd`, `limiteUsd`, `operacao` |
+| `custo_acima_da_reserva` | opcional | `operacao`, `reservaUsd`, `custoRealUsd` |
+| `custo_adicional_autorizado` | proibida | `valorUsd`, `limiteAnteriorUsd`, `limiteNovoUsd` |
+| `gasto_retido_reconhecido` | opcional | `valorUsd`, `operacao` |
+
+Regras, conferidas em `registrarEvento` antes de qualquer escrita:
+
+- `tarefa_id` também é opcional em `entrega_criada` e `politica_avaliada` e proibida em todos os outros tipos. O
+  gatilho `agent_events_confere_tarefa` exige que a tarefa seja da mesma demanda do evento.
+- `tarefa_falhou`: `claimId` nulo, ator `sistema` e `definitiva` verdadeiro exatamente em `contexto_excedido`, que
+  acontece antes do claim.
+- `politica_avaliada`: `claimId` vem junto com `tarefaId`, e só com ele; `operacao` ganhou `integracao`.
+- Dólares são números com até 6 casas, de 0 a 1.000.000.
+- Códigos de erro novos: `lease_expirado`, `artefato_invalido`, `custo_demanda_excedido`, `prazo_da_run`,
+  `llm_timeout`, `contexto_excedido` e `agente_alterado`. `motivoDevolucao` ganhou `prazo_da_run`, e
+  `motivoRejeicao` ganhou `objetivo_invalido`. `plano_registrado` de um plano em execução tem o resumo fixo
+  "Plano de tarefas registrado para execução.".
+- O metadata nunca leva `lease_token`, chave ou objetivo de tarefa, conteúdo, resumo ou referência de artefato,
+  URL, prompt ou texto de erro. `claimId` pode ir: identifica o claim, mas não autoriza nada.
+
 ## Ordem e consistência
 
 1. Na implementação real (ver a nota de implementação no topo deste documento), quem cresce

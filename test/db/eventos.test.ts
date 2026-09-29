@@ -2,14 +2,19 @@ import { randomUUID } from 'node:crypto';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { criarDemanda } from '../../src/db/demandas.ts';
 import {
+  ATOR_SISTEMA,
   listarEventosDaDemanda,
   listarEventosDaRun,
   montarChaveIdempotencia,
   registrarEvento,
+  TIPOS_EVENTO,
+  type NovoEvento,
+  type TipoEvento,
 } from '../../src/db/eventos.ts';
 import { listarMigracoesDisponiveis } from '../../src/db/migrate.ts';
 import { iniciarRun } from '../../src/db/operacao.ts';
 import { createTestDb, type TestDb } from '../helpers/db.ts';
+import { planoAtivoDeTeste, reivindicar, type PlanoDeTeste } from '../helpers/execucao.ts';
 
 describe('migration 002_agent_events', () => {
   it('esta registrada e aplicada junto com as demais migrations', async () => {
@@ -19,6 +24,7 @@ describe('migration 002_agent_events', () => {
       '003_agentes.sql',
       '004_policy_engine.sql',
       '005_planos_tarefas.sql',
+      '006_execucao_tarefas.sql',
     ]);
   });
 });
@@ -76,6 +82,8 @@ describe('agent_events', () => {
           'metadata',
           'chave_idempotencia',
           'ocorrido_em',
+          // Fase 3.2a (migration 006): anulável, com FK para tarefas.
+          'tarefa_id',
         ].sort(),
       );
     });
@@ -403,5 +411,392 @@ describe('agent_events', () => {
       expect(eventos.length).toBeGreaterThan(0);
       expect(JSON.stringify(eventos)).not.toContain(segredo);
     });
+  });
+});
+
+// Fase 3.2a: os schemas dos eventos novos e as regras que cruzam a metadata com as colunas (tarefa_id e ator).
+// Quem emite esses eventos é a PR 3.2b; aqui só se prova o que o ledger aceita e recusa. Banco próprio, com um
+// plano ativo e um claim de verdade, para a tarefa passar pelo gatilho agent_events_confere_tarefa.
+describe('agent_events da Fase 3.2 (execucao por tarefas)', () => {
+  let db: TestDb;
+  let p: PlanoDeTeste;
+  let tarefaId: string;
+  let claimId: string;
+  let leaseToken: string;
+  let n = 0;
+  const ENTREGA_ID = randomUUID();
+  const ARTEFATO_ID = randomUUID();
+
+  beforeAll(async () => {
+    db = await createTestDb();
+    p = await planoAtivoDeTeste(db.pool);
+    const t = await reivindicar(db.pool, p.planoId);
+    tarefaId = t.id;
+    claimId = t.claimId;
+    leaseToken = t.leaseToken;
+  });
+  afterAll(async () => {
+    await db.drop();
+  });
+
+  // Chave nova a cada chamada: cada teste grava de verdade, sem cair na idempotência de um teste anterior.
+  function novo(tipoEvento: TipoEvento, metadata: Record<string, unknown>, extra: Partial<NovoEvento> = {}): NovoEvento {
+    n += 1;
+    return {
+      demandaId: p.demandaId,
+      correlacaoId: p.runId,
+      runId: p.runId,
+      tentativa: null,
+      tipoEvento,
+      ator: ATOR_SISTEMA,
+      chaveIdempotencia: montarChaveIdempotencia(p.runId, tipoEvento, n),
+      metadata,
+      ...extra,
+    };
+  }
+
+  async function totalDeEventos(): Promise<number> {
+    return (await listarEventosDaDemanda(db.pool, p.demandaId)).length;
+  }
+
+  interface Caso {
+    tipo: TipoEvento;
+    resumo: string;
+    // A tarefa vai na coluna tarefa_id: obrigatória nesses tipos.
+    comTarefa: boolean;
+    ator?: string;
+    metadata: () => Record<string, unknown>;
+  }
+
+  // Um caso válido por tipo novo, na ordem de TIPOS_EVENTO.
+  const CASOS: Caso[] = [
+    {
+      tipo: 'rota_definida',
+      resumo: 'Rota do processamento definida.',
+      comTarefa: false,
+      metadata: () => ({ rota: 'tarefas', motivoRota: 'categoria_ligada' }),
+    },
+    {
+      tipo: 'plano_ativado',
+      resumo: 'Plano de tarefas ativado para execução.',
+      comTarefa: false,
+      metadata: () => ({ planoId: p.planoId, versao: 1, totalTarefas: 2 }),
+    },
+    {
+      tipo: 'plano_retomado',
+      resumo: 'Plano de tarefas retomado.',
+      comTarefa: false,
+      metadata: () => ({ planoId: p.planoId, versao: 1, tarefasConcluidas: 1, tarefasRestantes: 1 }),
+    },
+    {
+      tipo: 'plano_abandonado',
+      resumo: 'Plano de tarefas abandonado.',
+      comTarefa: false,
+      metadata: () => ({ planoId: p.planoId, versao: 1, motivoAbandono: 'pendencia_humana', tarefasCanceladas: 2 }),
+    },
+    {
+      tipo: 'plano_concluido',
+      resumo: 'Plano de tarefas concluído.',
+      comTarefa: false,
+      metadata: () => ({ planoId: p.planoId, versao: 1, entregaId: ENTREGA_ID }),
+    },
+    {
+      tipo: 'fallback_legado',
+      resumo: 'Demanda desviada para o fluxo legado.',
+      comTarefa: false,
+      metadata: () => ({ planoId: null, motivoFallback: 'planejamento_falhou', codigoErro: 'llm_api' }),
+    },
+    {
+      tipo: 'agente_selecionado',
+      resumo: 'Agente selecionado para a tarefa.',
+      comTarefa: true,
+      metadata: () => ({ claimId, agente: 'frota:architect', versaoAgente: 1, capacidade: 'd1' }),
+    },
+    {
+      tipo: 'tarefa_iniciada',
+      resumo: 'Tarefa iniciada: envio registrado.',
+      comTarefa: true,
+      metadata: () => ({
+        claimId,
+        tipo: 'especialista',
+        tentativa: 1,
+        maxTentativas: 2,
+        artefatosIntegrais: 0,
+        artefatosSoResumo: 0,
+        conversaOmitida: 0,
+      }),
+    },
+    {
+      tipo: 'tarefa_concluida',
+      resumo: 'Tarefa concluída.',
+      comTarefa: true,
+      metadata: () => ({
+        claimId,
+        tipo: 'especialista',
+        tentativa: 1,
+        artefatoId: ARTEFATO_ID,
+        bytes: 20,
+        totalReferencias: 1,
+        referenciasDescartadas: 0,
+        duracaoMs: 1500,
+      }),
+    },
+    {
+      tipo: 'tarefa_falhou',
+      resumo: 'Tarefa falhou.',
+      comTarefa: true,
+      // Fora de contexto_excedido o ator é o agente do claim, nunca "sistema".
+      ator: 'frota:architect',
+      metadata: () => ({ claimId, tipo: 'especialista', tentativa: 1, codigoErro: 'llm_timeout', definitiva: false }),
+    },
+    {
+      tipo: 'tarefa_devolvida',
+      resumo: 'Tarefa devolvida antes do envio, sem consumir tentativa.',
+      comTarefa: true,
+      metadata: () => ({ claimId, codigoErro: 'custo_demanda_excedido' }),
+    },
+    {
+      tipo: 'tarefa_lease_expirado',
+      resumo: 'Lease da tarefa expirado.',
+      comTarefa: true,
+      metadata: () => ({ claimId, tentativa: 1, enviada: true, destino: 'pronta' }),
+    },
+    {
+      tipo: 'tarefa_resultado_descartado',
+      resumo: 'Resultado da tarefa descartado.',
+      comTarefa: true,
+      metadata: () => ({ claimId, tentativa: 1, motivoDescarte: 'lease_perdido' }),
+    },
+    {
+      tipo: 'custo_demanda_excedido',
+      resumo: 'Teto de custo da demanda atingido: a chamada não foi feita.',
+      comTarefa: false,
+      metadata: () => ({ comprometidoUsd: 1.95, reservaUsd: 0.1, limiteUsd: 2, operacao: 'execucao' }),
+    },
+    {
+      tipo: 'custo_acima_da_reserva',
+      resumo: 'Custo real acima do valor reservado.',
+      comTarefa: false,
+      metadata: () => ({ operacao: 'execucao', reservaUsd: 0.02, custoRealUsd: 0.026 }),
+    },
+    {
+      tipo: 'custo_adicional_autorizado',
+      resumo: 'Custo adicional autorizado.',
+      comTarefa: false,
+      metadata: () => ({ valorUsd: 1.5, limiteAnteriorUsd: 2, limiteNovoUsd: 3.5 }),
+    },
+    {
+      tipo: 'gasto_retido_reconhecido',
+      resumo: 'Gasto retido reconhecido.',
+      comTarefa: false,
+      metadata: () => ({ valorUsd: 0.05, operacao: 'execucao' }),
+    },
+  ];
+
+  function caso(tipo: TipoEvento): Caso {
+    const c = CASOS.find((x) => x.tipo === tipo);
+    if (!c) throw new Error(`sem caso para ${tipo}`);
+    return c;
+  }
+
+  // O evento válido do caso, com a tarefa e o ator que ele pede, mais o que o teste sobrescrever.
+  function doCaso(c: Caso, metadataExtra: Record<string, unknown> = {}, extra: Partial<NovoEvento> = {}): NovoEvento {
+    return novo(c.tipo, { ...c.metadata(), ...metadataExtra }, {
+      ...(c.comTarefa ? { tarefaId } : {}),
+      ...(c.ator ? { ator: c.ator } : {}),
+      ...extra,
+    });
+  }
+
+  it('cobre todos os tipos novos da Fase 3.2', () => {
+    expect(CASOS.map((c) => c.tipo)).toEqual(TIPOS_EVENTO.slice(TIPOS_EVENTO.indexOf('rota_definida')));
+  });
+
+  it.each(CASOS)('$tipo: grava exatamente a metadata do schema, com o resumo fixo', async (c) => {
+    const metadata = c.metadata();
+    const e = await registrarEvento(db.pool, doCaso(c));
+    expect(e).toMatchObject({ tipoEvento: c.tipo, resumo: c.resumo, schemaVersao: 1, tarefaId: c.comTarefa ? tarefaId : null });
+    expect(e.metadata).toEqual(metadata);
+  });
+
+  describe('coluna tarefa_id', () => {
+    it.each(CASOS.filter((c) => c.comTarefa))('$tipo sem tarefaId é recusado antes de qualquer escrita', async (c) => {
+      const antes = await totalDeEventos();
+      await expect(registrarEvento(db.pool, doCaso(c, {}, { tarefaId: null }))).rejects.toThrow(`O evento ${c.tipo} exige tarefaId.`);
+      expect(await totalDeEventos()).toBe(antes);
+    });
+
+    it.each([
+      'rota_definida',
+      'plano_ativado',
+      'plano_retomado',
+      'plano_abandonado',
+      'plano_concluido',
+      'fallback_legado',
+      'custo_adicional_autorizado',
+    ] as const)('%s não leva tarefaId', async (tipo) => {
+      await expect(registrarEvento(db.pool, doCaso(caso(tipo), {}, { tarefaId }))).rejects.toThrow(`O evento ${tipo} não leva tarefaId.`);
+    });
+
+    it('os tipos anteriores à Fase 3.2 continuam sem tarefa', async () => {
+      await expect(registrarEvento(db.pool, novo('processamento_iniciado', {}, { tarefaId }))).rejects.toThrow(
+        'O evento processamento_iniciado não leva tarefaId.',
+      );
+      const plano = { planoId: p.planoId, versao: 1, modo: 'execucao', totalTarefas: 2, totalDependencias: 1 };
+      await expect(registrarEvento(db.pool, novo('plano_registrado', plano, { tarefaId }))).rejects.toThrow(
+        'O evento plano_registrado não leva tarefaId.',
+      );
+    });
+
+    it('custo e entrega aceitam a tarefa como opcional', async () => {
+      for (const tipo of ['custo_demanda_excedido', 'custo_acima_da_reserva', 'gasto_retido_reconhecido'] as const) {
+        expect(await registrarEvento(db.pool, doCaso(caso(tipo), {}, { tarefaId }))).toMatchObject({ tipoEvento: tipo, tarefaId });
+      }
+      const entrega = { entregaId: ENTREGA_ID, tipo: 'html', publicadaComoHtml: true };
+      expect(await registrarEvento(db.pool, novo('entrega_criada', entrega, { tarefaId }))).toMatchObject({ tarefaId, resumo: 'Entrega criada.' });
+      expect(await registrarEvento(db.pool, novo('entrega_criada', entrega))).toMatchObject({ tarefaId: null });
+    });
+
+    it('tarefaId precisa ser o uuid de uma tarefa da mesma demanda', async () => {
+      const antes = await totalDeEventos();
+      const selecao = caso('agente_selecionado');
+      await expect(registrarEvento(db.pool, doCaso(selecao, {}, { tarefaId: 'analise' }))).rejects.toThrow('tarefaId precisa ser um uuid.');
+      await expect(registrarEvento(db.pool, doCaso(selecao, {}, { tarefaId: randomUUID() }))).rejects.toThrow(
+        'agent_events: a tarefa precisa ser da mesma demanda do evento',
+      );
+      expect(await totalDeEventos()).toBe(antes);
+    });
+  });
+
+  describe('tarefa_falhou', () => {
+    const falha = (m: Record<string, unknown>): Record<string, unknown> => ({
+      claimId,
+      tipo: 'especialista',
+      tentativa: 1,
+      codigoErro: 'llm_api',
+      definitiva: false,
+      ...m,
+    });
+
+    it('contexto_excedido: anterior ao claim, com claimId nulo, tentativa 0, ator sistema e sempre definitiva', async () => {
+      const e = await registrarEvento(
+        db.pool,
+        novo('tarefa_falhou', falha({ claimId: null, tentativa: 0, codigoErro: 'contexto_excedido', definitiva: true }), { tarefaId }),
+      );
+      expect(e).toMatchObject({ ator: ATOR_SISTEMA, tarefaId, metadata: { claimId: null, tentativa: 0, codigoErro: 'contexto_excedido' } });
+    });
+
+    it('recusa as combinações incoerentes sem gravar nada', async () => {
+      const antes = await totalDeEventos();
+      const recusa = (m: Record<string, unknown>, ator: string, erro: RegExp | string) =>
+        expect(registrarEvento(db.pool, novo('tarefa_falhou', falha(m), { tarefaId, ator }))).rejects.toThrow(erro);
+      // claimId é nulo exatamente em contexto_excedido.
+      await recusa({ codigoErro: 'contexto_excedido', definitiva: true }, ATOR_SISTEMA, /claimId é nulo exatamente em contexto_excedido/);
+      await recusa({ claimId: null }, 'frota:architect', /claimId é nulo exatamente em contexto_excedido/);
+      // contexto_excedido é sempre definitiva.
+      await recusa(
+        { claimId: null, tentativa: 0, codigoErro: 'contexto_excedido', definitiva: false },
+        ATOR_SISTEMA,
+        /contexto_excedido é sempre definitiva/,
+      );
+      // O ator é "sistema" exatamente em contexto_excedido.
+      const ator = 'tarefa_falhou: o ator é "sistema" exatamente em contexto_excedido.';
+      await recusa({ claimId: null, tentativa: 0, codigoErro: 'contexto_excedido', definitiva: true }, 'frota:architect', ator);
+      await recusa({}, ATOR_SISTEMA, ator);
+      // Só os códigos com que uma tarefa falha (os mesmos do CHECK tarefas_codigo_erro_check).
+      await recusa({ codigoErro: 'frota_pausada' }, 'frota:architect', /codigoErro/);
+      await recusa({ codigoErro: 'custo_demanda_excedido' }, 'frota:architect', /codigoErro/);
+      expect(await totalDeEventos()).toBe(antes);
+    });
+  });
+
+  it('politica_avaliada: claimId vem junto com tarefaId, e só com ele', async () => {
+    const avaliacao = { estagio: 'pre', decisao: 'allow', politicaId: null, regraId: null, versaoRegra: null, operacao: 'execucao' };
+    const e = await registrarEvento(db.pool, novo('politica_avaliada', { ...avaliacao, claimId }, { tarefaId }));
+    expect(e).toMatchObject({ tarefaId, metadata: { claimId, operacao: 'execucao' } });
+
+    const erro = 'politica_avaliada: claimId vem junto com tarefaId, e só com ele.';
+    await expect(registrarEvento(db.pool, novo('politica_avaliada', avaliacao, { tarefaId }))).rejects.toThrow(erro);
+    await expect(registrarEvento(db.pool, novo('politica_avaliada', { ...avaliacao, claimId }))).rejects.toThrow(erro);
+    // A operação do evento não inclui auditoria: a avaliação por tarefa é de execução ou de integração.
+    await expect(registrarEvento(db.pool, novo('politica_avaliada', { ...avaliacao, operacao: 'auditoria' }))).rejects.toThrow();
+
+    // A avaliação legada (sem operação e sem tarefa) continua igual.
+    const legada = { estagio: 'post', decisao: 'warn', politicaId: randomUUID(), regraId: randomUUID(), versaoRegra: 1 };
+    expect(await registrarEvento(db.pool, novo('politica_avaliada', legada))).toMatchObject({ tarefaId: null, metadata: legada });
+  });
+
+  it('dólar é número com até 6 casas, não negativo e até 1 milhão', async () => {
+    const autorizacao = (valorUsd: unknown) => novo('custo_adicional_autorizado', { valorUsd, limiteAnteriorUsd: 2, limiteNovoUsd: 3.5 });
+    const antes = await totalDeEventos();
+    await expect(registrarEvento(db.pool, autorizacao(0.1 + 0.2))).rejects.toThrow(/mais de 6 casas decimais/);
+    for (const valor of [-0.5, '1.50', 1_000_000.5, Number.NaN, Number.POSITIVE_INFINITY, null]) {
+      await expect(registrarEvento(db.pool, autorizacao(valor))).rejects.toThrow();
+    }
+    expect(await totalDeEventos()).toBe(antes);
+    expect((await registrarEvento(db.pool, autorizacao(0.123456))).metadata).toMatchObject({ valorUsd: 0.123456 });
+    expect((await registrarEvento(db.pool, autorizacao(1_000_000))).metadata).toMatchObject({ valorUsd: 1_000_000 });
+    expect((await registrarEvento(db.pool, autorizacao(0))).metadata).toMatchObject({ valorUsd: 0 });
+  });
+
+  it('recusa campos fora do schema: lease, chave e objetivo da tarefa, resumo do artefato, texto de erro', async () => {
+    const antes = await totalDeEventos();
+    await expect(registrarEvento(db.pool, doCaso(caso('tarefa_iniciada'), { leaseToken }))).rejects.toThrow();
+    await expect(registrarEvento(db.pool, doCaso(caso('agente_selecionado'), { chave: 'analise' }))).rejects.toThrow();
+    await expect(registrarEvento(db.pool, doCaso(caso('plano_ativado'), { objetivo: 'Objetivo da tarefa analise' }))).rejects.toThrow();
+    await expect(registrarEvento(db.pool, doCaso(caso('tarefa_concluida'), { resumo: 'Resumo do resultado.' }))).rejects.toThrow();
+    await expect(registrarEvento(db.pool, doCaso(caso('tarefa_falhou'), { mensagem: 'erro do modelo' }))).rejects.toThrow();
+    await expect(registrarEvento(db.pool, doCaso(caso('custo_acima_da_reserva'), { prompt: 'texto' }))).rejects.toThrow();
+    expect(await totalDeEventos()).toBe(antes);
+  });
+
+  it('plano_registrado tem um resumo fixo por modo', async () => {
+    const plano = (modo: string) => ({ planoId: p.planoId, versao: 1, modo, totalTarefas: 2, totalDependencias: 1 });
+    expect((await registrarEvento(db.pool, novo('plano_registrado', plano('execucao')))).resumo).toBe(
+      'Plano de tarefas registrado para execução.',
+    );
+    expect((await registrarEvento(db.pool, novo('plano_registrado', plano('shadow')))).resumo).toBe(
+      'Plano de tarefas registrado (modo planejar — não executa).',
+    );
+    await expect(registrarEvento(db.pool, novo('plano_registrado', plano('executar')))).rejects.toThrow();
+  });
+
+  it('os vocabulários são fechados, e os valores novos entram nos antigos', async () => {
+    const antes = await totalDeEventos();
+    const recusado = (tipo: TipoEvento, metadata: Record<string, unknown>, extra: Partial<NovoEvento> = {}) =>
+      expect(registrarEvento(db.pool, novo(tipo, metadata, extra))).rejects.toThrow();
+    await recusado('rota_definida', { rota: 'outra', motivoRota: 'categoria_ligada' });
+    await recusado('rota_definida', { rota: 'tarefas', motivoRota: 'porque_sim' });
+    await recusado('fallback_legado', { planoId: null, motivoFallback: 'orquestracao_desligada', codigoErro: null });
+    await recusado('plano_abandonado', { planoId: p.planoId, versao: 1, motivoAbandono: 'ciclo', tarefasCanceladas: 0 });
+    await recusado('tarefa_devolvida', { claimId, codigoErro: 'llm_api' }, { tarefaId });
+    await recusado('tarefa_resultado_descartado', { claimId, tentativa: 1, motivoDescarte: 'duplicado' }, { tarefaId });
+    await recusado('tarefa_lease_expirado', { claimId, tentativa: 1, enviada: true, destino: 'cancelada' }, { tarefaId });
+    // O auditor (d17) não é capacidade de tarefa; a chave do agente tem formato fechado.
+    await recusado('agente_selecionado', { claimId, agente: 'frota:agent-evaluator', versaoAgente: 1, capacidade: 'd17' }, { tarefaId });
+    await recusado('agente_selecionado', { claimId, agente: 'Frota Architect', versaoAgente: 1, capacidade: 'd1' }, { tarefaId });
+    const inicio = { claimId, tipo: 'especialista', tentativa: 1, maxTentativas: 2, artefatosIntegrais: 0, artefatosSoResumo: 0, conversaOmitida: 0 };
+    await recusado('tarefa_iniciada', { ...inicio, tentativa: 0 }, { tarefaId });
+    await recusado('tarefa_iniciada', { ...inicio, maxTentativas: 4 }, { tarefaId });
+    await recusado('tarefa_iniciada', { ...inicio, tipo: 'coordenacao' }, { tarefaId });
+    await recusado('gasto_retido_reconhecido', { valorUsd: 0.05, operacao: 'outra' });
+    expect(await totalDeEventos()).toBe(antes);
+
+    const aceito = async (tipo: TipoEvento, metadata: Record<string, unknown>) =>
+      expect((await registrarEvento(db.pool, novo(tipo, metadata))).metadata).toEqual(metadata);
+    await aceito('plano_rejeitado', { planoId: p.planoId, versao: 2, motivoRejeicao: 'objetivo_invalido' });
+    await aceito('plano_abandonado', { planoId: p.planoId, versao: 1, motivoAbandono: 'orquestracao_desligada', tarefasCanceladas: 0 });
+    await aceito('demanda_devolvida_para_fila', { motivoDevolucao: 'prazo_da_run', codigoErro: 'prazo_da_run' });
+    await aceito('chamada_trabalho_falhou', { codigoErro: 'llm_timeout' });
+    await aceito('rota_definida', { rota: 'legado_fixo', motivoRota: 'rota_fixada' });
+  });
+
+  // Por último: depois de todos os casos acima, nada do que é texto ou segredo da tarefa chegou ao ledger.
+  it('o ledger não guarda objetivo, chave ou lease_token da tarefa', async () => {
+    const eventos = JSON.stringify(await listarEventosDaDemanda(db.pool, p.demandaId));
+    expect(eventos).toContain(claimId);
+    expect(eventos).not.toContain(leaseToken);
+    expect(eventos).not.toContain('Objetivo da tarefa');
+    expect(eventos).not.toContain('analise');
   });
 });

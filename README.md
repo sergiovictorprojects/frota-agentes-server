@@ -32,7 +32,7 @@ node --env-file=.env src/main.ts
 ```
 
 ```bash
-npm test                # 175+ testes, sobem um Postgres embutido sozinhos
+npm test                # 700+ testes, sobem um Postgres 16 embutido sozinhos
 npm run test:coverage   # exige 80% de cobertura
 npm run typecheck
 ```

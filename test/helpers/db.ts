@@ -11,7 +11,9 @@ export interface TestDb {
   drop(): Promise<void>;
 }
 
-export async function createTestDb(opcoes: { migrar?: boolean } = {}): Promise<TestDb> {
+// opcoes.ate para as migrations numa versão (inclusive), para os testes de upgrade: o banco fica parado ali,
+// recebe dados com o código daquela versão e só depois ganha o resto (migrate sem ate).
+export async function createTestDb(opcoes: { migrar?: boolean; ate?: string } = {}): Promise<TestDb> {
   const adminUrl = process.env.TEST_PG_URL;
   if (!adminUrl) throw new Error('TEST_PG_URL ausente: o global-setup do vitest nao rodou');
 
@@ -24,7 +26,7 @@ export async function createTestDb(opcoes: { migrar?: boolean } = {}): Promise<T
   const url = adminUrl.replace(/\/[^/]*$/, `/${name}`);
   const pool = new pg.Pool({ connectionString: url, max: 10 });
   if (opcoes.migrar !== false) {
-    await migrate(pool);
+    await migrate(pool, { ate: opcoes.ate });
     // Espelha o boot real (src/main.ts): sem isto, a checagem de autorização do agente em
     // processarDemanda falharia para toda demanda em todos os testes, já que nenhum agente existiria.
     // Todo fixture de teste usa o mesmo modelo para modeloTrabalho e modeloAuditoria, então um único

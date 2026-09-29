@@ -62,7 +62,9 @@ describe('validarPlano (deterministico, sem modelo)', () => {
   });
 });
 
-describe('planos_demanda, tarefas e tarefas_dependencias (migration 005)', () => {
+// Com a migration 006 aplicada: o comportamento da 005 para planos e tarefas shadow continua o mesmo, com as
+// mensagens dos gatilhos novos. A execução (modo "execucao") é testada em test/db/tarefas.test.ts.
+describe('planos_demanda, tarefas e tarefas_dependencias (migration 005, mantida pela 006)', () => {
   let db: TestDb;
 
   beforeAll(async () => {
@@ -129,11 +131,16 @@ describe('planos_demanda, tarefas e tarefas_dependencias (migration 005)', () =>
     await expect(inserirPlano(demandaId, 1, 'shadow', 'registrado')).rejects.toThrow(/planos_demanda_demanda_id_versao_key/);
   });
 
-  it('so aceita modo shadow e os estados desta entrega, e rejeitado exige motivo', async () => {
+  it('plano shadow continua so registrado ou rejeitado, execucao exige envelope e rejeitado exige motivo', async () => {
     const { demandaId } = await demandaERun();
-    await expect(inserirPlano(demandaId, 1, 'execucao', 'registrado')).rejects.toThrow(/planos_demanda_modo_check/);
+    await expect(inserirPlano(demandaId, 1, 'outro', 'registrado')).rejects.toThrow(/planos_demanda_modo_check/);
+    await expect(inserirPlano(demandaId, 1, 'shadow', 'inventado')).rejects.toThrow(/planos_demanda_estado_check/);
+    // Sem envelope da demanda, nenhum plano em execução nasce.
+    await expect(inserirPlano(demandaId, 1, 'execucao', 'registrado')).rejects.toThrow(
+      /um plano em execução exige o envelope da demanda na rota tarefas/,
+    );
     for (const estado of ['ativo', 'concluido', 'abandonado']) {
-      await expect(inserirPlano(demandaId, 1, 'shadow', estado)).rejects.toThrow(/planos_demanda_estado_check/);
+      await expect(inserirPlano(demandaId, 1, 'shadow', estado)).rejects.toThrow(/check constraint/);
     }
     await expect(inserirPlano(demandaId, 1, 'shadow', 'rejeitado')).rejects.toThrow(/check constraint/);
     await expect(
@@ -152,10 +159,13 @@ describe('planos_demanda, tarefas e tarefas_dependencias (migration 005)', () =>
       'UPDATE planos_demanda SET versao = 99 WHERE id = $1',
       'UPDATE planos_demanda SET criado_pela_run_id = NULL WHERE id = $1',
     ]) {
-      await expect(db.pool.query(sql, [plano.id])).rejects.toThrow(/planos_demanda é imutável nesta fase: UPDATE/);
+      await expect(db.pool.query(sql, [plano.id])).rejects.toThrow(/planos_demanda: plano shadow é imutável \(UPDATE não é permitido\)/);
     }
+    await expect(db.pool.query("UPDATE planos_demanda SET estado = 'ativo' WHERE id = $1", [plano.id])).rejects.toThrow(
+      /plano shadow é imutável/,
+    );
     await expect(db.pool.query('DELETE FROM planos_demanda WHERE id = $1', [plano.id])).rejects.toThrow(
-      /planos_demanda é imutável nesta fase: DELETE/,
+      /planos_demanda: DELETE não é permitido/,
     );
   });
 
@@ -173,19 +183,38 @@ describe('planos_demanda, tarefas e tarefas_dependencias (migration 005)', () =>
       db.pool.query("INSERT INTO tarefas (plano_id, chave, tipo, capacidade, estado) VALUES ($1, 'x', 'especialista', 'd1', 'pronta')", [
         plano.id,
       ]),
-    ).rejects.toThrow(/tarefas_estado_check/);
+    ).rejects.toThrow(/uma tarefa nasce pendente, sem claim e sem execução/);
+    // Tarefa de plano shadow não tem objetivo (nem timeout): o objetivo é só do plano em execução.
+    await expect(
+      db.pool.query("INSERT INTO tarefas (plano_id, chave, tipo, capacidade, objetivo) VALUES ($1, 'x', 'especialista', 'd1', 'Analisar')", [
+        plano.id,
+      ]),
+    ).rejects.toThrow(/tarefa de plano shadow não tem objetivo nem timeout/);
 
-    // Os campos de execução da 3.2 não existem nesta migration.
-    const { rows: colunas } = await db.pool.query<{ column_name: string }>(
-      "SELECT column_name FROM information_schema.columns WHERE table_name = 'tarefas' ORDER BY column_name",
-    );
-    expect(colunas.map((c) => c.column_name)).toEqual(['capacidade', 'chave', 'criado_em', 'estado', 'id', 'plano_id', 'tipo']);
-
-    const { rows: [t] } = await db.pool.query<{ id: string }>('SELECT id FROM tarefas WHERE plano_id = $1 AND chave = $2', [plano.id, 'dados']);
+    // Os campos de execução entram com a 006, todos vazios ou com o padrão numa tarefa shadow.
+    const { rows: [t] } = await db.pool.query<Record<string, unknown>>('SELECT * FROM tarefas WHERE plano_id = $1 AND chave = $2', [
+      plano.id,
+      'dados',
+    ]);
+    expect(t).toMatchObject({
+      estado: 'pendente',
+      objetivo: null,
+      claim_id: null,
+      agente_chave: null,
+      lease_token: null,
+      tentativas: 0,
+      max_tentativas: 2,
+      timeout_segundos: null,
+      codigo_erro: null,
+      entrega_id: null,
+    });
     await expect(db.pool.query("UPDATE tarefas SET estado = 'pendente' WHERE id = $1", [t!.id])).rejects.toThrow(
-      /tarefas é imutável nesta fase: UPDATE/,
+      /tarefas: tarefa de plano shadow é imutável \(UPDATE não é permitido\)/,
     );
-    await expect(db.pool.query('DELETE FROM tarefas WHERE id = $1', [t!.id])).rejects.toThrow(/tarefas é imutável nesta fase: DELETE/);
+    await expect(db.pool.query("UPDATE tarefas SET estado = 'pronta' WHERE id = $1", [t!.id])).rejects.toThrow(
+      /tarefa de plano shadow é imutável/,
+    );
+    await expect(db.pool.query('DELETE FROM tarefas WHERE id = $1', [t!.id])).rejects.toThrow(/tarefas: DELETE não é permitido/);
   });
 
   it('um plano rejeitado nao recebe tarefas', async () => {
