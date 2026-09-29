@@ -1,65 +1,76 @@
 import type { FormatoArtefato } from '../db/artefatos.ts';
-import type { Agente, PapelAgente } from '../db/agentes.ts';
+import type { PapelAgente } from '../db/agentes.ts';
+import {
+  FORMATOS_ENTREGAVEIS,
+  MAX_BYTES_ARTEFATO_ENTREGAVEL,
+  type FormatoEntregavel,
+} from './artefatos-entregaveis.ts';
+import type { Categoria } from './setores.ts';
 
-// Capacidades deliberadamente fechadas. Elas são o contrato que faltava entre o catálogo de agentes e a
-// geração de artefatos: o agente não escolhe livremente um formato, e uma alteração de permissão passa por
-// revisão de código até existir uma superfície administrativa versionada para isso.
 export interface CapacidadesAgente {
-  gerarArtefatos: readonly FormatoArtefato[];
+  gerarArtefatos: readonly FormatoEntregavel[];
   publicarArtefatos: boolean;
+  // A ingestão de anexos deliberadamente não faz parte desta entrega. O campo já existe para que ativá-la
+  // no futuro exija uma mudança explícita, versionada e auditada no catálogo.
   lerAnexos: boolean;
   maxArtefatosPorDemanda: number;
   maxBytesPorArtefato: number;
 }
 
-const FORMATOS_GERADOR: readonly FormatoArtefato[] = ['texto', 'json'];
-
-const POR_PAPEL: Readonly<Record<PapelAgente, CapacidadesAgente>> = {
-  coordenador: {
-    gerarArtefatos: FORMATOS_GERADOR,
-    publicarArtefatos: true,
-    lerAnexos: false,
-    maxArtefatosPorDemanda: 1,
-    maxBytesPorArtefato: 131_072,
-  },
-  executor: {
-    gerarArtefatos: FORMATOS_GERADOR,
-    publicarArtefatos: false,
-    lerAnexos: false,
-    maxArtefatosPorDemanda: 1,
-    maxBytesPorArtefato: 65_536,
-  },
-  avaliador: {
-    gerarArtefatos: [],
-    publicarArtefatos: false,
-    lerAnexos: false,
-    maxArtefatosPorDemanda: 0,
-    maxBytesPorArtefato: 0,
-  },
-  auditor: {
-    gerarArtefatos: [],
-    publicarArtefatos: false,
-    lerAnexos: false,
-    maxArtefatosPorDemanda: 0,
-    maxBytesPorArtefato: 0,
-  },
+// Matriz fechada por especialidade. Ela também é copiada para o catálogo persistido pela migration 007;
+// esta constante define apenas o valor inicial usado no seed, não substitui o banco em runtime.
+const FORMATOS_POR_CATEGORIA: Readonly<Record<Categoria, readonly FormatoEntregavel[]>> = {
+  gestores: FORMATOS_ENTREGAVEIS,
+  d1: ['pdf', 'docx', 'pptx', 'json', 'yaml', 'xml', 'sql', 'txt', 'markdown', 'html', 'svg', 'zip'],
+  d2: ['pdf', 'docx', 'csv', 'json', 'txt', 'markdown', 'html'],
+  d3: ['pdf', 'docx', 'csv', 'json', 'txt', 'markdown', 'html'],
+  d4: ['pdf', 'docx', 'json', 'yaml', 'xml', 'sql', 'txt', 'markdown', 'html'],
+  d5: ['yaml', 'xml', 'sql', 'txt', 'markdown', 'html', 'zip'],
+  d6: ['xlsx', 'csv', 'tsv', 'json', 'xml', 'txt', 'markdown', 'html'],
+  d7: ['pdf', 'docx', 'pptx', 'json', 'yaml', 'xml', 'txt', 'markdown', 'html', 'svg', 'zip'],
+  d8: ['pdf', 'docx', 'pptx', 'txt', 'markdown', 'html'],
+  d9: ['json', 'sql', 'txt', 'markdown', 'zip'],
+  d10: ['pdf', 'docx', 'xlsx', 'csv', 'tsv', 'json', 'txt', 'markdown', 'html'],
+  d11: ['pdf', 'pptx', 'html', 'svg', 'zip'],
+  d12: ['pdf', 'docx', 'csv', 'json', 'yaml', 'xml', 'sql', 'txt', 'markdown', 'html', 'zip'],
+  d13: ['pdf', 'docx', 'xlsx', 'csv', 'tsv', 'json', 'yaml', 'txt', 'markdown', 'html', 'svg', 'zip'],
+  d14: ['csv', 'tsv', 'json', 'yaml', 'xml', 'txt', 'markdown', 'html', 'ics', 'vcf', 'zip'],
+  d15: ['pdf', 'docx', 'json', 'yaml', 'xml', 'sql', 'txt', 'markdown', 'html', 'svg', 'zip'],
+  d16: ['pdf', 'docx', 'xlsx', 'pptx', 'csv', 'tsv', 'json', 'txt', 'markdown', 'html', 'svg', 'ics', 'vcf', 'zip'],
+  d17: [],
+  d18: ['pdf', 'docx', 'xlsx', 'pptx', 'csv', 'tsv', 'json', 'txt', 'markdown', 'html', 'ics', 'vcf'],
 };
 
-export function capacidadesDoAgente(agente: Pick<Agente, 'papel'>): CapacidadesAgente {
-  const capacidade = POR_PAPEL[agente.papel];
+export function capacidadesPadraoDoAgente(agente: { categoria: Categoria; papel: PapelAgente }): CapacidadesAgente {
+  const gera = agente.papel === 'auditor' || agente.papel === 'avaliador' ? [] : FORMATOS_POR_CATEGORIA[agente.categoria];
   return {
-    ...capacidade,
-    gerarArtefatos: [...capacidade.gerarArtefatos],
+    gerarArtefatos: [...gera],
+    publicarArtefatos: agente.papel === 'coordenador',
+    lerAnexos: false,
+    maxArtefatosPorDemanda: gera.length === 0 ? 0 : agente.papel === 'coordenador' ? 5 : 3,
+    maxBytesPorArtefato: gera.length === 0 ? 0 : MAX_BYTES_ARTEFATO_ENTREGAVEL,
   };
 }
 
-export function agentePodeGerarArtefato(
-  agente: Pick<Agente, 'papel' | 'estado'>,
-  formato: FormatoArtefato,
+export function agentePodeGerarArtefatoEntregavel(
+  agente: { estado: string; capacidades: CapacidadesAgente },
+  formato: FormatoEntregavel,
 ): boolean {
-  return agente.estado === 'ativo' && capacidadesDoAgente(agente).gerarArtefatos.includes(formato);
+  return agente.estado === 'ativo' && agente.capacidades.gerarArtefatos.includes(formato);
 }
 
-export function agentePodePublicarArtefato(agente: Pick<Agente, 'papel' | 'estado'>): boolean {
-  return agente.estado === 'ativo' && capacidadesDoAgente(agente).publicarArtefatos;
+export function agentePodePublicarArtefato(agente: { estado: string; capacidades: CapacidadesAgente }): boolean {
+  return agente.estado === 'ativo' && agente.capacidades.publicarArtefatos;
 }
+
+// Artefatos intermediários continuam no contrato fechado texto/json da migration 006. Eles não são arquivos
+// entregáveis e sua autorização depende do papel da tarefa, não da matriz de formatos finais.
+export function agentePodeGerarArtefatoIntermediario(
+  agente: { papel: PapelAgente; estado: string },
+  formato: FormatoArtefato,
+): boolean {
+  return agente.estado === 'ativo' && (agente.papel === 'coordenador' || agente.papel === 'executor') && (formato === 'texto' || formato === 'json');
+}
+
+// Nome antigo mantido para compatibilidade de importação; a semântica sempre foi a do artefato de tarefa.
+export const agentePodeGerarArtefato = agentePodeGerarArtefatoIntermediario;

@@ -1,5 +1,7 @@
 import type pg from 'pg';
 import { inserirArtefato, type ArtefatoValidado } from './artefatos.ts';
+import { inserirArtefatosEntregaveis } from './artefatos-entregaveis.ts';
+import type { ArtefatoEntregavelRenderizado } from '../domain/artefatos-entregaveis.ts';
 import type { CodigoErroTarefa } from './eventos.ts';
 import { fixarRotaLegado, reservarCustoNaTransacao, type MotivoLegado } from './orquestracao.ts';
 import type { EstadoPlano, EstadoTarefa, MotivoAbandono } from './planos.ts';
@@ -532,7 +534,14 @@ export async function concluirTarefaEspecialista(
 // O conteúdo da entrega já vem pronto para hospedar (o mesmo tratamento de hospedarEntrega).
 export async function concluirIntegracao(
   pool: pg.Pool,
-  p: { tarefaId: string; leaseToken: string; artefato: ArtefatoValidado; entrega: { titulo: string; conteudo: string } },
+  p: {
+    tarefaId: string;
+    leaseToken: string;
+    artefato: ArtefatoValidado;
+    entrega: { titulo: string; conteudo: string };
+    entregaveis?: readonly ArtefatoEntregavelRenderizado[];
+    publicadoPor?: string;
+  },
 ): Promise<ResultadoConclusao> {
   return comTransacao(pool, async (cliente) => {
     const t = await travarTarefaDoClaim(cliente, p.tarefaId, p.leaseToken);
@@ -540,6 +549,16 @@ export async function concluirIntegracao(
     if (t.tipo !== 'integracao') throw new Error('concluirIntegracao recebeu uma especialista.');
     const artefato = await inserirArtefato(cliente, { tarefaId: p.tarefaId, artefato: p.artefato });
     const entrega = await criarEntrega(cliente, { demandaId: t.demanda_id, titulo: p.entrega.titulo, conteudo: p.entrega.conteudo });
+    if (p.entregaveis?.length) {
+      if (!p.publicadoPor) throw new Error('concluirIntegracao exige o publicador dos artefatos entregáveis.');
+      await inserirArtefatosEntregaveis(cliente, {
+        demandaId: t.demanda_id,
+        entregaId: entrega.id,
+        geradoPor: p.publicadoPor,
+        publicadoPor: p.publicadoPor,
+        artefatos: p.entregaveis,
+      });
+    }
     await cliente.query("UPDATE tarefas SET estado = 'concluida', entrega_id = $2 WHERE id = $1", [p.tarefaId, entrega.id]);
     return {
       persistido: true,

@@ -1,5 +1,7 @@
 import type pg from 'pg';
+import { prepararArtefatosEntregaveis } from '../artifacts/servico.ts';
 import { agenteEstaAutorizado, obterAgentePorChave, papelDoSetor, type PapelAgente } from '../db/agentes.ts';
+import { inserirArtefatosEntregaveis } from '../db/artefatos-entregaveis.ts';
 import { atualizarDemanda, registrarTentativa, type Demanda } from '../db/demandas.ts';
 import { montarChaveIdempotencia, registrarEvento, type TipoEvento } from '../db/eventos.ts';
 import { adicionarMensagem, listarMensagens } from '../db/mensagens.ts';
@@ -244,10 +246,33 @@ async function hospedarEntrega(
   const publicaHtml = entrega.tipo === 'html' && setor.podeEntregarHtml;
   const conteudo = publicaHtml ? entrega.conteudo : paginaDeTexto(entrega.titulo, entrega.conteudo);
 
-  const criada = await criarEntrega(d.pool, { demandaId: demanda.id, titulo: entrega.titulo, conteudo });
+  let artefatos = [] as ReturnType<typeof prepararArtefatosEntregaveis>;
+  if (exec.artefatos.length > 0) {
+    const [gerador, publicador] = await Promise.all([
+      obterAgentePorChave(d.pool, setor.papel),
+      obterAgentePorChave(d.pool, PAPEL_COORDENADOR),
+    ]);
+    if (!gerador || !publicador) throw new Error('Catálogo de agentes incompleto para publicar artefatos.');
+    artefatos = prepararArtefatosEntregaveis(exec.artefatos, gerador, publicador);
+  }
+
+  const criada = await comTransacao(d.pool, async (cliente) => {
+    const nova = await criarEntrega(cliente, { demandaId: demanda.id, titulo: entrega.titulo, conteudo });
+    if (artefatos.length > 0) {
+      await inserirArtefatosEntregaveis(cliente, {
+        demandaId: demanda.id,
+        entregaId: nova.id,
+        geradoPor: setor.papel,
+        publicadoPor: PAPEL_COORDENADOR,
+        artefatos,
+      });
+    }
+    return nova;
+  });
   const url = `${d.urlBase}/entregas/${criada.id}`;
   // A URL nunca vai para o ledger — só o entregaId, que já basta para localizar a entrega numa consulta.
   await checkpoint(`Entrega hospedada: ${url}`, setor.papel);
+  if (artefatos.length > 0) await checkpoint(`${artefatos.length} arquivo(s) entregável(is) disponível(is) para download autenticado.`, setor.papel);
   await emitir('entrega_criada', setor.papel, { entregaId: criada.id, tipo: entrega.tipo, publicadaComoHtml: publicaHtml });
   return {
     url,
@@ -486,11 +511,14 @@ export async function processarDemanda(d: DependenciasDemanda, demanda: Demanda,
     // modeloTrabalho desta chamada (ver seedAgentesPadrao em src/db/agentes.ts), então isto é um no-op
     // para o comportamento atual — só passa a barrar de verdade se um operador suspender o agente ou
     // mudar seu modelo_permitido.
-    if (!(await agenteEstaAutorizado(d.pool, setor.papel, d.modeloTrabalho))) throw new AgenteNaoAutorizadoError(setor.papel);
+    const agenteExecucao = await obterAgentePorChave(d.pool, setor.papel);
+    if (agenteExecucao?.estado !== 'ativo' || agenteExecucao.modeloPermitido !== d.modeloTrabalho) {
+      throw new AgenteNaoAutorizadoError(setor.papel);
+    }
     ({ valor: exec } = await d.llm.gerar({
       modelo: d.modeloTrabalho,
       papel: setor.papel,
-      sistema: sistemaExecucao(setor),
+      sistema: sistemaExecucao(setor, agenteExecucao.capacidades),
       usuario: usuarioExecucao(demanda, conversa),
       schema: ResultadoExecucaoSchema,
       maxTokens: MAX_TOKENS_EXECUCAO,

@@ -1,6 +1,8 @@
 import type pg from 'pg';
 import { z } from 'zod';
-import { agentePodeGerarArtefato, agentePodePublicarArtefato } from '../domain/capacidades-agentes.ts';
+import { prepararArtefatosEntregaveis } from '../artifacts/servico.ts';
+import { obterAgentePorChave } from '../db/agentes.ts';
+import { agentePodeGerarArtefatoIntermediario } from '../domain/capacidades-agentes.ts';
 import { SETORES } from '../domain/setores.ts';
 import type { Demanda } from '../db/demandas.ts';
 import { atualizarDemanda } from '../db/demandas.ts';
@@ -328,7 +330,7 @@ export async function processarExecucaoSequencial(d: DependenciasExecucaoTarefas
       );
       if (linha.tipo === 'especialista') {
         const validacao = validarArtefato(ArtefatoPropostoSchema.parse(resposta.valor), 'especialista', new Set(dependencias.map((x) => x.tarefaId)));
-        if (!validacao.valido || !agentePodeGerarArtefato({ papel: tarefa.agente.papel, estado: 'ativo' }, validacao.valido ? validacao.artefato.formato : 'texto')) {
+        if (!validacao.valido || !agentePodeGerarArtefatoIntermediario({ papel: tarefa.agente.papel, estado: 'ativo' }, validacao.valido ? validacao.artefato.formato : 'texto')) {
           await falharEAbandonar(d, tarefa, 'artefato_invalido');
           throw new Error('artefato_invalido');
         }
@@ -340,10 +342,25 @@ export async function processarExecucaoSequencial(d: DependenciasExecucaoTarefas
         await d.emitir('tarefa_concluida', tarefa.agente.chave, { claimId: tarefa.claimId, tipo: tarefa.tipo, tentativa: envio.tentativa, artefatoId: concluida.artefatoId, bytes: concluida.bytes, totalReferencias: concluida.totalReferencias, referenciasDescartadas: 0, duracaoMs: resposta.duracaoMs }, tarefa.id);
       } else {
         const exec = ResultadoExecucaoSchema.parse(resposta.valor);
-        if (!agentePodePublicarArtefato({ papel: tarefa.agente.papel, estado: 'ativo' })) throw new Error('coordenador não autorizado a publicar');
-        const projecao = { ...exec, entrega: exec.entrega ? { tipo: exec.entrega.tipo, titulo: exec.entrega.titulo } : null };
+        const coordenador = await obterAgentePorChave(d.pool, tarefa.agente.chave);
+        if (!coordenador) throw new Error('coordenador não encontrado no catálogo');
+        const entregaveis = prepararArtefatosEntregaveis(exec.artefatos, coordenador, coordenador);
+        // O artefato intermediário da integração guarda somente a projeção estrutural: bytes finais já foram
+        // renderizados pelo servidor e seus conteúdos não são duplicados dentro de artefatos_tarefa.
+        const projecao = {
+          ...exec,
+          entrega: exec.entrega ? { tipo: exec.entrega.tipo, titulo: exec.entrega.titulo } : null,
+          artefatos: exec.artefatos.map((a) => ({ nomeArquivo: a.nomeArquivo, formato: a.formato })),
+        };
         const artefato: ArtefatoValidado = { formato: 'json', resumo: 'Projeção estruturada da integração.', conteudo: JSON.stringify(projecao), referencias: [] };
-        const concluida = await concluirIntegracao(d.pool, { tarefaId: tarefa.id, leaseToken: tarefa.leaseToken, artefato, entrega: { titulo: exec.entrega?.titulo ?? 'Resumo da execução', conteudo: exec.entrega?.conteudo ?? exec.resumo } });
+        const concluida = await concluirIntegracao(d.pool, {
+          tarefaId: tarefa.id,
+          leaseToken: tarefa.leaseToken,
+          artefato,
+          entrega: { titulo: exec.entrega?.titulo ?? 'Resumo da execução', conteudo: exec.entrega?.conteudo ?? exec.resumo },
+          entregaveis,
+          publicadoPor: coordenador.chave,
+        });
         if (!concluida.persistido) {
           await d.emitir('tarefa_resultado_descartado', tarefa.agente.chave, { claimId: tarefa.claimId, tentativa: envio.tentativa, motivoDescarte: concluida.motivoDescarte }, tarefa.id);
           continue;

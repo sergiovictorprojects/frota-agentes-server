@@ -23,6 +23,7 @@ describe('migrate', () => {
       'agentes',
       'agentes_historico',
       'aprendizado_evolucao',
+      'artefatos_entregaveis',
       'avaliacoes_politica',
       'demandas',
       'entregas',

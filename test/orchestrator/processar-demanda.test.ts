@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { atualizarAgente } from '../../src/db/agentes.ts';
+import { listarArtefatosEntregaveisDaDemanda } from '../../src/db/artefatos-entregaveis.ts';
 import { criarDemanda, obterDemanda, reivindicarDemandas, type Demanda, type NovaDemanda } from '../../src/db/demandas.ts';
 import { listarEventosDaDemanda } from '../../src/db/eventos.ts';
 import { adicionarMensagem, listarMensagens } from '../../src/db/mensagens.ts';
@@ -105,6 +106,25 @@ describe('processarDemanda', () => {
       [null, 'Relatório registrado. Status: Concluída.'],
     ]);
     expect(mensagens.every((m) => m.autor === 'agente' && m.setor === 'd1')).toBe(true);
+  });
+
+  it('renderiza e persiste os arquivos pedidos junto da entrega final', async () => {
+    const demanda = await reivindicada();
+    const llm = llmPadrao({
+      artefatos: [
+        { nomeArquivo: 'Relatório da arquitetura', formato: 'pdf', conteudo: 'Decisão\nTrade-offs' },
+        { nomeArquivo: 'modelo', formato: 'json', conteudo: '{"versao":1}' },
+      ],
+    });
+
+    await processarDemanda(deps(llm), demanda, randomUUID());
+
+    const artefatos = await listarArtefatosEntregaveisDaDemanda(db.pool, demanda.id);
+    expect(artefatos.map((a) => [a.nomeArquivo, a.formato, a.geradoPor, a.publicadoPor])).toEqual([
+      ['relatorio-da-arquitetura.pdf', 'pdf', SETORES.d1.papel, SETORES.gestores.papel],
+      ['modelo.json', 'json', SETORES.d1.papel, SETORES.gestores.papel],
+    ]);
+    expect((await listarMensagens(db.pool, demanda.id)).some((m) => m.texto.includes('2 arquivo(s) entregável(is)'))).toBe(true);
   });
 
   it('calcula as metricas a partir das violacoes auditadas, ignorando citacoes sem base', async () => {

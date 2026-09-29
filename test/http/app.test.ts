@@ -2,12 +2,15 @@ import { randomUUID } from 'node:crypto';
 import type { FastifyInstance } from 'fastify';
 import type pg from 'pg';
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
+import { renderizarArtefatoEntregavel } from '../../src/artifacts/renderizadores.ts';
+import { inserirArtefatosEntregaveis } from '../../src/db/artefatos-entregaveis.ts';
 import { criarDemanda, obterDemanda } from '../../src/db/demandas.ts';
 import { listarEventosDaDemanda, montarChaveIdempotencia, registrarEvento } from '../../src/db/eventos.ts';
 import { adicionarMensagem, listarMensagens } from '../../src/db/mensagens.ts';
 import { finalizarRun, iniciarRun, obterFlags } from '../../src/db/operacao.ts';
 import { criarEntrega, salvarRelatorio } from '../../src/db/relatorios.ts';
 import { criarApp } from '../../src/http/app.ts';
+import { SETORES } from '../../src/domain/setores.ts';
 import { createTestDb, type TestDb } from '../helpers/db.ts';
 
 const USUARIO = 'frota';
@@ -228,6 +231,32 @@ describe('aplicacao HTTP', () => {
     it('devolve 404 para demanda inexistente ou id que nao e UUID, sem erro 500', async () => {
       expect((await get(`/demandas/${randomUUID()}`)).statusCode).toBe(404);
       expect((await get("/demandas/1'; DROP TABLE demandas;--")).statusCode).toBe(404);
+    });
+
+    it('lista artefatos e exige autenticação para baixar os bytes como attachment', async () => {
+      const d = await criarDemanda(db.pool, { titulo: 'Com arquivo', categoria: 'd1' });
+      const entrega = await criarEntrega(db.pool, { demandaId: d.id, titulo: 'T', conteudo: '<p>x</p>' });
+      const arquivo = renderizarArtefatoEntregavel({ nomeArquivo: 'Relatório', formato: 'txt', conteudo: 'conteúdo final' });
+      const [salvo] = await inserirArtefatosEntregaveis(db.pool, {
+        demandaId: d.id,
+        entregaId: entrega.id,
+        geradoPor: SETORES.d1.papel,
+        publicadoPor: SETORES.gestores.papel,
+        artefatos: [arquivo],
+      });
+
+      const detalhe = await get(`/demandas/${d.id}`);
+      expect(detalhe.body).toContain('relatorio.txt');
+      expect(detalhe.body).toContain(arquivo.sha256);
+      expect(detalhe.body).toContain(`/artefatos/${salvo!.id}/download`);
+
+      expect((await get(`/artefatos/${salvo!.id}/download`, {})).statusCode).toBe(401);
+      const download = await get(`/artefatos/${salvo!.id}/download`);
+      expect(download.statusCode).toBe(200);
+      expect(download.headers['content-disposition']).toBe('attachment; filename="relatorio.txt"');
+      expect(download.headers.etag).toBe(`"${arquivo.sha256}"`);
+      expect(download.headers['content-type']).toContain('text/plain');
+      expect(download.rawPayload).toEqual(arquivo.conteudo);
     });
 
     it('responde a um pedido de insumo: grava a mensagem do solicitante e recoloca na fila', async () => {

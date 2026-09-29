@@ -16,8 +16,8 @@ Implementar por fatias verticais, com migrations aditivas, testes e rollback. N�
 | 4 a 9 | Sem mudança |
 
 Continuam pendentes, sem data: estados `idle` e `retired` no catálogo e o snapshot versionado do dossiê
-(`dossier_snapshots`). As capacidades iniciais de artefatos agora estão definidas no contrato do catálogo; a
-persistência/edição administrativa dessas capacidades fica para uma entrega própria, depois da ativação segura.
+(`dossier_snapshots`). As capacidades de arquivos finais estão persistidas e auditadas no catálogo desde a
+migration 007; uma superfície administrativa para editá-las continua futura.
 
 ## Fase 0 — Diagnóstico e baseline
 

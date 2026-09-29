@@ -170,7 +170,7 @@ describe('upgrade 005 → 006 com dados shadow existentes', () => {
 
     colunasAntes = Object.fromEntries(await Promise.all(TABELAS.map(async (t) => [t, await colunasDe(db.pool, t)] as const)));
     fotoAntes = await fotografar(db.pool, colunasAntes);
-    aplicadas = await migrate(db.pool);
+    aplicadas = await migrate(db.pool, { ate: '006_execucao_tarefas.sql' });
 
     // Lido logo depois da migração, antes de qualquer teste gravar linhas novas.
     fotoDepois = await fotografar(db.pool, colunasAntes);
@@ -328,7 +328,7 @@ describe('upgrade 005 → 006 com um passo fora do dominio', () => {
     });
     const antes = (await db.pool.query('SELECT * FROM agent_steps')).rows;
 
-    await expect(migrate(db.pool)).rejects.toThrow('check constraint "agent_steps_duracao_ms_check" of relation "agent_steps" is violated by some row');
+    await expect(migrate(db.pool, { ate: '006_execucao_tarefas.sql' })).rejects.toThrow('check constraint "agent_steps_duracao_ms_check" of relation "agent_steps" is violated by some row');
     const { rows: migradas } = await db.pool.query<{ name: string }>('SELECT name FROM schema_migrations ORDER BY name');
     expect(migradas.map((l) => l.name).at(-1)).toBe('005_planos_tarefas.sql');
     const { rows: tabela } = await db.pool.query<{ t: string | null }>("SELECT to_regclass('public.reservas_custo')::text AS t");
@@ -338,7 +338,7 @@ describe('upgrade 005 → 006 com um passo fora do dominio', () => {
 
     // Na 005 agent_steps ainda aceita UPDATE: corrigida a linha, a 006 entra.
     await db.pool.query('UPDATE agent_steps SET duracao_ms = NULL WHERE duracao_ms < 0');
-    expect(await migrate(db.pool)).toEqual(['006_execucao_tarefas.sql']);
+    expect(await migrate(db.pool, { ate: '006_execucao_tarefas.sql' })).toEqual(['006_execucao_tarefas.sql']);
   });
 });
 

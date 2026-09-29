@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { ArtefatoEntregavelPropostoSchema, MAX_ARTEFATOS_ENTREGAVEIS } from '../domain/artefatos-entregaveis.ts';
 
 const setorEnvolvido = z.enum([
   'd1',
@@ -47,6 +48,9 @@ export const ResultadoExecucaoSchema = z.object({
       conteudo: z.string().min(1).max(120_000),
     })
     .nullable(),
+  // Compatibilidade com respostas anteriores: quando o modelo ainda não envia o campo, a execução continua
+  // sem arquivos finais. O prompt novo sempre pede o array, ainda que vazio.
+  artefatos: z.array(ArtefatoEntregavelPropostoSchema).max(MAX_ARTEFATOS_ENTREGAVEIS).default([]),
   resumo: z.string().min(1).max(4000),
   fontesUtilizadas: z.string().max(3000),
   autoavaliacao: z.number().int().min(0).max(100),

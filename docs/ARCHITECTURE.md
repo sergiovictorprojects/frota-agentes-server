@@ -89,7 +89,9 @@ Eventos representam fatos operacionais persistidos. SSE e a cidade 3D consomem p
 
 ### Artefatos
 
-Arquivos grandes, anexos e entregas devem ficar em armazenamento de objetos. O banco armazena metadados, hash, classificação e referência controlada.
+Arquivos grandes, anexos e entregas de retenção longa devem ficar em armazenamento de objetos. A primeira versão
+do serviço de artefatos entregáveis mantém no PostgreSQL somente arquivos finais pequenos (até 5 MiB cada), para
+garantir criação atômica com a entrega; metadados, hash, classificação e autoria são sempre persistidos. Ver ADR 0009.
 
 ## Regras de dados
 
