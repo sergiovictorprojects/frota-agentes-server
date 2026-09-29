@@ -26,8 +26,10 @@ interno da orquestração, limitado a `texto/json`, e não pode ganhar uma segun
    especialidade; somente o coordenador ativo publica; auditor não gera; `ler_anexos` permanece falso.
 6. O detalhe e o dossiê mostram somente metadados e links. O download exige a autenticação Basic da interface,
    usa `Content-Disposition: attachment`, MIME validado, `nosniff`, CSP `sandbox`, ETag pelo SHA-256 e `no-store`.
-7. Conteúdo ativo/externo em HTML e SVG, entidades/DOCTYPE em XML, caminhos em ZIP e fórmulas em células são
-   bloqueados ou neutralizados. O modelo nunca fornece binário ou base64.
+7. HTML aceita somente conteúdo passivo e autocontido: scripts, handlers inline, protocolos executáveis, recursos,
+   formulários, redirecionamentos e CSS ativo/externo são bloqueados. SVG recebe proteção equivalente. XML aceita
+   somente documento autocontido e bem-formado, sem `DOCTYPE` ou entidades declaradas. Caminhos em ZIP e fórmulas
+   em células são bloqueados ou neutralizados. O modelo nunca fornece binário ou base64.
 
 ## Limites e próximos passos
 

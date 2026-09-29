@@ -49,8 +49,15 @@ describe('renderizadores de artefatos entregáveis', () => {
     const csv = renderizarArtefatoEntregavel({ nomeArquivo: 'dados', formato: 'csv', conteudo: 'valor\n=1+1' });
     expect(csv.conteudo.toString('utf8')).toContain("'=1+1");
     expect(() => renderizarArtefatoEntregavel({ nomeArquivo: 'x', formato: 'svg', conteudo: '<svg><script>alert(1)</script></svg>' })).toThrow(/ativo/);
-    expect(() => renderizarArtefatoEntregavel({ nomeArquivo: 'x', formato: 'html', conteudo: '<script src="https://evil.example/x.js"></script>' })).toThrow(/rede/);
+    expect(() => renderizarArtefatoEntregavel({ nomeArquivo: 'x', formato: 'html', conteudo: '<script>alert(1)</script>' })).toThrow(/ativo/);
+    expect(() => renderizarArtefatoEntregavel({ nomeArquivo: 'x', formato: 'html', conteudo: '<h1 onclick="alert(1)">x</h1>' })).toThrow(/ativo/);
+    expect(() => renderizarArtefatoEntregavel({ nomeArquivo: 'x', formato: 'html', conteudo: '<a href="javascript:alert(1)">x</a>' })).toThrow(/ativo/);
+    expect(() => renderizarArtefatoEntregavel({ nomeArquivo: 'x', formato: 'html', conteudo: '<img src="https://evil.example/x.png">' })).toThrow(/ativo/);
     expect(() => renderizarArtefatoEntregavel({ nomeArquivo: 'x', formato: 'xml', conteudo: '<!DOCTYPE x><x/>' })).toThrow(/inseguro/);
+    expect(() => renderizarArtefatoEntregavel({ nomeArquivo: 'x', formato: 'xml', conteudo: '<resultado><ok></resultado>' })).toThrow(/inválido/);
+    expect(() => renderizarArtefatoEntregavel({ nomeArquivo: 'x', formato: 'xml', conteudo: '<resultado>&naoPermitida;</resultado>' })).toThrow(/inválido/);
+    expect(() => renderizarArtefatoEntregavel({ nomeArquivo: 'x', formato: 'xml', conteudo: '<a/><b/>' })).toThrow(/inválido/);
+    expect(renderizarArtefatoEntregavel({ nomeArquivo: 'x', formato: 'xml', conteudo: '<resultado sinal=\">\">ok</resultado>' }).conteudo.toString()).toContain('sinal=\">\"');
   });
 
   it('não aceita caminho no nome e sempre impõe a extensão do formato', () => {

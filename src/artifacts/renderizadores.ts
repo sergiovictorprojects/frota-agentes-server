@@ -54,22 +54,91 @@ function json(texto: string): Buffer {
   return Buffer.from(`${JSON.stringify(valor, null, 2)}\n`, 'utf8');
 }
 
+const NOME_XML_RE = /^[A-Za-z_][A-Za-z0-9_.:-]*$/;
+const ENTIDADE_XML_RE = /&(?!(?:amp|lt|gt|quot|apos|#\d+|#x[0-9a-fA-F]+);)/;
+
+/** Validação deliberadamente sem DTD: aceita apenas XML autocontido e bem-formado. */
+function xmlBemFormado(texto: string): boolean {
+  const abertos: string[] = [];
+  let raizes = 0;
+  let i = 0;
+  while (i < texto.length) {
+    if (texto.startsWith('<!--', i)) {
+      const fim = texto.indexOf('-->', i + 4);
+      if (fim < 0 || texto.slice(i + 4, fim).includes('--')) return false;
+      i = fim + 3;
+      continue;
+    }
+    if (texto.startsWith('<![CDATA[', i)) {
+      const fim = texto.indexOf(']]>', i + 9);
+      if (fim < 0) return false;
+      i = fim + 3;
+      continue;
+    }
+    if (texto.startsWith('<?', i)) {
+      const fim = texto.indexOf('?>', i + 2);
+      if (fim < 0) return false;
+      i = fim + 2;
+      continue;
+    }
+    if (texto[i] !== '<') {
+      const fim = texto.indexOf('<', i);
+      const conteudo = texto.slice(i, fim < 0 ? texto.length : fim);
+      if (ENTIDADE_XML_RE.test(conteudo) || (abertos.length === 0 && conteudo.trim())) return false;
+      i = fim < 0 ? texto.length : fim;
+      continue;
+    }
+
+    let fim = i + 1;
+    let aspas: '"' | "'" | null = null;
+    for (; fim < texto.length; fim++) {
+      const caractere = texto[fim]!;
+      if (aspas) {
+        if (caractere === aspas) aspas = null;
+      } else if (caractere === '"' || caractere === "'") {
+        aspas = caractere;
+      } else if (caractere === '>') break;
+    }
+    if (fim >= texto.length || aspas) return false;
+    const bruto = texto.slice(i + 1, fim).trim();
+    if (!bruto || bruto.startsWith('!')) return false;
+    if (bruto.startsWith('/')) {
+      const nome = bruto.slice(1).trim();
+      if (!NOME_XML_RE.test(nome) || abertos.pop() !== nome) return false;
+    } else {
+      const fechaSozinho = bruto.endsWith('/');
+      const corpo = (fechaSozinho ? bruto.slice(0, -1) : bruto).trim();
+      const separador = corpo.search(/\s/);
+      const nome = separador < 0 ? corpo : corpo.slice(0, separador);
+      const atributos = separador < 0 ? '' : corpo.slice(separador).trim();
+      if (!NOME_XML_RE.test(nome)) return false;
+      const restante = atributos.replace(/(?:[A-Za-z_][A-Za-z0-9_.:-]*)\s*=\s*(?:"[^"]*"|'[^']*')\s*/g, '');
+      if (restante || ENTIDADE_XML_RE.test(atributos)) return false;
+      if (abertos.length === 0) raizes++;
+      if (!fechaSozinho) abertos.push(nome);
+    }
+    i = fim + 1;
+  }
+  return abertos.length === 0 && raizes === 1;
+}
+
 function xml(texto: string): Buffer {
   const seguro = textoSeguro(texto).trim();
-  if (!seguro.startsWith('<') || /<!DOCTYPE|<!ENTITY/i.test(seguro)) throw new Error('Conteúdo XML inválido ou inseguro.');
+  if (!seguro.startsWith('<') || /<!DOCTYPE|<!ENTITY/i.test(seguro) || !xmlBemFormado(seguro)) {
+    throw new Error('Conteúdo XML inválido ou inseguro.');
+  }
   return Buffer.from(`${seguro}\n`, 'utf8');
 }
 
 function html(texto: string): Buffer {
   const seguro = textoSeguro(texto).trim();
-  if (/<(?:script|img|link|iframe|audio|video|source)\b[^>]*(?:src|href)\s*=\s*["']?\s*(?:https?:)?\/\//i.test(seguro)) {
-    throw new Error('HTML entregável não pode carregar recursos de rede.');
-  }
-  if (/\b(?:fetch|XMLHttpRequest|WebSocket|EventSource)\s*\(/i.test(seguro) || /<meta\b[^>]*http-equiv\s*=\s*["']?refresh/i.test(seguro)) {
-    throw new Error('HTML entregável não pode iniciar comunicação ou redirecionamento de rede.');
-  }
-  if (/(?:@import|url\s*\()[^;)}]*(?:https?:|\/\/)|<(?:form|a)\b[^>]*(?:action|href)\s*=\s*["']?\s*(?:https?:|\/\/)/i.test(seguro)) {
-    throw new Error('HTML entregável precisa ser autocontido.');
+  if (/<\/?\s*(?:script|iframe|frame|frameset|object|embed|applet|portal|base|form|input|button|textarea|select|option)\b/i.test(seguro)
+    || /\bon[a-z]+\s*=/i.test(seguro)
+    || /\b(?:javascript|vbscript)\s*:/i.test(seguro)
+    || /\b(?:src|href|action|formaction|poster)\s*=/i.test(seguro)
+    || /<meta\b[^>]*http-equiv\s*=\s*["']?refresh/i.test(seguro)
+    || /(?:@import|url\s*\(|expression\s*\(|-moz-binding\s*:|behavior\s*:)/i.test(seguro)) {
+    throw new Error('HTML entregável contém conteúdo ativo ou externo.');
   }
   const documento = /<!doctype\s+html|<html\b/i.test(seguro)
     ? seguro
