@@ -1,5 +1,5 @@
 import type Anthropic from '@anthropic-ai/sdk';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { z } from 'zod';
 import { AnthropicLlm, LlmError, type PedidoLlm } from '../../src/llm/llm.ts';
 
@@ -76,6 +76,29 @@ describe('AnthropicLlm', () => {
     );
     const r = await new AnthropicLlm(client).gerar(pedido);
     expect(r.uso).toEqual({ inputTokens: 10, outputTokens: 5, cacheReadTokens: 0, cacheWriteTokens: 0 });
+  });
+
+  // agent_steps recusa duração negativa (migration 006): a duração não pode depender do relógio de parede.
+  it('mede a duracao com relogio monotonico: o relogio do servidor voltando no meio da chamada nao a deixa negativa', async () => {
+    const agora = Date.now();
+    const relogio = vi.spyOn(Date, 'now').mockReturnValue(agora);
+    const client = {
+      messages: {
+        stream: () => ({
+          finalMessage: async () => {
+            relogio.mockReturnValue(agora - 60_000);
+            return mensagem();
+          },
+        }),
+      },
+    } as unknown as Anthropic;
+    try {
+      const r = await new AnthropicLlm(client).gerar(pedido);
+      expect(Number.isInteger(r.duracaoMs)).toBe(true);
+      expect(r.duracaoMs).toBeGreaterThanOrEqual(0);
+    } finally {
+      relogio.mockRestore();
+    }
   });
 
   it('junta blocos de texto e ignora blocos de raciocinio', async () => {

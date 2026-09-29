@@ -90,7 +90,10 @@ esta traz o banco, os repositórios e as funções puras, testados, sem mudar o 
      somas) e `duracao_ms` é nula ou não negativa. Assim o comprometido e o gasto do mês só crescem: nem um passo
      negativo, nem alterar ou apagar um passo os reduz, e o passo ligado a uma reserva nunca muda. O gatilho que
      confere o plano do passo roda só no `INSERT`. `TRUNCATE`, que não dispara gatilho de linha, continua
-     funcionando; só a limpeza dos testes o usa.
+     funcionando; só a limpeza dos testes o usa. A duração das chamadas é medida com relógio monotônico
+     (`performance.now()` em `src/llm/llm.ts`): o relógio de parede pode voltar durante uma chamada, e a duração
+     negativa seria recusada, deixando fora do gasto do mês uma chamada já cobrada. A 3.2b mede do mesmo jeito a
+     duração que passa para `liquidarReserva`.
    - **Reserva** (`reservas_custo`): gravada com o envelope travado e só se couber no limite. O gatilho repete a
      conta sob o mesmo lock, então nem SQL direto passa do limite nem reserva numa demanda bloqueada. Uma reserva
      de tarefa pertence ao claim atual, antes do envio, com o modelo e a operação do snapshot, e é única por claim.
@@ -191,12 +194,16 @@ dupla:
 - O banco recusa gravar reserva em `REPEATABLE READ` (o plano não tratava do nível de isolamento).
 - `agent_steps` fica append-only e ganha `CHECK` de domínio (o plano só acrescentava colunas). Veio da revisão da
   PR #11: sem isso, SQL direto reduzia o comprometido com um passo negativo ou alterando ou apagando um passo.
+- O cliente da API passa a medir a duração com relógio monotônico (o plano não mexia nele). Decidido na revisão da
+  PR #11: com o relógio de parede, o relógio do servidor voltando durante uma chamada gravaria uma duração negativa,
+  que o banco agora recusa.
 
 ## Fronteiras: o que a 3.2a não faz
 
 - Não aceita `ORQUESTRACAO_TAREFAS=executar` nem lê `ORQUESTRACAO_CATEGORIA` ou `ORQUESTRACAO_CUSTO_MAX_USD`.
-- Não muda `processar-demanda`, `processar-fila`, os prompts, o cliente da API ou `LlmComOrcamento`. O passo do
-  fluxo legado continua gravado pelo mesmo `INSERT`, agora sujeito aos `CHECK` da decisão 7.
+- Não muda `processar-demanda`, `processar-fila`, os prompts ou `LlmComOrcamento`. O cliente da API muda só na
+  medição da duração das chamadas (decisão 7). O passo do fluxo legado continua gravado pelo mesmo `INSERT`, agora
+  sujeito aos `CHECK` da decisão 7.
 - Não cria endpoint nem tela. A única mudança visível fora dos testes é a leitura de eventos: o JSON de
   `GET /demandas/:id/eventos` ganha `tarefaId`, nulo em todos os eventos de hoje.
 - Com a flag em `planejar`, o plano shadow é gravado como na 3.1 (a coluna `objetivo` fica nula).
@@ -223,10 +230,6 @@ dupla:
   `1e301`. São conservadores de propósito.
 - `listarTarefasDoPlano` devolve a `chave` da tarefa: um identificador de formato fechado, que desde a 3.1 fica fora
   do ledger por ser proposto pelo modelo. Se ela aparece no dossiê é uma decisão da 3.4.
-- A duração do passo legado é medida com o relógio de parede (`Date.now()` em `src/llm/llm.ts`). Se o relógio do
-  servidor voltar durante uma chamada, a duração sai negativa e o banco recusa o passo: a chamada, já cobrada, fica
-  fora do gasto do mês e a demanda recebe erro. Medir com relógio monotônico mexe no cliente da API, fora da 3.2a.
-  A 3.2b precisa medir assim a duração que passa para `liquidarReserva`.
 - Os gatilhos que tornam `agent_steps` e as outras tabelas append-only valem para todo `INSERT`, `UPDATE` e
   `DELETE`, mas o dono da tabela pode desligá-los por DDL (`ALTER TABLE ... DISABLE TRIGGER`), e um superusuário
   também com `session_replication_role`. Os `CHECK` continuam valendo nos dois casos. Nos testes,
@@ -257,8 +260,8 @@ dupla:
   `agent_steps` uma vez para validar as linhas existentes, então a tabela fica travada para escrita durante a
   migração; com o volume de hoje isso leva pouco tempo.
 - Se a produção tiver um passo fora do domínio, a 006 falha inteira no boot, nada é aplicado e o serviço novo não
-  sobe. Só um bug, SQL manual ou o relógio do servidor voltando durante uma chamada (limites conhecidos) gravariam
-  um passo assim. A consulta abaixo, só de leitura, confere antes do deploy, e o resultado esperado é 0:
+  sobe. Só um bug, SQL manual ou, antes desta PR, o relógio do servidor voltando durante uma chamada gravariam um
+  passo assim. A consulta abaixo, só de leitura, confere antes do deploy, e o resultado esperado é 0:
 
   ```sql
   SELECT count(*) FROM agent_steps
