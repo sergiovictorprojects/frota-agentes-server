@@ -1,8 +1,8 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { atualizarAgente } from '../../src/db/agentes.ts';
-import { criarDemanda, obterDemanda, reivindicarDemandas, type Demanda } from '../../src/db/demandas.ts';
+import { criarDemanda, obterDemanda, reabrirDemanda, reivindicarDemandas, type Demanda } from '../../src/db/demandas.ts';
 import { listarEventosDaDemanda } from '../../src/db/eventos.ts';
-import { listarMensagens } from '../../src/db/mensagens.ts';
+import { adicionarMensagem, listarMensagens } from '../../src/db/mensagens.ts';
 import { iniciarRun } from '../../src/db/operacao.ts';
 import { listarPlanosDaDemanda } from '../../src/db/planos.ts';
 import { listarAvaliacoesDaDemanda } from '../../src/db/politicas.ts';
@@ -182,6 +182,68 @@ describe('Fase 3.1: planejamento em shadow dentro do orquestrador', () => {
     expect(planos[0]).toMatchObject({ estado: 'rejeitado', motivoRejeicao: motivo, tarefas: [] });
     const rejeitado = (await listarEventosDaDemanda(db.pool, demanda.id)).find((e) => e.tipoEvento === 'plano_rejeitado');
     expect(rejeitado?.metadata).toEqual({ planoId: planos[0]!.id, versao: 1, motivoRejeicao: motivo });
+  });
+
+  it('plano com d17 (o auditor) é rejeitado como capacidade_nao_executora e a demanda conclui normalmente', async () => {
+    const { demanda, runId } = await demandaReivindicada();
+    const plano = { tarefas: [{ chave: 'revisar', capacidade: 'd17', dependeDe: [] }] };
+
+    const r = await processarDemanda(deps(llmCom(plano), 'planejar'), demanda, runId);
+
+    expect(r.statusFinal).toBe('Concluída');
+    const planos = await listarPlanosDaDemanda(db.pool, demanda.id);
+    expect(planos).toMatchObject([{ estado: 'rejeitado', motivoRejeicao: 'capacidade_nao_executora', tarefas: [] }]);
+    const rejeitado = (await listarEventosDaDemanda(db.pool, demanda.id)).find((e) => e.tipoEvento === 'plano_rejeitado');
+    expect(rejeitado?.metadata).toMatchObject({ motivoRejeicao: 'capacidade_nao_executora' });
+  });
+
+  it('o prompt do planejador não oferece d17 como capacidade de tarefa', async () => {
+    const { demanda, runId } = await demandaReivindicada();
+    const llm = llmCom(planoValido);
+
+    await processarDemanda(deps(llm, 'planejar'), demanda, runId);
+
+    const sistema = llm.pedidos.find((p) => p.papel === PAPEL_COORDENADOR)!.sistema;
+    expect(sistema).toContain('- d16:');
+    expect(sistema).toContain('- d18:');
+    expect(sistema).not.toMatch(/- d17:/);
+    expect(sistema).not.toContain('d1 a d18');
+  });
+
+  it('demanda retomada após resposta humana: o planejador recebe a mesma conversa que a execução', async () => {
+    // 1ª execução (sem planejar): o executor pede ação humana e a demanda para em "Aguardando humano".
+    const { demanda, runId } = await demandaReivindicada();
+    const pedeAcao = new LlmFalso(
+      () => ({ ...execucaoPadrao, acaoHumana: { motivo: 'Qual paleta de cores usar?', acoesNecessarias: ['definir paleta'] }, entrega: null }),
+      USO_PADRAO,
+    );
+    expect((await processarDemanda(deps(pedeAcao), demanda, runId)).statusFinal).toBe('Aguardando humano');
+
+    // O solicitante responde; a demanda volta para a fila e é retomada em "planejar".
+    const resposta = 'Use a paleta verde da marca XPTO-4471';
+    await adicionarMensagem(db.pool, { demandaId: demanda.id, autor: 'solicitante', texto: resposta });
+    await reabrirDemanda(db.pool, demanda.id);
+    const runId2 = await iniciarRun(db.pool);
+    const [retomada] = await reivindicarDemandas(db.pool, runId2, 1);
+    const llm = llmCom(planoValido);
+
+    const r = await processarDemanda(deps(llm, 'planejar'), retomada!, runId2);
+
+    expect(r.statusFinal).toBe('Concluída');
+    const planejador = llm.pedidos.find((p) => p.papel === PAPEL_COORDENADOR)!;
+    const executor = llm.pedidos.find((p) => p.papel === PAPEL_EXECUTOR)!;
+    expect(planejador.usuario).toContain(`- Solicitante: ${resposta}`);
+    expect(planejador.usuario).toContain('- Frota: Ação humana necessária: Qual paleta de cores usar?');
+    // Mesmo contexto, dentro das mesmas tags de dados, para os dois.
+    expect(planejador.usuario).toBe(executor.usuario);
+    expect(planejador.usuario).toMatch(/^<demanda>[\s\S]*<\/demanda>$/);
+    expect(planejador.sistema).not.toContain(resposta);
+
+    // Nem a conversa, nem o prompt, nem a resposta bruta chegam ao ledger.
+    const eventos = JSON.stringify(await listarEventosDaDemanda(db.pool, demanda.id));
+    expect(eventos).not.toContain('XPTO-4471');
+    expect(eventos).not.toContain('paleta');
+    expect(eventos).not.toContain('<demanda>');
   });
 
   it('falha da API no planejamento vira planejamento_falhou e a demanda conclui pelo fluxo legado', async () => {

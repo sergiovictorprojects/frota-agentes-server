@@ -6,11 +6,22 @@ import { comTransacao } from './tx.ts';
 // determinística (sem modelo) e o plano é só gravado, nunca executado. Ver
 // docs/adr/0006-orquestracao-por-tarefas.md.
 
-export const CAPACIDADES_ESPECIALISTA = [
+// Vocabulário que o modelo pode devolver: as 18 especialidades do domínio (Categoria sem "gestores").
+const CAPACIDADES_DOMINIO = [
   'd1', 'd2', 'd3', 'd4', 'd5', 'd6', 'd7', 'd8', 'd9',
   'd10', 'd11', 'd12', 'd13', 'd14', 'd15', 'd16', 'd17', 'd18',
 ] as const;
+
+// O que pode executar uma tarefa. d17 fica de fora: é o auditor (frota:agent-evaluator), registrado no
+// catálogo com papel "auditor", e nunca é especialista executor. Um plano que o use é rejeitado com motivo
+// próprio (em vez de falhar no schema), para a recusa ficar auditável. Mesma lista do CHECK de
+// tarefas.capacidade na migration 005.
+export const CAPACIDADES_ESPECIALISTA = [
+  'd1', 'd2', 'd3', 'd4', 'd5', 'd6', 'd7', 'd8', 'd9',
+  'd10', 'd11', 'd12', 'd13', 'd14', 'd15', 'd16', 'd18',
+] as const;
 export type CapacidadeEspecialista = (typeof CAPACIDADES_ESPECIALISTA)[number];
+const ESPECIALISTAS = new Set<string>(CAPACIDADES_ESPECIALISTA);
 
 // Limite conservador da fase: até 3 tarefas especialistas, mais a integração que o sistema acrescenta.
 export const MAX_TAREFAS_ESPECIALISTAS = 3;
@@ -27,7 +38,7 @@ export const PlanoPropostoSchema = z.object({
     .array(
       z.object({
         chave: z.string().regex(CHAVE_TAREFA_RE),
-        capacidade: z.enum(CAPACIDADES_ESPECIALISTA),
+        capacidade: z.enum(CAPACIDADES_DOMINIO),
         dependeDe: z.array(z.string().regex(CHAVE_TAREFA_RE)).max(20),
       }),
     )
@@ -40,6 +51,7 @@ export const MOTIVOS_REJEICAO = [
   'limite_tarefas',
   'chave_duplicada',
   'chave_reservada',
+  'capacidade_nao_executora',
   'dependencia_inexistente',
   'autodependencia',
   'ciclo',
@@ -66,6 +78,7 @@ export function validarPlano(proposta: PlanoProposto): ValidacaoPlano {
   for (const t of tarefas) {
     if (t.chave === CHAVE_INTEGRACAO) return { valido: false, motivo: 'chave_reservada' };
     if (chaves.has(t.chave)) return { valido: false, motivo: 'chave_duplicada' };
+    if (!ESPECIALISTAS.has(t.capacidade)) return { valido: false, motivo: 'capacidade_nao_executora' };
     chaves.add(t.chave);
   }
   for (const t of tarefas) {
@@ -77,7 +90,7 @@ export function validarPlano(proposta: PlanoProposto): ValidacaoPlano {
   const especialistas: TarefaPlanejada[] = tarefas.map((t) => ({
     chave: t.chave,
     tipo: 'especialista',
-    capacidade: t.capacidade,
+    capacidade: t.capacidade as CapacidadeEspecialista,
     dependeDe: [...new Set(t.dependeDe)],
   }));
   const integracao: TarefaPlanejada = {
@@ -180,10 +193,10 @@ export interface PlanoResumo {
   demandaId: string;
   versao: number;
   criadoPelaRunId: string | null;
-  modo: 'shadow' | 'execucao';
-  estado: 'registrado' | 'ativo' | 'concluido' | 'abandonado' | 'rejeitado';
+  modo: 'shadow';
+  estado: 'registrado' | 'rejeitado';
   motivoRejeicao: MotivoRejeicao | null;
-  tarefas: { chave: string; tipo: TarefaPlanejada['tipo']; capacidade: string; estado: string; dependeDe: string[] }[];
+  tarefas: { chave: string; tipo: TarefaPlanejada['tipo']; capacidade: string; estado: 'pendente'; dependeDe: string[] }[];
 }
 
 export async function listarPlanosDaDemanda(pool: pg.Pool, demandaId: string): Promise<PlanoResumo[]> {
@@ -205,7 +218,7 @@ export async function listarPlanosDaDemanda(pool: pg.Pool, demandaId: string): P
     chave: string;
     tipo: TarefaPlanejada['tipo'];
     capacidade: string;
-    estado: string;
+    estado: 'pendente';
     depende_de: string[];
   }>(
     `SELECT t.plano_id, t.chave, t.tipo, t.capacidade, t.estado,

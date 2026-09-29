@@ -126,9 +126,11 @@ dependências e uma tarefa de integração que produz a entrega única, sem queb
 ### Entregas
 
 - **3.1 — Somente `planejar` (implementada).** O coordenador propõe o plano, a validação é determinística e o
-  plano é gravado em shadow. A demanda segue pelo fluxo legado. Migration 005 (`planos_demanda`, `tarefas`,
-  `tarefas_dependencias` e `operacao` ampliada com `planejamento` e `integracao`).
-- **3.2 — Execução sequencial.** Claim com lease e token, persistência condicional, `artefatos_tarefa`
+  plano é gravado em shadow. A demanda segue pelo fluxo legado. Migration 005, restrita ao shadow
+  (`planos_demanda`, `tarefas` e `tarefas_dependencias` imutáveis, ciclos barrados no banco, `operacao`
+  ampliada só com `planejamento`).
+- **3.2 — Execução sequencial.** Migration 006 com os campos e estados de execução, a máquina de estados,
+  `operacao: integracao` e a manutenção da proteção de ciclo no banco. Claim com lease e token, persistência condicional, `artefatos_tarefa`
   (contrato estrito, limite de tamanho, hash no servidor, append-only, fora do dossiê), integração com entrega
   única, `tarefa_id` nas avaliações de política e nos eventos, uma categoria ligada por vez.
 - **3.3 — Concorrência.** `agentes.max_concorrencia` com gatilho, histórico, Zod e testes; lock da linha do

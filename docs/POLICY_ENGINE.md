@@ -64,7 +64,7 @@ Cada regra tem:
   | `categoria` | um dos 19 valores de `Categoria` (`gestores`, `d1`..`d18`) — sempre a categoria **da demanda**, inclusive no estágio de auditoria (permite filtrar políticas de auditoria pelo tipo de demanda) |
   | `estado` | `ativo`, `suspenso`, `sob_demanda` (o estado do agente) ou `desconhecido` (agente fora do catálogo — ver abaixo) |
   | `modelo` | o modelo permitido/chamado — identificador no mesmo formato de `agente` |
-  | `operacao` | `execucao`, `auditoria`, `planejamento` (a chamada do coordenador que propõe o plano de tarefas, só com `ORQUESTRACAO_TAREFAS=planejar`) ou `integracao` (reservado para a entrega 3.2). Os dois últimos entraram pela migration 005 — ver ADR 0006 |
+  | `operacao` | `execucao`, `auditoria` ou `planejamento` (a chamada do coordenador que propõe o plano de tarefas, só com `ORQUESTRACAO_TAREFAS=planejar`; entrou pela migration 005 — ver ADR 0006). `integracao` só entra com a entrega 3.2 |
   | `prioridade` | `CRITICAL`, `HIGH`, `MEDIUM`, `LOW` |
 
   Todos os campos são opcionais; uma condição casa com um contexto quando **todo campo presente na

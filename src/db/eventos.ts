@@ -113,15 +113,15 @@ const METADATA_SCHEMAS: Readonly<Record<TipoEvento, z.ZodType>> = {
     politicaId: uuid.nullable(),
     regraId: uuid.nullable(),
     versaoRegra: z.number().int().positive().nullable(),
-    // Só nas operações da Fase 3 (planejamento, integração): as legadas mantêm o formato original.
-    operacao: z.enum(['planejamento', 'integracao']).optional(),
+    // Só nas operações da Fase 3 (hoje, o planejamento): as legadas mantêm o formato original.
+    operacao: z.literal('planejamento').optional(),
   }),
   // Fase 3.1 (modo "planejar"): só ids, versão, contagens e códigos fechados — nunca a chave de uma
   // tarefa, texto do modelo ou da demanda.
   plano_registrado: z.strictObject({
     planoId: uuid,
     versao: z.number().int().positive(),
-    modo: z.enum(['shadow', 'execucao']),
+    modo: z.literal('shadow'),
     totalTarefas: contagem,
     totalDependencias: contagem,
   }),
@@ -133,6 +133,7 @@ const METADATA_SCHEMAS: Readonly<Record<TipoEvento, z.ZodType>> = {
       'limite_tarefas',
       'chave_duplicada',
       'chave_reservada',
+      'capacidade_nao_executora',
       'dependencia_inexistente',
       'autodependencia',
       'ciclo',

@@ -499,10 +499,10 @@ describe('policy engine determinístico em modo shadow (Fase 2, Entrega 2)', () 
 
   // Fase 3.1: planejamento e execução acontecem na mesma run, com os mesmos estágios. Sem a operação na
   // chave de idempotência, o "pre" do planejamento tomaria a chave do "pre" da execução.
-  describe('operações da Fase 3 (planejamento, integração)', () => {
+  describe('operação da Fase 3.1 (planejamento)', () => {
     it('planejamento e execucao no mesmo estagio e na mesma run geram eventos distintos', async () => {
       const { demandaId, runId } = await demandaERun();
-      for (const operacao of ['planejamento', 'execucao', 'integracao'] as const) {
+      for (const operacao of ['planejamento', 'execucao'] as const) {
         await avaliarEregistrar(db.pool, {
           demandaId,
           runId,
@@ -513,20 +513,37 @@ describe('policy engine determinístico em modo shadow (Fase 2, Entrega 2)', () 
         });
       }
       const eventos = (await listarEventosDaDemanda(db.pool, demandaId)).filter((e) => e.tipoEvento === 'politica_avaliada');
-      expect(eventos).toHaveLength(3);
       expect(eventos.map((e) => e.chaveIdempotencia)).toEqual([
         `${runId}|politica_avaliada|planejamento:pre`,
         `${runId}|politica_avaliada|pre`,
-        `${runId}|politica_avaliada|integracao:pre`,
       ]);
-      // As operações novas levam a operação no metadata; a legada mantém exatamente o formato de antes.
-      expect(eventos.map((e) => (e.metadata as { operacao?: string }).operacao)).toEqual(['planejamento', undefined, 'integracao']);
+      // A operação nova leva a operação no metadata; a legada mantém exatamente o formato de antes.
+      expect(eventos.map((e) => (e.metadata as { operacao?: string }).operacao)).toEqual(['planejamento', undefined]);
       expect(Object.keys(eventos[1]!.metadata).sort()).toEqual(['decisao', 'estagio', 'politicaId', 'regraId', 'versaoRegra'].sort());
       expect((await listarAvaliacoesDaDemanda(db.pool, demandaId)).map((a) => a.contexto.operacao)).toEqual([
         'planejamento',
         'execucao',
-        'integracao',
       ]);
+    });
+
+    it('integracao ainda nao e uma operacao valida: nem no Zod nem no CHECK do banco', async () => {
+      const { demandaId, runId } = await demandaERun();
+      const decisao = await avaliarEregistrar(db.pool, {
+        demandaId,
+        runId,
+        correlacaoId: runId,
+        tentativa: 1,
+        estagio: 'pre',
+        contexto: { ...contextoPadrao, operacao: 'integracao' as never },
+      });
+      // Fail-open: contexto inválido não grava nada e devolve allow.
+      expect(decisao).toBe('allow');
+      expect(await listarAvaliacoesDaDemanda(db.pool, demandaId)).toEqual([]);
+      const { rows } = await db.pool.query<{ plan: boolean; integ: boolean }>(
+        `SELECT politica_condicao_valida('{"operacao":"planejamento"}'::jsonb) AS plan,
+                politica_condicao_valida('{"operacao":"integracao"}'::jsonb) AS integ`,
+      );
+      expect(rows[0]).toEqual({ plan: true, integ: false });
     });
 
     it('uma regra pode mirar o planejamento sem casar com a execucao', async () => {

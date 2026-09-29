@@ -427,6 +427,10 @@ export async function processarDemanda(d: DependenciasDemanda, demanda: Demanda,
   await checkpoint('Iniciando análise da demanda.', null);
   await emitir('processamento_iniciado', setor.papel);
 
+  // Carregada uma única vez: o planejador (quando ligado) e a execução recebem exatamente o mesmo contexto,
+  // inclusive a resposta do solicitante numa demanda retomada.
+  const conversa = await conversaDaDemanda(d.pool, demanda.id);
+
   // Fase 3.1, modo "planejar": só grava o plano (shadow). A demanda segue inteira pelo fluxo legado abaixo,
   // com o mesmo resultado; uma falha no planejamento nunca a afeta.
   if (d.orquestracao === 'planejar') {
@@ -435,6 +439,7 @@ export async function processarDemanda(d: DependenciasDemanda, demanda: Demanda,
       llm: d.llm,
       modelo: d.modeloTrabalho,
       demanda,
+      conversa,
       runId,
       emitir,
       avaliar: (estagio) =>
@@ -460,7 +465,7 @@ export async function processarDemanda(d: DependenciasDemanda, demanda: Demanda,
       modelo: d.modeloTrabalho,
       papel: setor.papel,
       sistema: sistemaExecucao(setor),
-      usuario: usuarioExecucao(demanda, await conversaDaDemanda(d.pool, demanda.id)),
+      usuario: usuarioExecucao(demanda, conversa),
       schema: ResultadoExecucaoSchema,
       maxTokens: MAX_TOKENS_EXECUCAO,
       contexto,

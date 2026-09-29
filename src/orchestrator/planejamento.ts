@@ -7,7 +7,7 @@ import { SETORES } from '../domain/setores.ts';
 import type { Llm } from '../llm/llm.ts';
 import { log } from '../util/log.ts';
 import { AgenteNaoAutorizadoError, codigoDoErro } from './erros.ts';
-import { sistemaPlanejamento, usuarioExecucao } from './prompts.ts';
+import { sistemaPlanejamento, usuarioExecucao, type FalaDaConversa } from './prompts.ts';
 import type { EmitirEvento } from './processar-demanda.ts';
 
 export const PAPEL_COORDENADOR = SETORES.gestores.papel;
@@ -18,6 +18,9 @@ export interface ContextoPlanejamento {
   llm: Llm;
   modelo: string;
   demanda: Demanda;
+  // A mesma conversa (pedido da frota e resposta do solicitante) que a execução legada recebe, carregada uma
+  // única vez por processarDemanda. Entra só no prompt, dentro de <demanda>; nunca é gravada aqui.
+  conversa: readonly FalaDaConversa[];
   runId: string;
   emitir: EmitirEvento;
   // Avaliação de política (modo shadow) com operacao "planejamento": nunca lança, nunca bloqueia.
@@ -41,7 +44,7 @@ export async function planejarEmShadow(c: ContextoPlanejamento): Promise<void> {
       modelo: c.modelo,
       papel: PAPEL_COORDENADOR,
       sistema: sistemaPlanejamento(),
-      usuario: usuarioExecucao(c.demanda),
+      usuario: usuarioExecucao(c.demanda, c.conversa),
       schema: PlanoPropostoSchema,
       maxTokens: MAX_TOKENS_PLANEJAMENTO,
       contexto: { runId: c.runId, demandaId: c.demanda.id },
