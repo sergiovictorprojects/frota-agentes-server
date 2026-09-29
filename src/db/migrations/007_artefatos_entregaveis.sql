@@ -181,7 +181,7 @@ CREATE TABLE artefatos_entregaveis (
   -- `artefatos_entregaveis_bytes_check` no PostgreSQL. Use um nome distinto para
   -- a conferência cruzada entre o metadado e o bytea.
   CONSTRAINT artefatos_entregaveis_conteudo_bytes_check CHECK (bytes = octet_length(conteudo)),
-  CONSTRAINT artefatos_entregaveis_sha256_check CHECK (sha256 = encode(sha256(conteudo), 'hex')),
+  CONSTRAINT artefatos_entregaveis_conteudo_sha256_check CHECK (sha256 = encode(sha256(conteudo), 'hex')),
   CONSTRAINT artefatos_entregaveis_entrega_ordem_key UNIQUE (entrega_id, ordem),
   CONSTRAINT artefatos_entregaveis_entrega_nome_key UNIQUE (entrega_id, nome_arquivo)
 );
