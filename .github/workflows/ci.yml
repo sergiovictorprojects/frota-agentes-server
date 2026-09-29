@@ -32,4 +32,12 @@ jobs:
       # Testes com cobertura: falha se statements, branches, functions ou lines caírem abaixo dos limites
       # de vitest.config.ts (coverage.thresholds). Os testes sobem um Postgres embutido sozinhos
       # (test/helpers/global-setup.ts): nenhum banco externo, segredo ou artefato publicado.
-      - run: npm run test:coverage
+      - name: Executar testes com cobertura
+        run: npm run test:coverage -- --reporter=default --reporter=json --outputFile.json=.vitest-results.json
+
+      # Defesa contra falso verde: o Vitest 5 pode terminar com código zero quando falhas de migration
+      # acontecem em hooks e deixam as demais suítes puladas. O relatório estruturado continua marcando
+      # `success: false`; esta etapa transforma esse estado em falha real do workflow.
+      - name: Conferir resultado estruturado dos testes
+        if: always()
+        run: node scripts/verificar-resultados-vitest.ts .vitest-results.json
