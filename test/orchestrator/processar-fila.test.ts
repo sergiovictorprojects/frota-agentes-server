@@ -51,7 +51,7 @@ describe('processarFila', () => {
       llm,
       modeloTrabalho: 'claude-sonnet-5',
       modeloAuditoria: 'claude-sonnet-5',
-      urlBase: 'https://frota.exemplo.com',
+      urlBase: 'https://frota.minhaempresa.com.br',
       notificador,
       maxDemandasPorRun: max,
       minutosAbandono: 60,
@@ -98,7 +98,7 @@ describe('processarFila', () => {
     expect(notificador.enviadas).toHaveLength(1);
     expect(notificador.enviadas[0]).toMatchObject({ nivel: 'info', titulo: 'Frota: 3 demanda(s) processada(s)' });
     for (const titulo of ['primeira', 'segunda', 'terceira']) expect(notificador.enviadas[0]?.corpo).toContain(titulo);
-    expect(notificador.enviadas[0]?.corpo).toContain('https://frota.exemplo.com/entregas/');
+    expect(notificador.enviadas[0]?.corpo).toContain('https://frota.minhaempresa.com.br/entregas/');
   });
 
   it('frota pausada: nao chama o modelo e deixa as demandas na fila', async () => {

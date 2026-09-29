@@ -54,7 +54,7 @@ describe('Policy Engine em modo shadow dentro do orquestrador', () => {
     llm,
     modeloTrabalho: MODELO,
     modeloAuditoria: MODELO,
-    urlBase: 'https://frota.exemplo.com',
+    urlBase: 'https://frota.minhaempresa.com.br',
   });
   const llmPadrao = () =>
     new LlmFalso((p) => (p.papel === PAPEL_AUDITOR ? { violacoes: [], observacoes: 'sem violações' } : execucaoPadrao), USO_PADRAO);

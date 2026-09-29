@@ -2,6 +2,7 @@ import type { Demanda } from '../../db/demandas.ts';
 import type { Evento } from '../../db/eventos.ts';
 import type { Mensagem } from '../../db/mensagens.ts';
 import type { Relatorio } from '../../db/relatorios.ts';
+import type { LinkEntrega } from '../../domain/links-entrega.ts';
 import { CATEGORIAS, PRIORIDADES, SETORES, STATUS, type StatusDemanda } from '../../domain/setores.ts';
 import { bruto, html, type Bruto } from './html.ts';
 import { formatarData } from './layout.ts';
@@ -17,7 +18,18 @@ const CLASSE_STATUS: Readonly<Record<StatusDemanda, string>> = {
 };
 
 const chip = (status: StatusDemanda): Bruto => html`<span class="chip ${CLASSE_STATUS[status]}">${status}</span>`;
-const linkSeguro = (url: string | null): string | null => (url && /^https?:\/\//.test(url) ? url : null);
+// O link já chega resolvido pela rota (src/http/ui/links-entrega.ts): esta função só o renderiza. Apenas
+// uma entrega confirmada em `entregas` recebe o rótulo "Abrir entrega"; artefato externo legado tem rótulo
+// próprio, e um link não verificado nunca vira href.
+function linkDeEntrega(link: LinkEntrega | null | undefined, classe = ''): Bruto | '' {
+  if (!link) return '';
+  const atributoClasse = classe ? bruto(` class="${classe}"`) : '';
+  if (link.tipo === 'interna') return html`<a${atributoClasse} href="${link.href}">Abrir entrega</a>`;
+  if (link.tipo === 'externa_legada') {
+    return html`<a${atributoClasse} href="${link.href}" rel="noopener noreferrer">Abrir artefato externo (${link.host})</a>`;
+  }
+  return html`<span class="vazio">Link de entrega não verificado</span>`;
+}
 const numero = (n: number | null | undefined, sufixo = ''): string => (n === null || n === undefined ? 'não medido' : `${n}${sufixo}`);
 
 function botaoAcao(acao: string, rotulo: string, secundario = false): Bruto {
@@ -26,6 +38,7 @@ function botaoAcao(acao: string, rotulo: string, secundario = false): Bruto {
 
 export function paginaFila(a: {
   demandas: readonly Demanda[];
+  links: ReadonlyMap<string, LinkEntrega | null>;
   contagem: Partial<Record<StatusDemanda, number>>;
   filtro: StatusDemanda | null;
   pausado: boolean;
@@ -37,10 +50,9 @@ export function paginaFila(a: {
     return html`<a class="filtro${s === a.filtro ? ' ativo' : ''}" href="${href}">${s ?? 'Todas'}${total ? html` <span>${total}</span>` : ''}</a>`;
   });
   const cartoes = a.demandas.map((d) => {
-    const entrega = linkSeguro(d.entregaUrl);
     return html`<li class="card">
 <h3><a href="/demandas/${d.id}">${d.titulo}</a> ${chip(d.status)}</h3>
-<div class="meta"><span>${d.categoria} — ${SETORES[d.categoria].nome}</span><span>${d.prioridade}</span><span>${formatarData(d.criadoEm)}</span>${entrega ? html`<a href="${entrega}">Abrir entrega</a>` : ''}</div>
+<div class="meta"><span>${d.categoria} — ${SETORES[d.categoria].nome}</span><span>${d.prioridade}</span><span>${formatarData(d.criadoEm)}</span>${linkDeEntrega(a.links.get(d.id))}</div>
 </li>`;
   });
   return html`<div class="cabecalho">
@@ -92,9 +104,13 @@ ${m.auditoriaFalhou ? html`<p class="aviso">A auditoria automática não termino
 ${r.ponderacoes.length ? html`<h2>Ponderações</h2><ul>${r.ponderacoes.map((p) => html`<li><strong>${p.setor}</strong>: ${p.nota}</li>`)}</ul>` : ''}`;
 }
 
-export function paginaDetalhe(a: { demanda: Demanda; mensagens: readonly Mensagem[]; relatorio: Relatorio | null }): Bruto {
+export function paginaDetalhe(a: {
+  demanda: Demanda;
+  mensagens: readonly Mensagem[];
+  relatorio: Relatorio | null;
+  linkEntrega: LinkEntrega | null;
+}): Bruto {
   const d = a.demanda;
-  const entrega = linkSeguro(d.entregaUrl);
   const linhas = a.mensagens.map(
     (m) => html`<li><time datetime="${m.criadoEm}">${formatarData(m.criadoEm)}</time>
 <span class="${m.autor === 'solicitante' ? 'solicitante' : 'agente'}">${m.autor === 'solicitante' ? 'Solicitante' : (m.agente ?? 'orquestrador')}</span>
@@ -108,7 +124,7 @@ ${d.status === 'Falhou' ? botaoAcao(`/demandas/${d.id}/reabrir`, 'Tentar novamen
 ${d.status !== 'Arquivada' && d.status !== 'Em andamento' ? botaoAcao(`/demandas/${d.id}/arquivar`, 'Arquivar', true) : ''}
 </div>
 </div>
-${entrega ? html`<p><a class="botao" href="${entrega}">Abrir entrega</a></p>` : ''}
+${a.linkEntrega ? html`<p>${linkDeEntrega(a.linkEntrega, 'botao')}</p>` : ''}
 <p><a href="/demandas/${d.id}/dossie">Ver dossiê</a></p>
 <dl class="info">
 <dt>Solicitante</dt><dd>${d.solicitante ?? '—'}</dd>
@@ -189,13 +205,13 @@ export function paginaDossie(a: {
   mensagens: readonly Mensagem[];
   relatorio: Relatorio | null;
   eventos: readonly Evento[];
+  linkEntrega: LinkEntrega | null;
 }): Bruto {
   const d = a.demanda;
-  const entrega = linkSeguro(d.entregaUrl);
   return html`<div class="cabecalho">
 <div><h1>Dossiê — ${d.titulo}</h1><div class="meta">${chip(d.status)}<span>${d.categoria} — ${SETORES[d.categoria].nome}</span><span>${d.prioridade}</span></div></div>
 </div>
-${entrega ? html`<p><a class="botao" href="${entrega}">Abrir entrega</a></p>` : ''}
+${a.linkEntrega ? html`<p>${linkDeEntrega(a.linkEntrega, 'botao')}</p>` : ''}
 <h2>Resumo executivo</h2>
 <dl class="info">
 <dt>Solicitante</dt><dd>${d.solicitante ?? '—'}</dd>
@@ -214,11 +230,11 @@ ${blocoRelatorioSeguro(a.relatorio)}
 <p><a href="/demandas/${d.id}">Voltar para a demanda</a></p>`;
 }
 
-export function paginaRelatorios(a: { relatorios: readonly Relatorio[] }): Bruto {
+export function paginaRelatorios(a: { relatorios: readonly Relatorio[]; links: ReadonlyMap<string, LinkEntrega | null> }): Bruto {
   const cartoes = a.relatorios.map(
     (r) => html`<li class="card">
 <h3><a href="/demandas/${r.demandaId}">${r.demandaTitulo}</a></h3>
-<div class="meta"><span>nível ${r.nivelComplexidade}</span><span>índice ${numero(r.metricas.indiceGeral)}</span><span>antipadrões ${numero(r.metricas.antipadroesCount)}</span><span>${formatarData(r.criadoEm)}</span>${linkSeguro(r.entregaUrl) ? html`<a href="${linkSeguro(r.entregaUrl)}">Abrir entrega</a>` : ''}</div>
+<div class="meta"><span>nível ${r.nivelComplexidade}</span><span>índice ${numero(r.metricas.indiceGeral)}</span><span>antipadrões ${numero(r.metricas.antipadroesCount)}</span><span>${formatarData(r.criadoEm)}</span>${linkDeEntrega(a.links.get(r.id))}</div>
 </li>`,
   );
   return html`<h1>Relatórios</h1>

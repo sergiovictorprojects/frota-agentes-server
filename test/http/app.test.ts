@@ -13,6 +13,8 @@ import { createTestDb, type TestDb } from '../helpers/db.ts';
 const USUARIO = 'frota';
 const SENHA = 'senha-de-teste-123';
 const AUTORIZACAO = `Basic ${Buffer.from(`${USUARIO}:${SENHA}`).toString('base64')}`;
+// Origem pública configurada (PUBLIC_BASE_URL já validada): um domínio real, nunca um de exemplo.
+const ORIGEM = 'https://frota.minhaempresa.com.br';
 const FORM = { 'content-type': 'application/x-www-form-urlencoded', 'sec-fetch-site': 'same-origin' };
 
 describe('aplicacao HTTP', () => {
@@ -22,7 +24,7 @@ describe('aplicacao HTTP', () => {
 
   beforeAll(async () => {
     db = await createTestDb();
-    app = await criarApp({ pool: db.pool, usuario: USUARIO, senha: SENHA, disparar, limitePorMinuto: 10_000 });
+    app = await criarApp({ pool: db.pool, usuario: USUARIO, senha: SENHA, origemPublica: ORIGEM, disparar, limitePorMinuto: 10_000 });
   });
   afterAll(async () => {
     await app.close();
@@ -58,7 +60,7 @@ describe('aplicacao HTTP', () => {
 
     it('responde 503 quando o banco esta fora do ar, sem vazar detalhes', async () => {
       const quebrado = { query: async () => Promise.reject(new Error('senha do banco: hunter2')) } as unknown as pg.Pool;
-      const outro = await criarApp({ pool: quebrado, usuario: USUARIO, senha: SENHA });
+      const outro = await criarApp({ pool: quebrado, usuario: USUARIO, senha: SENHA, origemPublica: ORIGEM });
       const r = await outro.inject({ method: 'GET', url: '/health' });
       expect(r.statusCode).toBe(503);
       expect(r.body).not.toContain('hunter2');
@@ -193,7 +195,7 @@ describe('aplicacao HTTP', () => {
       const d = await criarDemanda(db.pool, { titulo: 'Detalhada', categoria: 'd1', descricao: '<img src=x onerror=alert(1)>' });
       await adicionarMensagem(db.pool, { demandaId: d.id, autor: 'agente', agente: 'frota:architect', texto: 'Plano: <b>entregar</b>' });
       const entrega = await criarEntrega(db.pool, { demandaId: d.id, titulo: 'T', conteudo: '<p>x</p>' });
-      const url = `https://frota.exemplo.com/entregas/${entrega.id}`;
+      const url = `${ORIGEM}/entregas/${entrega.id}`;
       await db.pool.query('UPDATE demandas SET entrega_url = $2 WHERE id = $1', [d.id, url]);
       await salvarRelatorio(db.pool, {
         demandaId: d.id,
@@ -217,7 +219,8 @@ describe('aplicacao HTTP', () => {
       expect(r.body).toContain('Plano: &lt;b&gt;entregar&lt;/b&gt;');
       expect(r.body).toContain('&lt;img src=x onerror=alert(1)&gt;');
       expect(r.body).not.toContain('<img src=x');
-      expect(r.body).toContain(`href="${url}"`);
+      // Link verificado em `entregas`: href relativo, montado a partir do registro.
+      expect(r.body).toContain(`href="/entregas/${entrega.id}"`);
       expect(r.body).toContain('88');
       expect(r.body).toContain('50%');
     });
@@ -375,7 +378,7 @@ describe('aplicacao HTTP', () => {
       const d = await criarDemanda(db.pool, { titulo: 'Dossie completo', categoria: 'd1', solicitante: 'Ana' });
       await adicionarMensagem(db.pool, { demandaId: d.id, autor: 'agente', agente: 'frota:architect', texto: 'Executando.' });
       const entrega = await criarEntrega(db.pool, { demandaId: d.id, titulo: 'T', conteudo: '<p>x</p>' });
-      const url = `https://frota.exemplo.com/entregas/${entrega.id}`;
+      const url = `${ORIGEM}/entregas/${entrega.id}`;
       await db.pool.query('UPDATE demandas SET entrega_url = $2, status = $3 WHERE id = $1', [d.id, url, 'Concluída']);
       await salvarRelatorio(db.pool, {
         demandaId: d.id,
@@ -412,7 +415,8 @@ describe('aplicacao HTTP', () => {
       // texto da mensagem NÃO aparece — só metadado estrutural (ver teste de redaction abaixo).
       expect(r.body).not.toContain('Executando.');
       expect(r.body).toContain('Demanda concluída.');
-      expect(r.body).toContain(`href="${url}"`);
+      // Link verificado em `entregas`: href relativo, montado a partir do registro.
+      expect(r.body).toContain(`href="/entregas/${entrega.id}"`);
       expect(r.body).toContain('90');
     });
 
@@ -499,7 +503,7 @@ describe('aplicacao HTTP', () => {
     });
 
     it('sem disparador configurado, avisa que o disparo manual nao esta disponivel', async () => {
-      const semDisparo = await criarApp({ pool: db.pool, usuario: USUARIO, senha: SENHA });
+      const semDisparo = await criarApp({ pool: db.pool, usuario: USUARIO, senha: SENHA, origemPublica: ORIGEM });
       const r = await semDisparo.inject({ method: 'POST', url: '/executar', headers: { authorization: AUTORIZACAO, ...FORM } });
       expect(r.headers.location).toBe('/?disparo=indisponivel');
       await semDisparo.close();
@@ -527,6 +531,112 @@ describe('aplicacao HTTP', () => {
       expect(r.statusCode).toBe(200);
       expect(r.body).toContain('Com relatorio');
       expect(r.body).toContain('não medido');
+    });
+  });
+
+  // Hotfix de URL de entrega: um link só vira "Abrir entrega" quando o UUID está em `entregas` e pertence à
+  // mesma demanda exibida; o href é sempre relativo e montado a partir do registro.
+  describe('links de entrega verificados', () => {
+    const RELATORIO_BASE = {
+      gerente: 'frota:architect',
+      nivelComplexidade: 2,
+      setoresEnvolvidos: ['d1'],
+      fontesUtilizadas: null,
+      metricas: { acoesRealizadas: 'x', tempoTotal: '1s', indiceGeral: 80, antipadroesCount: 0, regrasCumpridasPercent: 100 },
+      ganhos: null,
+      perdas: null,
+      aprendizado: null,
+      ponderacoes: [],
+    };
+
+    // Demanda concluída com uma entrega real; `montarUrl` recebe o id dessa entrega e devolve a URL gravada.
+    async function demandaComLink(titulo: string, montarUrl: (entregaId: string) => string) {
+      const d = await criarDemanda(db.pool, { titulo, categoria: 'd1' });
+      const entrega = await criarEntrega(db.pool, { demandaId: d.id, titulo: 'T', conteudo: '<p>x</p>' });
+      const url = montarUrl(entrega.id);
+      await db.pool.query('UPDATE demandas SET entrega_url = $2, status = $3 WHERE id = $1', [d.id, url, 'Concluída']);
+      await salvarRelatorio(db.pool, { ...RELATORIO_BASE, demandaId: d.id, demandaTitulo: titulo, entregaUrl: url });
+      return { demanda: d, entrega, url };
+    }
+
+    const paginas = (id: string) => [`/demandas/${id}`, `/demandas/${id}/dossie`, '/?status=Conclu%C3%ADda', '/relatorios'];
+
+    it('entrega interna real da demanda abre com caminho relativo nas quatro telas', async () => {
+      const { demanda, entrega } = await demandaComLink('Link interno', (id) => `${ORIGEM}/entregas/${id}`);
+      for (const caminho of paginas(demanda.id)) {
+        const r = await get(caminho);
+        expect(r.statusCode, caminho).toBe(200);
+        expect(r.body, caminho).toContain(`href="/entregas/${entrega.id}"`);
+        expect(r.body, caminho).not.toContain(`href="${ORIGEM}/entregas/`);
+      }
+    });
+
+    it('frota.exemplo.com com entrega real da mesma demanda vira link relativo, nunca o host de exemplo', async () => {
+      const { demanda, entrega } = await demandaComLink('Link placeholder', (id) => `https://frota.exemplo.com/entregas/${id}`);
+      for (const caminho of paginas(demanda.id)) {
+        const r = await get(caminho);
+        expect(r.body, caminho).toContain(`href="/entregas/${entrega.id}"`);
+        expect(r.body, caminho).not.toContain('href="https://frota.exemplo.com');
+      }
+    });
+
+    it('UUID de entrega de outra demanda nunca aparece como link, nem com a origem configurada', async () => {
+      const outra = await demandaComLink('Dona da entrega', (id) => `${ORIGEM}/entregas/${id}`);
+      for (const host of ['https://frota.exemplo.com', ORIGEM]) {
+        const d = await criarDemanda(db.pool, { titulo: `Link alheio ${host}`, categoria: 'd1' });
+        const url = `${host}/entregas/${outra.entrega.id}`;
+        await db.pool.query('UPDATE demandas SET entrega_url = $2 WHERE id = $1', [d.id, url]);
+        await salvarRelatorio(db.pool, { ...RELATORIO_BASE, demandaId: d.id, demandaTitulo: d.titulo, entregaUrl: url });
+
+        for (const caminho of [`/demandas/${d.id}`, `/demandas/${d.id}/dossie`]) {
+          const r = await get(caminho);
+          expect(r.body, caminho).not.toContain(`href="/entregas/${outra.entrega.id}"`);
+          expect(r.body, caminho).not.toContain(`href="${url}"`);
+          expect(r.body, caminho).not.toContain('Abrir entrega');
+          expect(r.body, caminho).toContain('Link de entrega não verificado');
+        }
+      }
+      // Na lista de relatórios, só o relatório da demanda dona tem o link para essa entrega.
+      const lista = await get('/relatorios');
+      expect(lista.body.split(`href="/entregas/${outra.entrega.id}"`)).toHaveLength(2);
+    });
+
+    it('UUID inexistente em entregas nao vira link', async () => {
+      const d = await criarDemanda(db.pool, { titulo: 'Entrega inexistente', categoria: 'd1' });
+      const fantasma = randomUUID();
+      await db.pool.query('UPDATE demandas SET entrega_url = $2 WHERE id = $1', [d.id, `https://frota.exemplo.com/entregas/${fantasma}`]);
+      const r = await get(`/demandas/${d.id}`);
+      expect(r.body).not.toContain(`/entregas/${fantasma}"`);
+      expect(r.body).toContain('Link de entrega não verificado');
+    });
+
+    it('claude.ai continua como artefato externo, com rotulo explicito, nunca "Abrir entrega"', async () => {
+      const url = 'https://claude.ai/artifact/exemplo-legado';
+      const { demanda } = await demandaComLink('Artefato legado', () => url);
+      for (const caminho of [`/demandas/${demanda.id}`, `/demandas/${demanda.id}/dossie`]) {
+        const r = await get(caminho);
+        expect(r.body, caminho).toContain(`href="${url}"`);
+        expect(r.body, caminho).toContain('rel="noopener noreferrer"');
+        expect(r.body, caminho).toContain('Abrir artefato externo (claude.ai)');
+        expect(r.body, caminho).not.toContain('Abrir entrega');
+      }
+    });
+
+    it.each([
+      ['host externo arbitrario', (id: string) => `https://evil.attacker.net/entregas/${id}`],
+      ['javascript:', () => 'javascript:alert(document.cookie)'],
+      ['data:', () => 'data:text/html,<script>alert(1)</script>'],
+      ['protocol-relative', (id: string) => `//evil.attacker.net/entregas/${id}`],
+      ['http de fora', () => 'http://evil.attacker.net/pagina'],
+    ])('%s nao vira link', async (_nome, montarUrl) => {
+      const { demanda } = await demandaComLink(`Link hostil ${_nome}`, montarUrl);
+      for (const caminho of [`/demandas/${demanda.id}`, `/demandas/${demanda.id}/dossie`]) {
+        const r = await get(caminho);
+        expect(r.body, caminho).not.toMatch(/href="(javascript|data|\/\/|https?:\/\/evil)/);
+        expect(r.body, caminho).not.toContain('/entregas/');
+        expect(r.body, caminho).not.toContain('Abrir entrega');
+        expect(r.body, caminho).toContain('Link de entrega não verificado');
+      }
     });
   });
 
@@ -601,7 +711,7 @@ describe('aplicacao HTTP', () => {
 
   describe('limite de requisicoes', () => {
     it('responde 429 depois de exceder o limite por minuto', async () => {
-      const limitado = await criarApp({ pool: db.pool, usuario: USUARIO, senha: SENHA, limitePorMinuto: 5 });
+      const limitado = await criarApp({ pool: db.pool, usuario: USUARIO, senha: SENHA, origemPublica: ORIGEM, limitePorMinuto: 5 });
       const codigos: number[] = [];
       for (let i = 0; i < 8; i++) codigos.push((await limitado.inject({ method: 'GET', url: '/health' })).statusCode);
       expect(codigos.slice(0, 5)).toEqual([200, 200, 200, 200, 200]);
@@ -610,7 +720,7 @@ describe('aplicacao HTTP', () => {
     });
 
     it('conta tambem as tentativas de senha errada, senao o login seria vulneravel a forca bruta', async () => {
-      const limitado = await criarApp({ pool: db.pool, usuario: USUARIO, senha: SENHA, limitePorMinuto: 3 });
+      const limitado = await criarApp({ pool: db.pool, usuario: USUARIO, senha: SENHA, origemPublica: ORIGEM, limitePorMinuto: 3 });
       const errada = { authorization: `Basic ${Buffer.from(`${USUARIO}:tentativa`).toString('base64')}` };
       const codigos: number[] = [];
       for (let i = 0; i < 6; i++) codigos.push((await limitado.inject({ method: 'GET', url: '/', headers: errada })).statusCode);
@@ -619,7 +729,7 @@ describe('aplicacao HTTP', () => {
     });
 
     it('nao confia no X-Forwarded-For: forjar o cabecalho nao escapa do limite', async () => {
-      const limitado = await criarApp({ pool: db.pool, usuario: USUARIO, senha: SENHA, limitePorMinuto: 3 });
+      const limitado = await criarApp({ pool: db.pool, usuario: USUARIO, senha: SENHA, origemPublica: ORIGEM, limitePorMinuto: 3 });
       const codigos: number[] = [];
       for (let i = 0; i < 6; i++) {
         const r = await limitado.inject({ method: 'GET', url: '/', headers: { 'x-forwarded-for': `10.0.0.${i}` } });

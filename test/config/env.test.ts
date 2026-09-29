@@ -1,3 +1,5 @@
+import { readFileSync } from 'node:fs';
+import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { loadConfig } from '../../src/config/env.ts';
 
@@ -5,7 +7,7 @@ const valido = {
   DATABASE_URL: 'postgres://u:p@localhost:5432/frota',
   ANTHROPIC_API_KEY: 'sk-ant-chave-de-teste-0123456789',
   UI_PASSWORD: 'uma-senha-bem-longa-123',
-  PUBLIC_BASE_URL: 'https://frota.exemplo.com/',
+  PUBLIC_BASE_URL: 'https://frota.minhaempresa.com.br/',
 };
 
 describe('loadConfig', () => {
@@ -19,8 +21,51 @@ describe('loadConfig', () => {
     expect(cfg.MODEL_WORK).toBe('claude-sonnet-5');
   });
 
-  it('remove a barra final de PUBLIC_BASE_URL', () => {
-    expect(loadConfig(valido).PUBLIC_BASE_URL).toBe('https://frota.exemplo.com');
+  it('reduz PUBLIC_BASE_URL a origem, sem a barra final', () => {
+    expect(loadConfig(valido).PUBLIC_BASE_URL).toBe('https://frota.minhaempresa.com.br');
+  });
+
+  it.each([
+    'https://frota.exemplo.com',
+    'https://frota.example.invalid',
+    'https://example.com',
+    'https://app.example.net',
+    'https://frota.test',
+    'http://frota.minhaempresa.com.br',
+    'https://frota.minhaempresa.com.br/app',
+    'https://frota.minhaempresa.com.br/?x=1',
+    'https://frota.minhaempresa.com.br/#x',
+  ])('rejeita PUBLIC_BASE_URL placeholder, reservada ou que nao seja origem https pura: %s', (url) => {
+    let mensagem = '';
+    try {
+      loadConfig({ ...valido, PUBLIC_BASE_URL: url });
+    } catch (e) {
+      mensagem = (e as Error).message;
+    }
+    expect(mensagem).toMatch(/PUBLIC_BASE_URL/);
+    expect(mensagem).not.toContain(url);
+  });
+
+  it('nao vaza credenciais embutidas em PUBLIC_BASE_URL', () => {
+    let mensagem = '';
+    try {
+      loadConfig({ ...valido, PUBLIC_BASE_URL: 'https://admin:senha-secreta@frota.minhaempresa.com.br' });
+    } catch (e) {
+      mensagem = (e as Error).message;
+    }
+    expect(mensagem).toMatch(/PUBLIC_BASE_URL/);
+    expect(mensagem).not.toContain('senha-secreta');
+  });
+
+  it.each(['http://localhost:3000', 'http://127.0.0.1:3000', 'http://[::1]:3000'])('aceita desenvolvimento local em %s', (url) => {
+    expect(loadConfig({ ...valido, PUBLIC_BASE_URL: url }).PUBLIC_BASE_URL).toBe(url);
+  });
+
+  it('recusa o PUBLIC_BASE_URL do .env.example: copiar o exemplo sem editar nao sobe o servico', () => {
+    const exemplo = readFileSync(path.join(import.meta.dirname, '../../.env.example'), 'utf8');
+    const linha = exemplo.split('\n').find((l) => l.startsWith('PUBLIC_BASE_URL='));
+    expect(linha).toBeDefined();
+    expect(() => loadConfig({ ...valido, PUBLIC_BASE_URL: linha!.slice('PUBLIC_BASE_URL='.length).trim() })).toThrowError(/PUBLIC_BASE_URL/);
   });
 
   it('converte numeros vindos como texto', () => {

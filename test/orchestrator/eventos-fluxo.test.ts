@@ -48,7 +48,7 @@ describe('ledger de eventos no fluxo real (processarFila)', () => {
       llm: new LlmFalso(responder, USO_PADRAO),
       modeloTrabalho: 'claude-sonnet-5',
       modeloAuditoria: 'claude-sonnet-5',
-      urlBase: 'https://frota.exemplo.com',
+      urlBase: 'https://frota.minhaempresa.com.br',
       notificador: new NotificadorMemoria(),
       maxDemandasPorRun: max,
       minutosAbandono: 60,

@@ -195,3 +195,14 @@ function mapearEntrega(l: LinhaEntrega): Entrega {
     criadoEm: l.criado_em.toISOString(),
   };
 }
+
+// Só id e demanda de cada entrega, nunca o conteúdo: é o que a UI precisa para confirmar que um link
+// aponta para uma entrega real da mesma demanda (ver src/http/ui/links-entrega.ts).
+export async function listarDonosDeEntregas(db: Db, ids: readonly string[]): Promise<Map<string, string>> {
+  if (ids.length === 0) return new Map();
+  const { rows } = await db.query<{ id: string; demanda_id: string }>(
+    'SELECT id, demanda_id FROM entregas WHERE id = ANY($1::uuid[])',
+    [[...new Set(ids)]],
+  );
+  return new Map(rows.map((l) => [l.id, l.demanda_id]));
+}
