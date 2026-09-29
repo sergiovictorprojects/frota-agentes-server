@@ -2,7 +2,7 @@
 
 ## Status
 
-Entrega 3.2a implementada na branch `fase-3/execucao-tarefas-base`, em PR draft. Ela não liga nada: a flag
+Entrega 3.2a implementada na branch `fase-3/execucao-tarefas-base`, na PR draft #11. Ela não liga nada: a flag
 `ORQUESTRACAO_TAREFAS` continua aceitando só `desligada` e `planejar`, nenhuma chamada nova ao modelo existe e os
 repositórios novos só são chamados pelos testes. A entrega 3.2b (liga a orquestração, a flag `executar`, o prompt
 serializado, os timeouts, a interface de autorização e o script de verificação de rollback) exige aprovação própria.
@@ -48,7 +48,7 @@ esta traz o banco, os repositórios e as funções puras, testados, sem mudar o 
    | `em_execucao` | `pronta` | Ainda há tentativa e o plano está ativo. O snapshot é limpo |
    | `em_execucao` | `falhou` | Código fechado, nunca `contexto_excedido`. No `COMMIT`, o plano abandonado por `tarefa_falhou` |
    | `pronta` | `falhou` | Só `contexto_excedido`, com o plano abandonado por `tarefa_falhou` na mesma transação. Sem snapshot |
-   | `pendente`, `pronta`, `em_execucao` | `cancelada` | Plano já abandonado na mesma transação. Sem claim, sem snapshot |
+   | `pendente`, `pronta`, `em_execucao` | `cancelada` | Plano já abandonado na mesma transação. De `pendente` ou `pronta`, sem claim, fica sem snapshot; de `em_execucao`, o snapshot fica |
 
    A tentativa nunca desce e só sobe no registro de envio, nunca no claim. Em toda saída de `em_execucao`, o gatilho
    limpa `claim_id`, `lease_token` e `lease_expira_em`, então nenhum caminho os esquece; cada repositório devolve o
@@ -94,7 +94,8 @@ esta traz o banco, os repositórios e as funções puras, testados, sem mudar o 
      reserva ter sido retida, reconhecida ou cancelada grava o custo real mesmo assim e liga o passo à reserva, uma
      única vez, como passo tardio, sem mudar o estado dela: a demanda conta os dois, o lado seguro. Liquidar de novo
      uma reserva que já tem passo, liquidada ou tardio, devolve o passo gravado, sem contar o gasto duas vezes; o
-     passo ligado nunca muda.
+     passo ligado nunca muda. Duas liquidações concorrentes da mesma reserva ficam em série no lock dela, e a
+     segunda devolve o passo da primeira.
    - **Cancelar e reter nunca criam `agent_steps`**: erro sem uso não gera passo artificial.
    - **Autorização** (`autorizacoes_custo`, append-only): de US$ 0,50 a 5,00 no Zod e no banco, só para demanda
      bloqueada, com `limite_anterior_usd` conferido sob lock contra o limite atual e `limite_novo_usd` igual ao
