@@ -63,7 +63,12 @@ type Checkpoint = (texto: string, agente: string | null) => Promise<void>;
 // Sem parâmetro de resumo: registrarEvento sempre usa o texto fixo do tipo (RESUMOS_POR_TIPO em
 // src/db/eventos.ts), nunca texto vindo da demanda, do modelo ou de um erro. metadata é validada pelo
 // schema exato do tipo — só aceita ids, enums, contagens, flags, setor, status e códigos classificados.
-export type EmitirEvento = (tipo: TipoEvento, ator: string, metadata?: Record<string, unknown>) => Promise<void>;
+export type EmitirEvento = (
+  tipo: TipoEvento,
+  ator: string,
+  metadata?: Record<string, unknown>,
+  tarefaId?: string | null,
+) => Promise<void>;
 
 export interface OpcoesEmissor {
   // Identidade imutável desta execução: o run_id quando existe uma run, ou um UUID gerado uma única vez
@@ -77,12 +82,25 @@ export interface OpcoesEmissor {
 
 export function criarEmissor(pool: pg.Pool, demandaId: string, opcoes: OpcoesEmissor): EmitirEvento {
   const { correlacaoId, runId, tentativa } = opcoes;
-  return async (tipoEvento, ator, metadata) => {
-    // Cada tipo de evento acontece no máximo uma vez por (demanda, correlacaoId) — os pontos de emissão
-    // são ramos mutuamente exclusivos do fluxo — então o próprio tipo já basta como discriminador.
-    const chaveIdempotencia = montarChaveIdempotencia(correlacaoId, tipoEvento);
+  return async (tipoEvento, ator, metadata, tarefaId) => {
+    // No fluxo legado cada tipo basta como discriminador. Eventos de tarefas podem ocorrer várias vezes na
+    // mesma run (uma por tarefa e claim), então a tarefa e o claim entram na chave sem jamais carregarem
+    // conteúdo livre.
+    const claim = metadata && typeof metadata.claimId === 'string' ? metadata.claimId : '';
+    const discriminador = tarefaId ? `${tipoEvento}|${tarefaId}|${claim}` : tipoEvento;
+    const chaveIdempotencia = montarChaveIdempotencia(correlacaoId, discriminador);
     try {
-      await registrarEvento(pool, { demandaId, correlacaoId, runId, tentativa, tipoEvento, ator, chaveIdempotencia, metadata });
+      await registrarEvento(pool, {
+        demandaId,
+        correlacaoId,
+        runId,
+        tentativa,
+        tipoEvento,
+        ator,
+        chaveIdempotencia,
+        metadata,
+        tarefaId,
+      });
     } catch (erro) {
       log('erro', 'erro_evento_ledger', { demandaId, tipoEvento, erro: mensagemDeErro(erro) });
     }

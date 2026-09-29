@@ -237,6 +237,28 @@ export async function registrarPlanoExecucao(
   return comTransacao(pool, (cliente) => gravarPlano(cliente, { ...p, modo: 'execucao' }));
 }
 
+// Caminho da 3.2b: registrar e ativar o plano na mesma transação curta. Isso evita um plano em execução
+// órfão caso o processo caia entre os dois passos; nenhuma chamada ao modelo acontece dentro desta transação.
+export async function registrarEAtivarPlanoExecucao(
+  pool: pg.Pool,
+  p: { demandaId: string; runId: string | null; tarefas: readonly TarefaPlanejadaExecucao[] },
+): Promise<PlanoGravado & { ativado: true; tarefasProntas: number }> {
+  return comTransacao(pool, async (cliente) => {
+    const plano = await gravarPlano(cliente, { ...p, modo: 'execucao' });
+    await cliente.query("UPDATE planos_demanda SET estado = 'ativo' WHERE id = $1 AND estado = 'registrado'", [plano.id]);
+    const { rowCount } = await cliente.query(
+      `UPDATE tarefas t SET estado = 'pronta'
+        WHERE t.plano_id = $1 AND t.estado = 'pendente'
+          AND NOT EXISTS (
+            SELECT 1 FROM tarefas_dependencias td JOIN tarefas d ON d.id = td.depende_de_id
+             WHERE td.tarefa_id = t.id AND d.estado <> 'concluida'
+          )`,
+      [plano.id],
+    );
+    return { ...plano, ativado: true as const, tarefasProntas: rowCount ?? 0 };
+  });
+}
+
 async function gravarPlano(
   cliente: pg.PoolClient,
   p: { demandaId: string; runId: string | null; modo: ModoPlano; tarefas: readonly TarefaPlanejadaExecucao[] },

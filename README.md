@@ -21,6 +21,16 @@ relógio interno (pg-boss, dentro do Postgres)
 - **Entregas:** `/entregas/<uuid>` abre sem senha (o UUID é o segredo). A página é uma moldura com o aviso "conteúdo gerado por IA", e o HTML do modelo roda dentro dela num iframe em sandbox: sem rede, sem cookies do site e sem poder navegar a página principal. Na interface, "Abrir entrega" só aparece quando a entrega existe na tabela `entregas` e é da mesma demanda; links antigos de artefato do `claude.ai` aparecem como artefato externo, e qualquer outro link fica como "não verificado" (ver `docs/adr/0005-links-de-entrega-verificados.md`).
 - **Saúde:** `GET /health` (sem senha) informa se o banco responde, se a frota está pausada e a última execução.
 
+## Execução por tarefas
+
+As migrations 005 e 006 já sustentam planos, tarefas, artefatos, leases e reservas de custo. O motor sequencial
+da 3.2b-1 existe em `src/orchestrator/execucao-tarefas.ts`, mas permanece interno e inerte: a variável
+`ORQUESTRACAO_TAREFAS` ainda aceita somente `desligada` e `planejar`. A ativação pública, a categoria piloto e a
+interface de autorização ficam para a 3.2b-2. Ver `docs/adr/0008-execucao-sequencial-inerte-e-capacidades.md`.
+
+O catálogo expõe capacidades fechadas de artefatos: executores podem produzir artefatos intermediários em texto
+ou JSON; somente o coordenador pode publicar a entrega final; auditor e avaliador não geram artefatos.
+
 ## Rodando localmente
 
 Requer Node 24 e um Postgres 14+.

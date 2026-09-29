@@ -1,6 +1,7 @@
 import type pg from 'pg';
 import { z } from 'zod';
 import { CATEGORIAS, SETORES, type Categoria } from '../domain/setores.ts';
+import { capacidadesDoAgente, type CapacidadesAgente } from '../domain/capacidades-agentes.ts';
 
 export const PAPEIS_AGENTE = ['coordenador', 'executor', 'avaliador', 'auditor'] as const;
 export type PapelAgente = (typeof PAPEIS_AGENTE)[number];
@@ -19,6 +20,7 @@ export interface Agente {
   versao: number;
   modeloPermitido: string;
   politicaRef: string | null;
+  capacidades: CapacidadesAgente;
   criadoEm: string;
   atualizadoEm: string;
 }
@@ -43,6 +45,13 @@ const AgenteSchema = z.object({
   versao: z.number().int().positive(),
   modeloPermitido: z.string().min(1).max(100),
   politicaRef: z.string().regex(POLITICA_REF_RE).nullable(),
+  capacidades: z.object({
+    gerarArtefatos: z.array(z.enum(['texto', 'json'])),
+    publicarArtefatos: z.boolean(),
+    lerAnexos: z.boolean(),
+    maxArtefatosPorDemanda: z.number().int().nonnegative(),
+    maxBytesPorArtefato: z.number().int().nonnegative(),
+  }),
   criadoEm: z.string(),
   atualizadoEm: z.string(),
 });
@@ -77,6 +86,7 @@ function mapear(l: Linha): Agente {
     versao: l.versao,
     modeloPermitido: l.modelo_permitido,
     politicaRef: l.politica_ref,
+    capacidades: capacidadesDoAgente({ papel: l.papel as PapelAgente }),
     criadoEm: l.criado_em.toISOString(),
     atualizadoEm: l.atualizado_em.toISOString(),
   });

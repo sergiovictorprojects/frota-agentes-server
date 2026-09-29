@@ -54,6 +54,71 @@ export type ResultadoClaim =
   | { reivindicada: false; motivo: 'sem_tarefa_pronta' }
   | { reivindicada: false; motivo: 'agente_indisponivel'; tarefaId: string };
 
+async function reivindicarTarefaEmTransacao(cliente: pg.PoolClient, tarefaId: string): Promise<ResultadoClaim> {
+  const { rows: prontas } = await cliente.query<{ id: string; capacidade: string }>(
+    `SELECT t.id, t.capacidade
+       FROM tarefas t JOIN planos_demanda p ON p.id = t.plano_id
+      WHERE t.id = $1 AND t.estado = 'pronta' AND p.estado = 'ativo'
+      FOR UPDATE OF t`,
+    [tarefaId],
+  );
+  const pronta = prontas[0];
+  if (!pronta) return { reivindicada: false, motivo: 'sem_tarefa_pronta' };
+
+  const { rows: agentes } = await cliente.query<{ chave: string; versao: number; papel: SnapshotAgente['papel']; modelo_permitido: string }>(
+    `SELECT chave, versao, papel, modelo_permitido FROM agentes
+      WHERE categoria = $1 AND estado = 'ativo' AND papel IN ('coordenador','executor')
+      ORDER BY chave COLLATE "C"
+      LIMIT 1
+      FOR SHARE`,
+    [pronta.capacidade],
+  );
+  const agente = agentes[0];
+  if (!agente) return { reivindicada: false, motivo: 'agente_indisponivel', tarefaId: pronta.id };
+
+  const { rows } = await cliente.query<{
+    id: string;
+    plano_id: string;
+    chave: string;
+    tipo: TipoTarefa;
+    capacidade: string;
+    claim_id: string;
+    lease_token: string;
+    lease_expira_em: Date;
+    tentativas: number;
+    max_tentativas: number;
+    timeout_segundos: number;
+  }>(
+    `UPDATE tarefas
+        SET estado = 'em_execucao', agente_chave = $2, agente_versao = $3, agente_papel = $4, modelo = $5,
+            lease_expira_em = now() + make_interval(secs => timeout_segundos + $6)
+      WHERE id = $1
+      RETURNING id, plano_id, chave, tipo, capacidade, claim_id, lease_token, lease_expira_em, tentativas, max_tentativas,
+                timeout_segundos`,
+    [pronta.id, agente.chave, agente.versao, agente.papel, agente.modelo_permitido, MARGEM_LEASE_SEGUNDOS],
+  );
+  const t = rows[0]!;
+  const { rows: plano } = await cliente.query<{ demanda_id: string }>('SELECT demanda_id FROM planos_demanda WHERE id = $1', [t.plano_id]);
+  return {
+    reivindicada: true,
+    tarefa: {
+      id: t.id,
+      planoId: t.plano_id,
+      demandaId: plano[0]!.demanda_id,
+      chave: t.chave,
+      tipo: t.tipo,
+      capacidade: t.capacidade,
+      claimId: t.claim_id,
+      leaseToken: t.lease_token,
+      leaseExpiraEm: t.lease_expira_em.toISOString(),
+      tentativas: t.tentativas,
+      maxTentativas: t.max_tentativas,
+      timeoutSegundos: t.timeout_segundos,
+      agente: { chave: agente.chave, versao: agente.versao, papel: agente.papel, modelo: agente.modelo_permitido },
+    },
+  };
+}
+
 // Ativa um plano registrado em modo execução e libera as tarefas sem dependência, numa transação. O banco
 // confere a forma do plano (uma integração, de 1 a 3 especialistas com objetivo, aresta da integração para cada
 // especialista) e o envelope na rota tarefas. Devolve ativado false se o plano não estava registrado.
@@ -186,6 +251,28 @@ export async function reivindicarProximaTarefa(pool: pg.Pool, planoId: string): 
       },
     };
   });
+}
+
+// Variante usada pelo motor depois de montar o prompt para uma tarefa específica. O prompt é montado antes
+// do claim, e esta função reivindica exatamente a linha lida; se outro worker a ganhou nesse intervalo, o
+// resultado é descartado e o laço pode selecionar novamente.
+export async function reivindicarTarefa(pool: pg.Pool, tarefaId: string): Promise<ResultadoClaim> {
+  return comTransacao(pool, (cliente) => reivindicarTarefaEmTransacao(cliente, tarefaId));
+}
+
+export async function obterProximaTarefaPronta(
+  db: Db,
+  planoId: string,
+): Promise<{ id: string; tipo: TipoTarefa; capacidade: string } | null> {
+  const { rows } = await db.query<{ id: string; tipo: TipoTarefa; capacidade: string }>(
+    `SELECT t.id, t.tipo, t.capacidade
+       FROM tarefas t JOIN planos_demanda p ON p.id = t.plano_id
+      WHERE t.plano_id = $1 AND t.estado = 'pronta' AND p.estado = 'ativo'
+      ORDER BY t.chave COLLATE "C"
+      LIMIT 1`,
+    [planoId],
+  );
+  return rows[0] ?? null;
 }
 
 export type ResultadoEnvio =
@@ -342,6 +429,33 @@ export async function falharTentativa(
     }
     const abandono = await abandonarPorFalha(cliente, plano.planoId);
     return { registrada: true, claimId: l.claim_id, tentativa: l.tentativas, destino: 'falhou', definitiva: true, abandono };
+  });
+}
+
+// Caminho da 3.2b-1, que declara maxRetries: 0 para chamadas com envelope. A tarefa falha definitivamente
+// na primeira resposta classificável, sem passar por pronta para depois ser cancelada; isso mantém o estado
+// persistido coerente com o evento tarefa_falhou e com o abandono do plano.
+export async function falharTarefaDefinitivamente(
+  pool: pg.Pool,
+  p: { tarefaId: string; leaseToken: string; codigoErro: Exclude<CodigoErroTarefa, 'contexto_excedido'> },
+): Promise<ResultadoFalhaTentativa | { registrada: false }> {
+  return comTransacao(pool, async (cliente) => {
+    const plano = await travarPlanoDaTarefa(cliente, p.tarefaId);
+    if (!plano) return { registrada: false };
+    const { rows } = await cliente.query<{ claim_id: string; tentativas: number }>(
+      `WITH antes AS (
+         SELECT id, claim_id, tentativas FROM tarefas
+          WHERE id = $1 AND lease_token = $2 AND estado = 'em_execucao' AND enviada_em IS NOT NULL
+          FOR UPDATE
+       )
+       UPDATE tarefas t SET estado = 'falhou', codigo_erro = $3 FROM antes
+        WHERE t.id = antes.id RETURNING antes.claim_id, antes.tentativas`,
+      [p.tarefaId, p.leaseToken, p.codigoErro],
+    );
+    const t = rows[0];
+    if (!t) return { registrada: false };
+    const abandono = await abandonarPorFalha(cliente, plano.planoId);
+    return { registrada: true, claimId: t.claim_id, tentativa: t.tentativas, destino: 'falhou', definitiva: true, abandono };
   });
 }
 
