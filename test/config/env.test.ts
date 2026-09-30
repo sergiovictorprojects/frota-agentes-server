@@ -71,10 +71,22 @@ describe('loadConfig', () => {
   it('deixa a orquestracao por tarefas desligada por padrao e aceita so os modos conhecidos', () => {
     expect(loadConfig(valido).ORQUESTRACAO_TAREFAS).toBe('desligada');
     expect(loadConfig({ ...valido, ORQUESTRACAO_TAREFAS: 'planejar' }).ORQUESTRACAO_TAREFAS).toBe('planejar');
-    // "executar" é da entrega 3.2 e ainda não existe: aceitar o valor ligaria algo que o código não faz.
-    for (const invalido of ['executar', 'PLANEJAR', 'ligada']) {
+    expect(loadConfig({ ...valido, ORQUESTRACAO_TAREFAS: 'executar', ORQUESTRACAO_CATEGORIA: 'd11' })).toMatchObject({
+      ORQUESTRACAO_TAREFAS: 'executar',
+      ORQUESTRACAO_CATEGORIA: 'd11',
+      ORQUESTRACAO_CUSTO_MAX_USD: 2,
+    });
+    for (const invalido of ['PLANEJAR', 'ligada']) {
       expect(() => loadConfig({ ...valido, ORQUESTRACAO_TAREFAS: invalido })).toThrow(/ORQUESTRACAO_TAREFAS/);
     }
+  });
+
+  it('executar exige categoria piloto explícita e isolada', () => {
+    expect(() => loadConfig({ ...valido, ORQUESTRACAO_TAREFAS: 'executar' })).toThrow(/ORQUESTRACAO_CATEGORIA/);
+    expect(() => loadConfig({ ...valido, ORQUESTRACAO_TAREFAS: 'planejar', ORQUESTRACAO_CATEGORIA: 'd11' })).toThrow(/ORQUESTRACAO_CATEGORIA/);
+    expect(() =>
+      loadConfig({ ...valido, ORQUESTRACAO_TAREFAS: 'executar', ORQUESTRACAO_CATEGORIA: 'd11', ORQUESTRACAO_CUSTO_MAX_USD: '21' }),
+    ).toThrow(/ORQUESTRACAO_CUSTO_MAX_USD/);
   });
 
   it('converte numeros vindos como texto', () => {
