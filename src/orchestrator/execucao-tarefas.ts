@@ -46,6 +46,7 @@ import { ResultadoExecucaoSchema, type ResultadoExecucao } from './schemas.ts';
 import { PrazoRunExcedidoError, criarRelogioRun } from './prazo-run.ts';
 import { comTransacao } from '../db/tx.ts';
 import type { EmitirEvento } from './processar-demanda.ts';
+import { inferirEntregaEsperada, instrucaoEntregaEsperada, mensagemEntregaInvalida, validarResultadoExecucao } from './validacao-entrega.ts';
 
 // A interface fica separada de Llm para tornar explícito que o motor nunca pode usar o caminho legado de
 // LlmComOrcamento: uma chamada com envelope precisa liquidar a reserva, não gravar um segundo agent_step.
@@ -92,6 +93,7 @@ function construirArtefatos(
   sistema: string,
   schema: object,
   integracao = false,
+  instrucaoEntrega?: string | null,
 ): { usuario: string; medida: ReturnType<typeof medirEntrada>; artefatosIntegrais: number; artefatosSoResumo: number; conversaOmitida: number } | null {
   const resultado = reduzirParaCaber({
     modelo,
@@ -114,6 +116,7 @@ function construirArtefatos(
             conversaOmitida,
             tarefas: tarefasDoPlano,
             artefatos: reduzidos,
+            instrucaoEntrega,
           })
         : usuarioEspecialistaTarefa({
             demanda,
@@ -237,6 +240,8 @@ async function registrarPlano(d: DependenciasExecucaoTarefas): Promise<PlanoGrav
 
 export async function processarExecucaoSequencial(d: DependenciasExecucaoTarefas): Promise<ResultadoExecucaoTarefas> {
   const relogio = criarRelogioRun(d.agoraMonotono);
+  const entregaEsperada = inferirEntregaEsperada(d.demanda, SETORES[d.demanda.categoria]);
+  const instrucaoEntrega = instrucaoEntregaEsperada(entregaEsperada);
   await criarEnvelope(d.pool, { demandaId: d.demanda.id, tetoBaseUsd: d.tetoBaseUsd ?? TETO_BASE_PADRAO });
   await d.emitir('rota_definida', 'sistema', { rota: 'tarefas', motivoRota: 'categoria_ligada' });
   let plano: PlanoGravado;
@@ -269,7 +274,18 @@ export async function processarExecucaoSequencial(d: DependenciasExecucaoTarefas
     const tarefaPrompt = { chave: linha.chave, objetivo: linha.objetivo ?? 'Integrar o resultado das tarefas concluídas.' };
     const sistema = linha.tipo === 'integracao' ? sistemaIntegracao() : sistemaEspecialista(SETORES[pronta.capacidade as keyof typeof SETORES]);
     const schema = (linha.tipo === 'integracao' ? ResultadoExecucaoSchema : ArtefatoPropostoSchema) as z.ZodType<unknown>;
-    const prompt = construirArtefatos(d.demanda, d.conversa, tarefaPrompt, objetivosDoPlano, dependencias, d.modeloTrabalho, sistema, schema, linha.tipo === 'integracao');
+    const prompt = construirArtefatos(
+      d.demanda,
+      d.conversa,
+      tarefaPrompt,
+      objetivosDoPlano,
+      dependencias,
+      d.modeloTrabalho,
+      sistema,
+      schema,
+      linha.tipo === 'integracao',
+      linha.tipo === 'integracao' ? instrucaoEntrega : null,
+    );
     if (!prompt) {
       const falha = await falharPorContextoExcedido(d.pool, pronta.id);
       if (falha.registrada) {
@@ -342,6 +358,10 @@ export async function processarExecucaoSequencial(d: DependenciasExecucaoTarefas
         await d.emitir('tarefa_concluida', tarefa.agente.chave, { claimId: tarefa.claimId, tipo: tarefa.tipo, tentativa: envio.tentativa, artefatoId: concluida.artefatoId, bytes: concluida.bytes, totalReferencias: concluida.totalReferencias, referenciasDescartadas: 0, duracaoMs: resposta.duracaoMs }, tarefa.id);
       } else {
         const exec = ResultadoExecucaoSchema.parse(resposta.valor);
+        const validacaoEntrega = validarResultadoExecucao(exec, entregaEsperada);
+        if (!validacaoEntrega.valida) {
+          throw new LlmError('invalido', mensagemEntregaInvalida(validacaoEntrega));
+        }
         const coordenador = await obterAgentePorChave(d.pool, tarefa.agente.chave);
         if (!coordenador) throw new Error('coordenador não encontrado no catálogo');
         const entregaveis = prepararArtefatosEntregaveis(exec.artefatos, coordenador, coordenador);

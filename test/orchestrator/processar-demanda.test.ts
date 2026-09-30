@@ -211,6 +211,69 @@ describe('processarDemanda', () => {
     expect(rota?.metadata).toEqual({ rota: 'legado_fixo', motivoRota: 'rota_fixada' });
   });
 
+  it('recusa briefing textual para demanda de dashboard e tenta corrigir para html interativo', async () => {
+    const demanda = await reivindicada({
+      categoria: 'd11',
+      titulo: 'Dashboard PULSE EVENTS',
+      descricao: 'Construa uma interface interativa com dashboard, filtros e indicadores operacionais.',
+    });
+    const htmlInterativo = `<!doctype html>
+<html lang="pt-BR">
+  <head><meta charset="utf-8"><style>body{font-family:sans-serif}.card{padding:16px}</style></head>
+  <body>
+    <main class="card"><h1>PULSE EVENTS</h1><button id="filtrar">Filtrar eventos</button><output id="resultado">0</output></main>
+    <script>document.getElementById("filtrar").addEventListener("click",()=>{document.getElementById("resultado").textContent="12";});</script>
+  </body>
+</html>`;
+    const llm = new LlmFalso((p, indice) => {
+      if (p.papel === PAPEL_AUDITOR) return auditoriaLimpa;
+      if (indice === 0) {
+        return {
+          ...execucaoPadrao,
+          setoresEnvolvidos: ['d11'],
+          entrega: { tipo: 'texto', titulo: 'Briefing', conteudo: 'Documento com requisitos do dashboard.' },
+        };
+      }
+      return {
+        ...execucaoPadrao,
+        setoresEnvolvidos: ['d11'],
+        entrega: { tipo: 'html', titulo: 'Dashboard PULSE EVENTS', conteudo: htmlInterativo },
+      };
+    });
+
+    const r = await processarDemanda(deps(llm), demanda, randomUUID());
+
+    expect(r.statusFinal).toBe('Concluída');
+    expect(llm.pedidos.map((p) => p.papel)).toEqual(['frota:product-designer', 'frota:product-designer', PAPEL_AUDITOR]);
+    expect(llm.pedidos[0]!.usuario).toContain('Entrega esperada');
+    expect(llm.pedidos[1]!.usuario).toContain('Correção obrigatória da entrega');
+    const entrega = await obterEntrega(db.pool, r.entregaUrl!.split('/').pop()!);
+    expect(entrega?.conteudo).toContain('<script>');
+    expect(entrega?.conteudo).toContain('addEventListener');
+    expect((await listarMensagens(db.pool, demanda.id)).some((m) => m.texto.includes('Entrega rejeitada pela validação'))).toBe(true);
+  });
+
+  it('falha de forma controlada quando demanda de dashboard continua sem html interativo', async () => {
+    const demanda = await reivindicada({
+      categoria: 'd11',
+      titulo: 'Dashboard operacional',
+      descricao: 'Crie uma tela interativa para acompanhar indicadores.',
+    });
+    const llm = llmPadrao({
+      setoresEnvolvidos: ['d11'],
+      entrega: { tipo: 'texto', titulo: 'Briefing', conteudo: 'Resumo textual das telas sugeridas.' },
+    });
+
+    await expect(processarDemanda(deps(llm), demanda, randomUUID())).rejects.toMatchObject({
+      tipo: 'invalido',
+      message: expect.stringContaining('Entrega inválida para demanda interativa'),
+    });
+
+    expect(llm.pedidos.map((p) => p.papel)).toEqual(['frota:product-designer', 'frota:product-designer']);
+    const { rows } = await db.pool.query('SELECT count(*)::int AS total FROM entregas WHERE demanda_id = $1', [demanda.id]);
+    expect(rows[0]).toEqual({ total: 0 });
+  });
+
   it('calcula as metricas a partir das violacoes auditadas, ignorando citacoes sem base', async () => {
     const demanda = await reivindicada();
     const regra = SETORES.d1.regras[0]!;

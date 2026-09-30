@@ -26,10 +26,18 @@ import {
 import { PAPEL_COORDENADOR, planejarEmShadow } from './planejamento.ts';
 import { processarExecucaoSequencial, type LlmComEnvelope } from './execucao-tarefas.ts';
 import { AuditoriaSchema, ResultadoExecucaoSchema, type ResultadoExecucao } from './schemas.ts';
+import {
+  inferirEntregaEsperada,
+  instrucaoEntregaEsperada,
+  mensagemEntregaInvalida,
+  validarResultadoExecucao,
+  type ValidacaoEntrega,
+} from './validacao-entrega.ts';
 
 const MAX_TOKENS_EXECUCAO = 32_000;
 const MAX_TOKENS_AUDITORIA = 4_000;
 const TENTATIVAS_AUDITORIA = 2;
+const TENTATIVAS_VALIDACAO_ENTREGA = 2;
 const PAPEL_AUDITOR = SETORES.d17.papel;
 const PREFIXOS_DE_PEDIDO = ['Ação humana necessária', 'Insumo necessário'];
 
@@ -238,6 +246,43 @@ async function tratarPendencia(
     return { ...base, statusFinal: 'Aguardando insumo' };
   }
   return null;
+}
+
+async function gerarExecucaoValidada(p: {
+  d: DependenciasDemanda;
+  demanda: Demanda;
+  conversa: readonly FalaDaConversa[];
+  setor: (typeof SETORES)[Categoria];
+  capacidades: NonNullable<Awaited<ReturnType<typeof obterAgenteAutorizado>>>['capacidades'];
+  checkpoint: Checkpoint;
+  contexto: { runId: string; demandaId: string };
+}): Promise<ResultadoExecucao> {
+  const entregaEsperada = inferirEntregaEsperada(p.demanda, p.setor);
+  const instrucaoBase = instrucaoEntregaEsperada(entregaEsperada);
+  let instrucaoEntrega: string | null = instrucaoBase;
+  let ultimaInvalidacao: Exclude<ValidacaoEntrega, { valida: true }> | null = null;
+
+  for (let tentativa = 1; tentativa <= TENTATIVAS_VALIDACAO_ENTREGA; tentativa++) {
+    const { valor } = await p.d.llm.gerar({
+      modelo: p.d.modeloTrabalho,
+      papel: p.setor.papel,
+      sistema: sistemaExecucao(p.setor, p.capacidades),
+      usuario: usuarioExecucao(p.demanda, p.conversa, { instrucaoEntrega }),
+      schema: ResultadoExecucaoSchema,
+      maxTokens: MAX_TOKENS_EXECUCAO,
+      contexto: p.contexto,
+    });
+    const validacao = validarResultadoExecucao(valor, entregaEsperada);
+    if (validacao.valida) return valor;
+
+    ultimaInvalidacao = validacao;
+    if (tentativa < TENTATIVAS_VALIDACAO_ENTREGA) {
+      await p.checkpoint(`Entrega rejeitada pela validação: ${validacao.motivo}. Solicitando correção.`, p.setor.papel);
+      instrucaoEntrega = [instrucaoBase, validacao.instrucaoCorrecao].filter(Boolean).join('\n\n');
+    }
+  }
+
+  throw new LlmError('invalido', mensagemEntregaInvalida(ultimaInvalidacao!));
 }
 
 // Se o modelo não separou uma entrega, o resumo vira a entrega: toda demanda concluída tem algo para abrir.
@@ -568,15 +613,15 @@ export async function processarDemanda(d: DependenciasDemanda, demanda: Demanda,
     // mudar seu modelo_permitido.
     const agenteExecucao = await obterAgenteAutorizado(d.pool, setor.papel, d.modeloTrabalho);
     if (!agenteExecucao) throw new AgenteNaoAutorizadoError(setor.papel);
-    ({ valor: exec } = await d.llm.gerar({
-      modelo: d.modeloTrabalho,
-      papel: setor.papel,
-      sistema: sistemaExecucao(setor, agenteExecucao.capacidades),
-      usuario: usuarioExecucao(demanda, conversa),
-      schema: ResultadoExecucaoSchema,
-      maxTokens: MAX_TOKENS_EXECUCAO,
+    exec = await gerarExecucaoValidada({
+      d,
+      demanda,
+      conversa,
+      setor,
+      capacidades: agenteExecucao.capacidades,
+      checkpoint,
       contexto,
-    }));
+    });
   } catch (erro) {
     // Registra o evento e repassa o erro sem alterar em nada o tratamento que processar-fila.ts já faz.
     await emitir('chamada_trabalho_falhou', setor.papel, { codigoErro: codigoDoErro(erro) });
