@@ -9,6 +9,7 @@ import {
   registrarPlanoRejeitado,
   registrarPlanoShadow,
   validarPlano,
+  validarPlanoExecucao,
   type PlanoProposto,
 } from '../../src/db/planos.ts';
 import { createTestDb, type TestDb } from '../helpers/db.ts';
@@ -59,6 +60,33 @@ describe('validarPlano (deterministico, sem modelo)', () => {
     ['ciclo', [tarefa('a', 'd1', ['b']), tarefa('b', 'd2', ['a'])]],
   ] as const)('recusa com motivo %s', (motivo, tarefas) => {
     expect(validarPlano({ tarefas: tarefas.map((t) => ({ ...t, dependeDe: [...t.dependeDe] })) })).toEqual({ valido: false, motivo });
+  });
+});
+
+describe('validarPlanoExecucao', () => {
+  it('normaliza objetivo de especialista antes de validar e gravar', () => {
+    const r = validarPlanoExecucao({
+      tarefas: [
+        {
+          chave: 'design',
+          capacidade: 'd11',
+          objetivo: `Criar <dashboard>\ncom filtros e cards ${'x'.repeat(400)}`,
+          dependeDe: [],
+        },
+      ],
+    });
+
+    expect(r.valido).toBe(true);
+    if (!r.valido) return;
+    const objetivo = r.tarefas.find((t) => t.chave === 'design')!.objetivo!;
+    expect(objetivo).not.toMatch(/[<>\n\r\t]/);
+    expect([...objetivo].length).toBeLessThanOrEqual(300);
+  });
+
+  it('continua rejeitando objetivo vazio depois da normalizacao', () => {
+    expect(
+      validarPlanoExecucao({ tarefas: [{ chave: 'design', capacidade: 'd11', objetivo: '<>\n\t', dependeDe: [] }] }),
+    ).toEqual({ valido: false, motivo: 'objetivo_invalido' });
   });
 });
 

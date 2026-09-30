@@ -75,6 +75,16 @@ export interface ResultadoExecucaoTarefas {
   duracaoMs: number;
 }
 
+export class RotaLegadoFixadaError extends Error {
+  readonly motivoLegado: 'plano_rejeitado' | 'planejamento_falhou' | 'tarefa_falhou' | 'agente_indisponivel';
+
+  constructor(motivoLegado: RotaLegadoFixadaError['motivoLegado'], mensagem: string) {
+    super(mensagem);
+    this.name = 'RotaLegadoFixadaError';
+    this.motivoLegado = motivoLegado;
+  }
+}
+
 const MAX_TOKENS_PLANEJAMENTO = 2_000;
 const MAX_TOKENS_TAREFA = 32_000;
 const TETO_BASE_PADRAO = '2.00';
@@ -191,6 +201,16 @@ async function falharEAbandonar(
   });
 }
 
+async function abandonarParaLegadoPorTarefa(
+  d: DependenciasExecucaoTarefas,
+  tarefa: TarefaReivindicada,
+  codigo: Parameters<typeof falharTarefaDefinitivamente>[1]['codigoErro'],
+): Promise<never> {
+  await falharEAbandonar(d, tarefa, codigo);
+  await fixarRotaLegado(d.pool, { demandaId: d.demanda.id, motivo: 'tarefa_falhou' });
+  throw new RotaLegadoFixadaError('tarefa_falhou', `Tarefa falhou: ${codigo}`);
+}
+
 async function bloquearDemandaPorCusto(d: DependenciasExecucaoTarefas, tarefa: TarefaReivindicada): Promise<void> {
   await comTransacao(d.pool, async (cliente) => {
     await desistirDoClaimComDb(cliente, tarefa);
@@ -230,7 +250,7 @@ async function registrarPlano(d: DependenciasExecucaoTarefas): Promise<PlanoGrav
     const rejeitado = await registrarPlanoRejeitado(d.pool, { demandaId: d.demanda.id, runId: d.runId, motivo: validacao.motivo, modo: 'execucao' });
     await d.emitir('plano_rejeitado', 'frota:gestores', { planoId: rejeitado.id, versao: rejeitado.versao, motivoRejeicao: validacao.motivo });
     await fixarRotaLegado(d.pool, { demandaId: d.demanda.id, motivo: 'plano_rejeitado' });
-    throw new Error(`Plano rejeitado: ${validacao.motivo}`);
+    throw new RotaLegadoFixadaError('plano_rejeitado', `Plano rejeitado: ${validacao.motivo}`);
   }
   const plano = await registrarEAtivarPlanoExecucao(d.pool, { demandaId: d.demanda.id, runId: d.runId, tarefas: validacao.tarefas });
   await d.emitir('plano_registrado', 'frota:gestores', { planoId: plano.id, versao: plano.versao, modo: 'execucao', totalTarefas: plano.totalTarefas, totalDependencias: plano.totalDependencias });
@@ -302,7 +322,8 @@ export async function processarExecucaoSequencial(d: DependenciasExecucaoTarefas
         if (abandono.abandonado) {
           await d.emitir('plano_abandonado', 'sistema', { planoId: plano.id, versao: abandono.versao, motivoAbandono: 'agente_indisponivel', tarefasCanceladas: abandono.tarefasCanceladas });
         }
-        throw new Error('agente_indisponivel');
+        await fixarRotaLegado(d.pool, { demandaId: d.demanda.id, motivo: 'agente_indisponivel' });
+        throw new RotaLegadoFixadaError('agente_indisponivel', 'Agente indisponível para a tarefa.');
       }
       continue;
     }
@@ -346,8 +367,12 @@ export async function processarExecucaoSequencial(d: DependenciasExecucaoTarefas
       );
       if (linha.tipo === 'especialista') {
         const validacao = validarArtefato(ArtefatoPropostoSchema.parse(resposta.valor), 'especialista', new Set(dependencias.map((x) => x.tarefaId)));
-        if (!validacao.valido || !agentePodeGerarArtefatoIntermediario({ papel: tarefa.agente.papel, estado: 'ativo' }, validacao.valido ? validacao.artefato.formato : 'texto')) {
-          await falharEAbandonar(d, tarefa, 'artefato_invalido');
+        if (!validacao.valido) {
+          await abandonarParaLegadoPorTarefa(d, tarefa, 'artefato_invalido');
+          throw new Error('artefato_invalido');
+        }
+        if (!agentePodeGerarArtefatoIntermediario({ papel: tarefa.agente.papel, estado: 'ativo' }, validacao.artefato.formato)) {
+          await abandonarParaLegadoPorTarefa(d, tarefa, 'artefato_invalido');
           throw new Error('artefato_invalido');
         }
         const concluida = await concluirTarefaEspecialista(d.pool, { tarefaId: tarefa.id, leaseToken: tarefa.leaseToken, artefato: validacao.artefato });
@@ -393,7 +418,8 @@ export async function processarExecucaoSequencial(d: DependenciasExecucaoTarefas
       }
       await avaliarTarefa(d, tarefa, 'post');
     } catch (erro) {
-      if (erro instanceof Error && ['artefato_invalido', 'contexto_excedido'].includes(erro.message)) throw erro;
+      if (erro instanceof RotaLegadoFixadaError) throw erro;
+      if (erro instanceof Error && erro.message === 'contexto_excedido') throw erro;
       // Falhas de infraestrutura, timeout e prazo não fixam a rota nesta execução: a reserva permanece
       // retida quando necessário e o watchdog/uma retomada futura decide o próximo passo. Só falhas de
       // conteúdo classificáveis (recusa, truncamento, schema inválido ou status HTTP determinístico)
@@ -406,8 +432,7 @@ export async function processarExecucaoSequencial(d: DependenciasExecucaoTarefas
         throw erro;
       }
       const codigo = tipoErroTarefa(erro);
-      await falharEAbandonar(d, tarefa, codigo);
-      throw erro;
+      await abandonarParaLegadoPorTarefa(d, tarefa, codigo);
     }
   }
   if (!resultadoIntegracao || !entregaId) throw new Error('Plano terminou sem tarefa de integração concluída.');

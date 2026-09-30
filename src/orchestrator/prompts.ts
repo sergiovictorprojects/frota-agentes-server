@@ -127,6 +127,7 @@ export function sistemaPlanejamentoExecucao(): string {
   return `${sistemaPlanejamento()}
 
 Esta é uma execução real sequencial. Para cada tarefa, preencha também "objetivo" com uma instrução curta e específica do trabalho, sem segredos, sem XML/HTML e sem delegar para outra tarefa.
+Regras obrigatórias para "objetivo": uma única frase em texto puro, até 300 caracteres, sem quebras de linha, sem tabulação, sem <, sem >, sem markdown/HTML/XML e sem copiar a especificação inteira da demanda.
 Especialidades disponíveis:
 ${especialidades}`;
 }

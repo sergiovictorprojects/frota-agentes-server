@@ -147,6 +147,15 @@ function temCiclo(tarefas: PlanoProposto['tarefas']): boolean {
 export const LIMITE_OBJETIVO = 300;
 const SINAL_DE_TAG_RE = /[<>]/;
 
+export function normalizarObjetivoExecucao(objetivo: string): string {
+  const limpo = objetivo
+    .replace(CARACTERE_DE_CONTROLE_RE, ' ')
+    .replace(SINAL_DE_TAG_RE, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+  return [...limpo].slice(0, LIMITE_OBJETIVO).join('').trim();
+}
+
 export function objetivoValido(objetivo: string): boolean {
   const n = comprimento(objetivo);
   return (
@@ -186,12 +195,16 @@ export type ValidacaoPlanoExecucao =
 
 // Mesmas regras de validarPlano, na mesma ordem, e depois os objetivos. Determinística.
 export function validarPlanoExecucao(proposta: PlanoExecucaoProposto): ValidacaoPlanoExecucao {
+  const tarefasComObjetivoNormalizado = proposta.tarefas.map((t) => ({
+    ...t,
+    objetivo: normalizarObjetivoExecucao(t.objetivo),
+  }));
   const estrutura = validarPlano({
-    tarefas: proposta.tarefas.map((t) => ({ chave: t.chave, capacidade: t.capacidade, dependeDe: t.dependeDe })),
+    tarefas: tarefasComObjetivoNormalizado.map((t) => ({ chave: t.chave, capacidade: t.capacidade, dependeDe: t.dependeDe })),
   });
   if (!estrutura.valido) return estrutura;
-  if (proposta.tarefas.some((t) => !objetivoValido(t.objetivo))) return { valido: false, motivo: 'objetivo_invalido' };
-  const objetivos = new Map(proposta.tarefas.map((t) => [t.chave, t.objetivo]));
+  if (tarefasComObjetivoNormalizado.some((t) => !objetivoValido(t.objetivo))) return { valido: false, motivo: 'objetivo_invalido' };
+  const objetivos = new Map(tarefasComObjetivoNormalizado.map((t) => [t.chave, t.objetivo]));
   return {
     valido: true,
     tarefas: estrutura.tarefas.map((t) => ({ ...t, objetivo: t.tipo === 'especialista' ? objetivos.get(t.chave)! : null })),

@@ -211,6 +211,103 @@ describe('processarDemanda', () => {
     expect(rota?.metadata).toEqual({ rota: 'legado_fixo', motivoRota: 'rota_fixada' });
   });
 
+  it('executar: plano rejeitado fixa legado e continua pela rota legado na mesma tentativa', async () => {
+    const demanda = await reivindicada({
+      categoria: 'd11',
+      titulo: 'Briefing de produto',
+      descricao: 'Organize uma analise de produto em texto objetivo.',
+    });
+    const llm = new LlmComReservaFalso((p) => {
+      if (p.papel === PAPEL_AUDITOR) return auditoriaLimpa;
+      if (p.papel === SETORES.gestores.papel && p.maxTokens === 2_000) {
+        return {
+          tarefas: [
+            { chave: 'a', capacidade: 'd1', objetivo: 'Mapear arquitetura.', dependeDe: [] },
+            { chave: 'b', capacidade: 'd3', objetivo: 'Revisar qualidade.', dependeDe: [] },
+            { chave: 'c', capacidade: 'd6', objetivo: 'Planejar testes.', dependeDe: [] },
+            { chave: 'd', capacidade: 'd11', objetivo: 'Desenhar interface.', dependeDe: [] },
+          ],
+        };
+      }
+      return { ...execucaoPadrao, setoresEnvolvidos: ['d11'], entrega: { tipo: 'texto', titulo: 'Análise', conteudo: 'Análise entregue.' } };
+    }, USO_PADRAO);
+    const runId = await iniciarRun(db.pool);
+
+    const r = await processarDemanda(
+      { ...deps(llm), orquestracao: 'executar', orquestracaoCategoria: 'd11', orquestracaoCustoMaxUsd: '5.00' },
+      demanda,
+      runId,
+    );
+
+    expect(r.statusFinal).toBe('Concluída');
+    expect(llm.pedidos.map((p) => p.papel)).toEqual(['frota:gestores', 'frota:product-designer', PAPEL_AUDITOR]);
+    expect(await obterEnvelope(db.pool, demanda.id)).toMatchObject({ rota: 'legado_fixo', motivoLegado: 'plano_rejeitado' });
+    const eventos = await listarEventosDaDemanda(db.pool, demanda.id);
+    expect(eventos.some((e) => e.tipoEvento === 'plano_rejeitado' && e.metadata.motivoRejeicao === 'limite_tarefas')).toBe(true);
+    expect(eventos.some((e) => e.tipoEvento === 'demanda_devolvida_para_fila')).toBe(false);
+    expect(await obterDemanda(db.pool, demanda.id)).toMatchObject({ status: 'Concluída', tentativas: 1 });
+  });
+
+  it('executar: integracao invalida abandona o plano e conclui pelo legado na mesma tentativa', async () => {
+    const demanda = await reivindicada({
+      categoria: 'd11',
+      titulo: 'Dashboard PULSE EVENTS',
+      descricao: 'Construa uma interface interativa com dashboard, filtros e indicadores operacionais.',
+    });
+    const htmlInterativo = `<!doctype html>
+<html lang="pt-BR">
+  <head><meta charset="utf-8"><style>body{font-family:sans-serif}.card{padding:16px}</style></head>
+  <body>
+    <main class="card"><h1>PULSE EVENTS</h1><button id="filtrar">Filtrar eventos</button><output id="resultado">0</output></main>
+    <script>document.getElementById("filtrar").addEventListener("click",()=>{document.getElementById("resultado").textContent="12";});</script>
+  </body>
+</html>`;
+    const llm = new LlmComReservaFalso((p, indice) => {
+      if (p.papel === PAPEL_AUDITOR) return auditoriaLimpa;
+      if (p.papel === SETORES.gestores.papel && p.maxTokens === 2_000) {
+        return { tarefas: [{ chave: 'interface', capacidade: 'd11', objetivo: 'Projetar dashboard interativo.', dependeDe: [] }] };
+      }
+      if (indice === 1) {
+        return { formato: 'html', resumo: 'Protótipo base.', conteudo: htmlInterativo, referencias: [] };
+      }
+      if (indice === 2) {
+        return {
+          ...execucaoPadrao,
+          setoresEnvolvidos: ['d11'],
+          entrega: { tipo: 'texto', titulo: 'Briefing', conteudo: 'Documento com requisitos do dashboard.' },
+        };
+      }
+      return {
+        ...execucaoPadrao,
+        setoresEnvolvidos: ['d11'],
+        entrega: { tipo: 'html', titulo: 'Dashboard PULSE EVENTS', conteudo: htmlInterativo },
+      };
+    }, USO_PADRAO);
+    const runId = await iniciarRun(db.pool);
+
+    const r = await processarDemanda(
+      { ...deps(llm), orquestracao: 'executar', orquestracaoCategoria: 'd11', orquestracaoCustoMaxUsd: '5.00' },
+      demanda,
+      runId,
+    );
+
+    expect(r.statusFinal).toBe('Concluída');
+    expect(llm.pedidos.map((p) => p.papel)).toEqual([
+      'frota:gestores',
+      'frota:product-designer',
+      'frota:gestores',
+      'frota:product-designer',
+      PAPEL_AUDITOR,
+    ]);
+    expect(await obterEnvelope(db.pool, demanda.id)).toMatchObject({ rota: 'legado_fixo', motivoLegado: 'tarefa_falhou' });
+    const eventos = await listarEventosDaDemanda(db.pool, demanda.id);
+    expect(eventos.some((e) => e.tipoEvento === 'plano_abandonado' && e.metadata.motivoAbandono === 'tarefa_falhou')).toBe(true);
+    expect(eventos.some((e) => e.tipoEvento === 'demanda_devolvida_para_fila')).toBe(false);
+    const entrega = await obterEntrega(db.pool, r.entregaUrl!.split('/').pop()!);
+    expect(entrega?.conteudo).toContain('addEventListener');
+    expect(await obterDemanda(db.pool, demanda.id)).toMatchObject({ status: 'Concluída', tentativas: 1 });
+  });
+
   it('recusa briefing textual para demanda de dashboard e tenta corrigir para html interativo', async () => {
     const demanda = await reivindicada({
       categoria: 'd11',
