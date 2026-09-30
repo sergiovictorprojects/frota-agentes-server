@@ -177,7 +177,7 @@ describe('processarDemanda', () => {
     const { rows: planos } = await db.pool.query<{ estado: string }>('SELECT estado FROM planos_demanda WHERE demanda_id = $1', [demanda.id]);
     expect(planos.map((p) => p.estado)).toEqual(['concluido']);
     const { rows: tarefas } = await db.pool.query<{ estado: string; tipo: string }>(
-      'SELECT estado, tipo FROM tarefas t JOIN planos_demanda p ON p.id = t.plano_id WHERE p.demanda_id = $1 ORDER BY t.tipo',
+      'SELECT t.estado, t.tipo FROM tarefas t JOIN planos_demanda p ON p.id = t.plano_id WHERE p.demanda_id = $1 ORDER BY t.tipo',
       [demanda.id],
     );
     expect(tarefas).toEqual([
