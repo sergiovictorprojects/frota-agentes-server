@@ -145,7 +145,7 @@ function temCiclo(tarefas: PlanoProposto['tarefas']): boolean {
 // imutável, vai para o prompt só pela serialização canônica e nunca aparece em eventos, dossiê, logs ou
 // interface. O banco repete a regra (tarefas_objetivo_check), exceto a de não ser só espaço, que é só daqui.
 export const LIMITE_OBJETIVO = 300;
-const SINAL_DE_TAG_RE = /[<>]/;
+const SINAL_DE_TAG_RE = /[<>]/g;
 
 export function normalizarObjetivoExecucao(objetivo: string): string {
   const limpo = objetivo
