@@ -1,5 +1,7 @@
 import type pg from 'pg';
-import { agenteEstaAutorizado, obterAgentePorChave, papelDoSetor, type PapelAgente } from '../db/agentes.ts';
+import { prepararArtefatosEntregaveis } from '../artifacts/servico.ts';
+import { agenteEstaAutorizado, obterAgenteAutorizado, obterAgentePorChave, papelDoSetor, type PapelAgente } from '../db/agentes.ts';
+import { inserirArtefatosEntregaveis } from '../db/artefatos-entregaveis.ts';
 import { atualizarDemanda, registrarTentativa, type Demanda } from '../db/demandas.ts';
 import { montarChaveIdempotencia, registrarEvento, type TipoEvento } from '../db/eventos.ts';
 import { adicionarMensagem, listarMensagens } from '../db/mensagens.ts';
@@ -63,7 +65,12 @@ type Checkpoint = (texto: string, agente: string | null) => Promise<void>;
 // Sem parâmetro de resumo: registrarEvento sempre usa o texto fixo do tipo (RESUMOS_POR_TIPO em
 // src/db/eventos.ts), nunca texto vindo da demanda, do modelo ou de um erro. metadata é validada pelo
 // schema exato do tipo — só aceita ids, enums, contagens, flags, setor, status e códigos classificados.
-export type EmitirEvento = (tipo: TipoEvento, ator: string, metadata?: Record<string, unknown>) => Promise<void>;
+export type EmitirEvento = (
+  tipo: TipoEvento,
+  ator: string,
+  metadata?: Record<string, unknown>,
+  tarefaId?: string | null,
+) => Promise<void>;
 
 export interface OpcoesEmissor {
   // Identidade imutável desta execução: o run_id quando existe uma run, ou um UUID gerado uma única vez
@@ -77,12 +84,25 @@ export interface OpcoesEmissor {
 
 export function criarEmissor(pool: pg.Pool, demandaId: string, opcoes: OpcoesEmissor): EmitirEvento {
   const { correlacaoId, runId, tentativa } = opcoes;
-  return async (tipoEvento, ator, metadata) => {
-    // Cada tipo de evento acontece no máximo uma vez por (demanda, correlacaoId) — os pontos de emissão
-    // são ramos mutuamente exclusivos do fluxo — então o próprio tipo já basta como discriminador.
-    const chaveIdempotencia = montarChaveIdempotencia(correlacaoId, tipoEvento);
+  return async (tipoEvento, ator, metadata, tarefaId) => {
+    // No fluxo legado cada tipo basta como discriminador. Eventos de tarefas podem ocorrer várias vezes na
+    // mesma run (uma por tarefa e claim), então a tarefa e o claim entram na chave sem jamais carregarem
+    // conteúdo livre.
+    const claim = metadata && typeof metadata.claimId === 'string' ? metadata.claimId : '';
+    const discriminador = tarefaId ? `${tipoEvento}|${tarefaId}|${claim}` : tipoEvento;
+    const chaveIdempotencia = montarChaveIdempotencia(correlacaoId, discriminador);
     try {
-      await registrarEvento(pool, { demandaId, correlacaoId, runId, tentativa, tipoEvento, ator, chaveIdempotencia, metadata });
+      await registrarEvento(pool, {
+        demandaId,
+        correlacaoId,
+        runId,
+        tentativa,
+        tipoEvento,
+        ator,
+        chaveIdempotencia,
+        metadata,
+        tarefaId,
+      });
     } catch (erro) {
       log('erro', 'erro_evento_ledger', { demandaId, tipoEvento, erro: mensagemDeErro(erro) });
     }
@@ -226,10 +246,33 @@ async function hospedarEntrega(
   const publicaHtml = entrega.tipo === 'html' && setor.podeEntregarHtml;
   const conteudo = publicaHtml ? entrega.conteudo : paginaDeTexto(entrega.titulo, entrega.conteudo);
 
-  const criada = await criarEntrega(d.pool, { demandaId: demanda.id, titulo: entrega.titulo, conteudo });
+  let artefatos = [] as ReturnType<typeof prepararArtefatosEntregaveis>;
+  if (exec.artefatos.length > 0) {
+    const [gerador, publicador] = await Promise.all([
+      obterAgentePorChave(d.pool, setor.papel),
+      obterAgentePorChave(d.pool, PAPEL_COORDENADOR),
+    ]);
+    if (!gerador || !publicador) throw new Error('Catálogo de agentes incompleto para publicar artefatos.');
+    artefatos = prepararArtefatosEntregaveis(exec.artefatos, gerador, publicador);
+  }
+
+  const criada = await comTransacao(d.pool, async (cliente) => {
+    const nova = await criarEntrega(cliente, { demandaId: demanda.id, titulo: entrega.titulo, conteudo });
+    if (artefatos.length > 0) {
+      await inserirArtefatosEntregaveis(cliente, {
+        demandaId: demanda.id,
+        entregaId: nova.id,
+        geradoPor: setor.papel,
+        publicadoPor: PAPEL_COORDENADOR,
+        artefatos,
+      });
+    }
+    return nova;
+  });
   const url = `${d.urlBase}/entregas/${criada.id}`;
   // A URL nunca vai para o ledger — só o entregaId, que já basta para localizar a entrega numa consulta.
   await checkpoint(`Entrega hospedada: ${url}`, setor.papel);
+  if (artefatos.length > 0) await checkpoint(`${artefatos.length} arquivo(s) entregável(is) disponível(is) para download autenticado.`, setor.papel);
   await emitir('entrega_criada', setor.papel, { entregaId: criada.id, tipo: entrega.tipo, publicadaComoHtml: publicaHtml });
   return {
     url,
@@ -468,11 +511,12 @@ export async function processarDemanda(d: DependenciasDemanda, demanda: Demanda,
     // modeloTrabalho desta chamada (ver seedAgentesPadrao em src/db/agentes.ts), então isto é um no-op
     // para o comportamento atual — só passa a barrar de verdade se um operador suspender o agente ou
     // mudar seu modelo_permitido.
-    if (!(await agenteEstaAutorizado(d.pool, setor.papel, d.modeloTrabalho))) throw new AgenteNaoAutorizadoError(setor.papel);
+    const agenteExecucao = await obterAgenteAutorizado(d.pool, setor.papel, d.modeloTrabalho);
+    if (!agenteExecucao) throw new AgenteNaoAutorizadoError(setor.papel);
     ({ valor: exec } = await d.llm.gerar({
       modelo: d.modeloTrabalho,
       papel: setor.papel,
-      sistema: sistemaExecucao(setor),
+      sistema: sistemaExecucao(setor, agenteExecucao.capacidades),
       usuario: usuarioExecucao(demanda, conversa),
       schema: ResultadoExecucaoSchema,
       maxTokens: MAX_TOKENS_EXECUCAO,

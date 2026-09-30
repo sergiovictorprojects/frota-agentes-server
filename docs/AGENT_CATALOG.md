@@ -7,7 +7,8 @@ tipado (`src/db/agentes.ts`), o seed idempotente a partir de `SETORES` (`src/dom
 validações no orquestrador — para a execução e para a auditoria — checando que o agente solicitado existe,
 está `ativo` **e** que o modelo da chamada bate com `modelo_permitido`, antes de qualquer chamada ao
 modelo. `id`, `chave`, `nome`, `descricao`, `categoria` e `papel` são imutáveis — não há UPDATE sancionado
-para eles nesta entrega. `estado`, `modelo_permitido` e `politica_ref` podem mudar, e a garantia real é do
+para eles nesta entrega. Desde a migration 007, formatos de geração, publicação, leitura de anexos e limites
+também são explícitos no catálogo. `estado`, `modelo_permitido`, `politica_ref` e essas capacidades podem mudar, e a garantia real é do
 banco: o gatilho `agentes_controlar_mudancas` grava `agentes_historico` e incrementa `versao` como parte
 do próprio `UPDATE`, para **qualquer** `UPDATE` que chegue à tabela — inclusive um SQL direto que nunca
 chamou `atualizarAgente()`. Não é uma permissão que se pode burlar: é um efeito colateral automático do
@@ -24,8 +25,8 @@ versão que usava uma flag de sessão facilmente contornável).
 - edição de `nome`/`descricao`/`categoria`/`papel` — são imutáveis nesta entrega (sem rota de
   administração, não haveria como auditar essa mudança, então o banco simplesmente a bloqueia);
 - qualquer rota HTTP de administração do catálogo — o caminho recomendado é chamar `atualizarAgente()`
-  (por script/console; não há rota HTTP ainda), mas mesmo sem ele um `UPDATE` direto em `estado`,
-  `modelo_permitido` ou `politica_ref` funciona e gera trilha automaticamente (ver abaixo);
+  (por script/console; não há rota HTTP ainda), mas mesmo sem ele um `UPDATE` direto em campo versionável
+  funciona e gera trilha automaticamente (ver abaixo);
 - migração de `demandas.categoria` para referenciar `agentes.id` — `demandas` continua usando `Categoria`
   (`src/domain/setores.ts`) exatamente como antes; o catálogo só valida, não substitui, a categoria.
 
@@ -39,7 +40,7 @@ seguinte) e para o catálogo real de agentes com skills e conhecimento versionad
 
 ## Modelo de dados
 
-Tabela `agentes` (migration `003_agentes.sql`):
+Tabela `agentes` (migration `003_agentes.sql`, ampliada pela `007_artefatos_entregaveis.sql`):
 
 | Coluna | Tipo | Notas |
 |---|---|---|
@@ -50,10 +51,15 @@ Tabela `agentes` (migration `003_agentes.sql`):
 | `categoria` | `text` | Um dos 19 valores de `Categoria` (`gestores`, `d1`..`d18`). Imutável. |
 | `papel` | `text` | `coordenador`, `executor`, `avaliador` ou `auditor`. Imutável. |
 | `estado` | `text`, padrão `'ativo'` | `ativo`, `suspenso` ou `sob_demanda`. Editável — toda mudança gera trilha automaticamente (ver abaixo). |
-| `versao` | `integer`, padrão `1` | O gatilho sempre soma 1 ao valor já gravado quando `estado`/`modelo_permitido`/`politica_ref` muda de fato — nunca aceita um valor vindo de fora, nunca muda sem uma linha correspondente em `agentes_historico`. |
+| `versao` | `integer`, padrão `1` | O gatilho sempre soma 1 ao valor já gravado quando qualquer campo versionável muda de fato — nunca aceita um valor vindo de fora, nunca muda sem uma linha correspondente em `agentes_historico`. |
 | `modelo_permitido` | `text`, formato livre | Qual modelo este agente pode usar — checado de verdade em `agenteEstaAutorizado` (ver abaixo). O seed usa `MODEL_WORK` para coordenador/executores e `MODEL_AUDIT` para o auditor (d17). Editável, com trilha. |
 | `politica_ref` | `text`, nulo, formato de slug (`^[a-z0-9][a-z0-9_-]{0,63}$`) | Referência curta e fechada a uma regra de política — sempre `NULL` até o Policy Engine existir. O formato fechado impede colar uma frase, um prompt ou um segredo aqui; imposto por `CHECK` na migration e por Zod em `atualizarAgente()`. Editável, com trilha. |
-| `criado_em` / `atualizado_em` | `timestamptz` | `atualizado_em` só muda junto com uma mudança real de `estado`/`modelo_permitido`/`politica_ref` — o gatilho ignora um `UPDATE` que só tentasse tocá-lo sozinho. |
+| `gerar_artefatos` | `text[]` | Subconjunto fechado dos 17 formatos finais. A matriz inicial varia por categoria. Editável, com trilha. |
+| `publicar_artefatos` | `boolean` | Só o coordenador nasce com `true`. Publicar aqui significa tornar o arquivo disponível na interface autenticada. |
+| `ler_anexos` | `boolean` | Nasce `false` para todos; ingestão de anexos ainda não foi implementada. |
+| `max_artefatos_por_demanda` | `integer`, 0–5 | Limite de quantidade do gerador. |
+| `max_bytes_por_artefato` | `integer`, 0–5242880 | Limite de bytes do gerador por arquivo. |
+| `criado_em` / `atualizado_em` | `timestamptz` | `atualizado_em` só muda junto com uma mudança real de campo versionável — o gatilho ignora um `UPDATE` que só tentasse tocá-lo sozinho. |
 
 Nenhuma coluna guarda prompt, token, segredo ou texto livre de execução — testado explicitamente em
 `test/db/agentes.test.ts`.
@@ -89,7 +95,7 @@ papel de fato chama em `processar-demanda.ts` (`d.modeloAuditoria`/`d.modeloTrab
 | `listarAgentesAtivos(pool)` | Só `estado = 'ativo'`. |
 | `listarAgentesSobDemanda(pool)` | Só `estado = 'sob_demanda'`. |
 | `agenteEstaAutorizado(pool, chave, modelo)` | `true` só quando o agente existe, está `ativo` **e** `modelo` bate exatamente com `modelo_permitido`. `sob_demanda` não conta — exige acionamento explícito, que esta entrega não implementa. Um agente inexistente, ou com o modelo errado, também não está autorizado. |
-| `atualizarAgente(pool, chave, ator, mudancas)` | Jeito recomendado de mudar `estado`/`modeloPermitido`/`politicaRef` — valida o formato de `ator` e `politicaRef` antes de ir ao banco, e identifica quem fez a mudança (para a trilha) via `set_config`. A garantia de trilha em si **não depende desta função**: vem do gatilho (ver abaixo). Sem mudança real (nada difere do valor atual): não faz nada, não versiona, não registra. |
+| `atualizarAgente(pool, chave, ator, mudancas)` | Jeito recomendado de mudar estado, modelo, política e capacidades de artefato — valida limites e formatos antes de ir ao banco e identifica quem fez a mudança via `set_config`. A garantia de trilha em si vem do gatilho. Sem mudança real: não versiona nem registra. |
 | `listarHistoricoDoAgente(pool, agenteId)` | Trilha completa de um agente, ordenada por `id` (cursor estável). |
 | `seedAgentesPadrao(pool, modeloTrabalho, modeloAuditoria)` | Seed idempotente, descrito acima. |
 
@@ -105,7 +111,7 @@ credenciais da aplicação:
 
 1. **Bloqueia sempre** qualquer `UPDATE` que mude `id`, `chave`, `nome`, `descricao`, `categoria` ou
    `papel` — campos imutáveis nesta entrega, sem exceção.
-2. Para `estado`, `modelo_permitido` e `politica_ref`: se nenhum dos três mudou de fato, o gatilho ignora
+2. Para estado, modelo, política e capacidades de artefato: se nenhum campo versionável mudou de fato, o gatilho ignora
    silenciosamente qualquer tentativa de mexer em `versao` ou `atualizado_em` sozinhos (um `UPDATE agentes
    SET versao = 999` não tem efeito nenhum). Se pelo menos um dos três mudou de fato, o gatilho:
    - calcula `versao_nova = versao_atual + 1` **ele mesmo** — nunca aceita um valor de `versao` vindo do
@@ -155,7 +161,7 @@ Em ambos os casos, a falha:
 - é classificada como o código `agente_nao_autorizado` no ledger (`agent_events`), nunca como texto livre;
 - **não** é tratada como parada sistêmica — não interrompe a run inteira, só a chamada em questão.
 
-Nenhum prompt foi alterado, nenhuma lógica de fila (`processar-fila.ts`) foi tocada, nenhum agente é
-criado dinamicamente. Como todo agente nasce `ativo` pelo seed, com o modelo que de fato usa, essas
+O prompt de execução agora pode propor especificações de arquivos finais; nenhuma lógica de fila
+(`processar-fila.ts`) foi tocada e nenhum agente é criado dinamicamente. Como todo agente nasce `ativo` pelo seed, com o modelo que de fato usa, essas
 checagens são hoje um no-op para qualquer demanda das 19 categorias existentes — só passam a barrar de
 verdade quando um operador suspender um agente, ou mudar seu `modelo_permitido`, via `atualizarAgente()`.

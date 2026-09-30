@@ -12,11 +12,12 @@ Implementar por fatias verticais, com migrations aditivas, testes e rollback. N�
 | 1 — Modelo Operacional Auditável | Concluída: ledger `agent_events` (002), dossiê ao vivo e CI |
 | 2 — Catálogo e Policy Engine shadow | Concluída: catálogo e histórico de agentes (003); Policy Engine shadow (004) |
 | Hotfix — URL de entrega segura | Concluído (ADR 0005) |
-| **3 — Orquestração Real por Tarefas** | Em andamento: entrega 3.1 (modo `planejar`, migration 005, ADR 0006). 3.2a (base de dados e funções puras, migration 006, ADR 0007) em PR draft, sem ligar nada. 3.2b a 3.4 planejadas |
+| **3 — Orquestração Real por Tarefas** | Em andamento: 3.1 e 3.2a concluídas; 3.2b-1 implementada como motor interno inerte (ADR 0008); 3.2b-2 e 3.3/3.4 planejadas |
 | 4 a 9 | Sem mudança |
 
-Continuam pendentes, sem data: `agent_permissions`, estados `idle` e `retired` no catálogo e o snapshot
-versionado do dossiê (`dossier_snapshots`).
+Continuam pendentes, sem data: estados `idle` e `retired` no catálogo e o snapshot versionado do dossiê
+(`dossier_snapshots`). As capacidades de arquivos finais estão persistidas e auditadas no catálogo desde a
+migration 007; uma superfície administrativa para editá-las continua futura.
 
 ## Fase 0 — Diagnóstico e baseline
 
@@ -129,16 +130,18 @@ dependências e uma tarefa de integração que produz a entrega única, sem queb
   plano é gravado em shadow. A demanda segue pelo fluxo legado. Migration 005, restrita ao shadow
   (`planos_demanda`, `tarefas` e `tarefas_dependencias` imutáveis, ciclos barrados no banco, `operacao`
   ampliada só com `planejamento`).
-- **3.2 — Execução sequencial**, em duas PRs (plano versão 4, decisão 6A):
+  - **3.2 — Execução sequencial**, em duas PRs (plano versão 4, decisão 6A):
   - **3.2a — Base, sem ligar nada (em PR draft).** Migration 006 com o envelope da demanda, os estados e a máquina
     de estados de planos e tarefas, o grafo congelado depois da ativação, `artefatos_tarefa`, `reservas_custo`,
     `autorizacoes_custo`, as colunas novas de `agent_steps`, `tarefa_id` e `claim_id` nos eventos e nas
     avaliações e `operacao: integracao`. Repositórios tipados, serialização canônica com limites de contexto,
     tabela de modelos com janela e custo em decimal. A proteção de ciclo no banco continua. Ver
     `docs/adr/0007-execucao-sequencial-e-teto-de-custo.md`.
-  - **3.2b — Liga a orquestração.** Flag `executar`, uma categoria ligada por vez, laço de tarefas, prompts
-    serializados, prazo e timeouts, liquidação pela lista de status, fallback, interface de autorização e script
-    de verificação de rollback.
+  - **3.2b-1 — Motor sequencial inerte (implementada).** Laço interno de tarefas, prompts serializados, prazo,
+    timeouts, claims, leases, liquidação por reserva, artefatos intermediários e integração final. A flag pública
+    continua sem aceitar `executar`.
+  - **3.2b-2 — Ativação controlada (planejada).** Flag `executar`, uma categoria ligada por vez, interface de
+    autorização, fallback operacional completo, scripts de verificação de rollback e piloto.
 - **3.3 — Concorrência.** `agentes.max_concorrencia` com gatilho, histórico, Zod e testes; lock da linha do
   agente no claim; paralelismo de 2; estado `aguardando_agente`, que não consome tentativa e escala para
   humano no prazo.

@@ -127,7 +127,8 @@ O endpoint deve validar identidade, autorização e escopo antes de retornar qua
 ## Geração do snapshot
 
 1. Confirmar que o run está em estado terminal.
-2. Consultar dados consistentes de demanda, run, etapas, mensagens, eventos, relatórios, auditorias e entregas.
+2. Consultar dados consistentes de demanda, run, etapas, mensagens, eventos, relatórios, auditorias, entregas e
+   metadados de artefatos entregáveis. O conteúdo binário não entra no dossiê; o download é autenticado.
 3. Aplicar redaction e regras de visibilidade.
 4. Calcular hash do conteúdo final.
 5. Inserir a nova versão do snapshot.

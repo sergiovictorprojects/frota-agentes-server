@@ -1,6 +1,7 @@
 import type { CodigoErro } from '../db/eventos.ts';
 import { LlmError } from '../llm/llm.ts';
 import { FrotaPausadaError, OrcamentoExcedidoError } from '../llm/orcamento.ts';
+import { PrazoRunExcedidoError } from './prazo-run.ts';
 
 // Estados HTTP que apontam para a conta, o serviço ou o momento, e não para o conteúdo da demanda.
 const STATUS_DE_SISTEMA = new Set([401, 402, 403, 404, 408, 429]);
@@ -42,10 +43,12 @@ export function codigoDoErro(erro: unknown): CodigoErro {
   if (erro instanceof OrcamentoExcedidoError) return 'orcamento_excedido';
   if (erro instanceof FrotaPausadaError) return 'frota_pausada';
   if (erro instanceof AgenteNaoAutorizadoError) return 'agente_nao_autorizado';
+  if (erro instanceof PrazoRunExcedidoError) return 'prazo_da_run';
   if (erro instanceof LlmError) {
     if (erro.tipo === 'recusa') return 'llm_recusa';
     if (erro.tipo === 'truncado') return 'llm_truncado';
     if (erro.tipo === 'invalido') return 'llm_invalido';
+    if (erro.tipo === 'timeout') return 'llm_timeout';
     return 'llm_api';
   }
   return 'falha_inesperada';

@@ -25,7 +25,7 @@ export interface Llm {
   gerar<T>(pedido: PedidoLlm<T>): Promise<RespostaLlm<T>>;
 }
 
-export type TipoErroLlm = 'recusa' | 'truncado' | 'invalido' | 'api';
+export type TipoErroLlm = 'recusa' | 'truncado' | 'invalido' | 'api' | 'timeout';
 
 export class LlmError extends Error {
   readonly tipo: TipoErroLlm;

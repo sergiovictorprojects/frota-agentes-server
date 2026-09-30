@@ -5,6 +5,7 @@ import {
   listarAgentesAtivos,
   listarAgentesSobDemanda,
   listarHistoricoDoAgente,
+  obterAgenteAutorizado,
   obterAgentePorChave,
   seedAgentesPadrao,
 } from '../../src/db/agentes.ts';
@@ -43,6 +44,11 @@ describe('catalogo de agentes (Fase 2, Entrega 1)', () => {
           'versao',
           'modelo_permitido',
           'politica_ref',
+          'gerar_artefatos',
+          'publicar_artefatos',
+          'ler_anexos',
+          'max_artefatos_por_demanda',
+          'max_bytes_por_artefato',
           'criado_em',
           'atualizado_em',
         ].sort(),
@@ -94,6 +100,18 @@ describe('catalogo de agentes (Fase 2, Entrega 1)', () => {
       } finally {
         await semAgentesAinda.drop();
       }
+    });
+
+    it('persiste a matriz de formatos por especialidade e deixa anexos desligados', async () => {
+      const design = (await obterAgentePorChave(db.pool, SETORES.d11.papel))!;
+      const dados = (await obterAgentePorChave(db.pool, SETORES.d10.papel))!;
+      const coordenador = (await obterAgentePorChave(db.pool, SETORES.gestores.papel))!;
+      const auditor = (await obterAgentePorChave(db.pool, SETORES.d17.papel))!;
+
+      expect(design.capacidades.gerarArtefatos).toEqual(['pdf', 'pptx', 'html', 'svg', 'zip']);
+      expect(dados.capacidades.gerarArtefatos).toContain('xlsx');
+      expect(coordenador.capacidades.publicarArtefatos).toBe(true);
+      expect(auditor.capacidades).toMatchObject({ gerarArtefatos: [], publicarArtefatos: false, lerAnexos: false });
     });
 
     it('rodar o seed de novo nao duplica nem sobrescreve estado alterado manualmente', async () => {
@@ -315,6 +333,30 @@ describe('catalogo de agentes (Fase 2, Entrega 1)', () => {
       expect(await listarHistoricoDoAgente(db.pool, antes.id)).toHaveLength(0);
     });
 
+    it('versiona formatos e limites de artefatos como uma única mudança auditada', async () => {
+      const chave = SETORES.d10.papel;
+      const antes = (await obterAgentePorChave(db.pool, chave))!;
+      const depois = await atualizarAgente(db.pool, chave, ATOR_TESTE, {
+        gerarArtefatos: ['csv'],
+        maxArtefatosPorDemanda: 1,
+        maxBytesPorArtefato: 1024,
+      });
+
+      expect(depois.capacidades).toMatchObject({ gerarArtefatos: ['csv'], maxArtefatosPorDemanda: 1, maxBytesPorArtefato: 1024 });
+      expect(depois.versao).toBe(antes.versao + 1);
+      expect((await listarHistoricoDoAgente(db.pool, depois.id)).at(-1)!.camposAlterados).toMatchObject({
+        gerarArtefatos: { de: antes.capacidades.gerarArtefatos, para: ['csv'] },
+        maxArtefatosPorDemanda: { de: antes.capacidades.maxArtefatosPorDemanda, para: 1 },
+        maxBytesPorArtefato: { de: antes.capacidades.maxBytesPorArtefato, para: 1024 },
+      });
+
+      await atualizarAgente(db.pool, chave, ATOR_TESTE, {
+        gerarArtefatos: antes.capacidades.gerarArtefatos,
+        maxArtefatosPorDemanda: antes.capacidades.maxArtefatosPorDemanda,
+        maxBytesPorArtefato: antes.capacidades.maxBytesPorArtefato,
+      });
+    });
+
     it('garante que toda mudanca de versao tem registro correspondente: duas atualizacoes seguidas geram duas linhas', async () => {
       const chave = SETORES.d14.papel;
       const v1 = await atualizarAgente(db.pool, chave, ATOR_TESTE, { estado: 'suspenso' });
@@ -421,12 +463,18 @@ describe('catalogo de agentes (Fase 2, Entrega 1)', () => {
   describe('agenteEstaAutorizado', () => {
     it('agente ativo, com o modelo certo, esta autorizado', async () => {
       expect(await agenteEstaAutorizado(db.pool, SETORES.d6.papel, MODELO_TRABALHO)).toBe(true);
+      expect(await obterAgenteAutorizado(db.pool, SETORES.d6.papel, MODELO_TRABALHO)).toMatchObject({
+        chave: SETORES.d6.papel,
+        estado: 'ativo',
+        modeloPermitido: MODELO_TRABALHO,
+      });
     });
 
     it('agente suspenso nao pode ser acionado', async () => {
       const chave = SETORES.d7.papel;
       await atualizarAgente(db.pool, chave, ATOR_TESTE, { estado: 'suspenso' });
       expect(await agenteEstaAutorizado(db.pool, chave, MODELO_TRABALHO)).toBe(false);
+      expect(await obterAgenteAutorizado(db.pool, chave, MODELO_TRABALHO)).toBeNull();
       await atualizarAgente(db.pool, chave, ATOR_TESTE, { estado: 'ativo' });
     });
 

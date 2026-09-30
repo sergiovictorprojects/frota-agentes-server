@@ -1,4 +1,5 @@
 import type { Demanda } from '../../db/demandas.ts';
+import type { ArtefatoEntregavelResumo } from '../../db/artefatos-entregaveis.ts';
 import type { Evento } from '../../db/eventos.ts';
 import type { Mensagem } from '../../db/mensagens.ts';
 import type { Relatorio } from '../../db/relatorios.ts';
@@ -31,6 +32,18 @@ function linkDeEntrega(link: LinkEntrega | null | undefined, classe = ''): Bruto
   return html`<span class="vazio">Link de entrega não verificado</span>`;
 }
 const numero = (n: number | null | undefined, sufixo = ''): string => (n === null || n === undefined ? 'não medido' : `${n}${sufixo}`);
+
+function tamanho(bytes: number): string {
+  return bytes < 1024 ? `${bytes} B` : bytes < 1024 * 1024 ? `${(bytes / 1024).toFixed(1)} KB` : `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+}
+
+function blocoArtefatos(artefatos: readonly ArtefatoEntregavelResumo[]): Bruto {
+  if (!artefatos.length) return html`<p class="vazio">Nenhum arquivo entregável foi gerado.</p>`;
+  return html`<ul class="lista">${artefatos.map((a) => html`<li class="card">
+<h3><a href="/artefatos/${a.id}/download">${a.nomeArquivo}</a></h3>
+<div class="meta"><span>${a.formato.toUpperCase()}</span><span>${tamanho(a.bytes)}</span><span>${a.classificacao}</span><span>gerado por ${a.geradoPor}</span><span>publicado por ${a.publicadoPor}</span><span>${formatarData(a.criadoEm)}</span><span>SHA-256 <code>${a.sha256}</code></span></div>
+</li>`)}</ul>`;
+}
 
 function botaoAcao(acao: string, rotulo: string, secundario = false): Bruto {
   return html`<form method="post" action="${acao}"><button class="botao${secundario ? ' sec' : ''}" type="submit">${rotulo}</button></form>`;
@@ -108,6 +121,7 @@ export function paginaDetalhe(a: {
   demanda: Demanda;
   mensagens: readonly Mensagem[];
   relatorio: Relatorio | null;
+  artefatos: readonly ArtefatoEntregavelResumo[];
   linkEntrega: LinkEntrega | null;
 }): Bruto {
   const d = a.demanda;
@@ -125,6 +139,8 @@ ${d.status !== 'Arquivada' && d.status !== 'Em andamento' ? botaoAcao(`/demandas
 </div>
 </div>
 ${a.linkEntrega ? html`<p>${linkDeEntrega(a.linkEntrega, 'botao')}</p>` : ''}
+<h2>Arquivos para download</h2>
+${blocoArtefatos(a.artefatos)}
 <p><a href="/demandas/${d.id}/dossie">Ver dossiê</a></p>
 <dl class="info">
 <dt>Solicitante</dt><dd>${d.solicitante ?? '—'}</dd>
@@ -205,6 +221,7 @@ export function paginaDossie(a: {
   mensagens: readonly Mensagem[];
   relatorio: Relatorio | null;
   eventos: readonly Evento[];
+  artefatos: readonly ArtefatoEntregavelResumo[];
   linkEntrega: LinkEntrega | null;
 }): Bruto {
   const d = a.demanda;
@@ -212,6 +229,8 @@ export function paginaDossie(a: {
 <div><h1>Dossiê — ${d.titulo}</h1><div class="meta">${chip(d.status)}<span>${d.categoria} — ${SETORES[d.categoria].nome}</span><span>${d.prioridade}</span></div></div>
 </div>
 ${a.linkEntrega ? html`<p>${linkDeEntrega(a.linkEntrega, 'botao')}</p>` : ''}
+<h2>Artefatos entregáveis</h2>
+${blocoArtefatos(a.artefatos)}
 <h2>Resumo executivo</h2>
 <dl class="info">
 <dt>Solicitante</dt><dd>${d.solicitante ?? '—'}</dd>

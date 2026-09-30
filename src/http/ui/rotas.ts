@@ -10,6 +10,7 @@ import {
   obterDemanda,
   reabrirDemanda,
 } from '../../db/demandas.ts';
+import { listarArtefatosEntregaveisDaDemanda, obterArtefatoEntregavel } from '../../db/artefatos-entregaveis.ts';
 import { listarEventosDaDemanda } from '../../db/eventos.ts';
 import { adicionarMensagem, listarMensagens } from '../../db/mensagens.ts';
 import { obterFlags, pausarFrota, retomarFrota, ultimaRun } from '../../db/operacao.ts';
@@ -190,12 +191,13 @@ function registrarDetalheEAcoes(app: FastifyInstance, d: DependenciasUi, r: Resp
   app.get<{ Params: { id: string } }>('/demandas/:id', async (req, reply) => {
     const demanda = UUID.test(req.params.id) ? await obterDemanda(d.pool, req.params.id) : null;
     if (!demanda) return r.naoEncontrada(reply);
-    const [mensagens, relatorio, [linkEntrega]] = await Promise.all([
+    const [mensagens, relatorio, artefatos, [linkEntrega]] = await Promise.all([
       listarMensagens(d.pool, demanda.id),
       relatorioMaisRecente(d.pool, demanda.id),
+      listarArtefatosEntregaveisDaDemanda(d.pool, demanda.id),
       resolverLinksDeEntrega(d.pool, d.origemPublica, [{ demandaId: demanda.id, entregaUrl: demanda.entregaUrl }]),
     ]);
-    return r.enviar(reply, 200, demanda.titulo, 'fila', paginaDetalhe({ demanda, mensagens, relatorio, linkEntrega: linkEntrega ?? null }));
+    return r.enviar(reply, 200, demanda.titulo, 'fila', paginaDetalhe({ demanda, mensagens, relatorio, artefatos, linkEntrega: linkEntrega ?? null }));
   });
 
   // Somente-leitura: nenhuma escrita, nenhum efeito colateral. Timeline ordenada pelo cursor global id
@@ -216,14 +218,29 @@ function registrarDetalheEAcoes(app: FastifyInstance, d: DependenciasUi, r: Resp
   app.get<{ Params: { id: string } }>('/demandas/:id/dossie', async (req, reply) => {
     const demanda = UUID.test(req.params.id) ? await obterDemanda(d.pool, req.params.id) : null;
     if (!demanda) return r.naoEncontrada(reply);
-    const [mensagens, relatorio, eventos, [linkEntrega]] = await Promise.all([
+    const [mensagens, relatorio, eventos, artefatos, [linkEntrega]] = await Promise.all([
       listarMensagens(d.pool, demanda.id),
       relatorioMaisRecente(d.pool, demanda.id),
       listarEventosDaDemanda(d.pool, demanda.id),
+      listarArtefatosEntregaveisDaDemanda(d.pool, demanda.id),
       resolverLinksDeEntrega(d.pool, d.origemPublica, [{ demandaId: demanda.id, entregaUrl: demanda.entregaUrl }]),
     ]);
-    const corpo = paginaDossie({ demanda, mensagens, relatorio, eventos, linkEntrega: linkEntrega ?? null });
+    const corpo = paginaDossie({ demanda, mensagens, relatorio, eventos, artefatos, linkEntrega: linkEntrega ?? null });
     return r.enviar(reply, 200, `Dossiê — ${demanda.titulo}`, 'fila', corpo);
+  });
+
+  // Diferente de /entregas/:id (link público não adivinhável e legado), arquivos finais sempre passam
+  // pela autenticação Basic da UI e são enviados como attachment, inclusive HTML e SVG.
+  app.get<{ Params: { id: string } }>('/artefatos/:id/download', async (req, reply) => {
+    const artefato = UUID.test(req.params.id) ? await obterArtefatoEntregavel(d.pool, req.params.id) : null;
+    if (!artefato) return reply.code(404).type('text/plain; charset=utf-8').send('Artefato não encontrado.');
+    return reply
+      .header('Content-Disposition', `attachment; filename="${artefato.nomeArquivo}"`)
+      .header('Content-Length', String(artefato.bytes))
+      .header('ETag', `"${artefato.sha256}"`)
+      .header('Content-Security-Policy', 'sandbox')
+      .type(artefato.mimeType)
+      .send(artefato.conteudo);
   });
 
   app.post<{ Params: { id: string } }>('/demandas/:id/responder', async (req, reply) => {

@@ -35,14 +35,23 @@ describe('esquemas de saida estruturada', () => {
 
   it('exige todos os campos da execucao e aceita campos anulaveis como obrigatorios com valor nulo', () => {
     const js = zodOutputFormat(ResultadoExecucaoSchema).schema as { required: string[] };
-    for (const campo of ['plano', 'acaoHumana', 'insumoCritico', 'entrega', 'autoavaliacao', 'ponderacoes']) {
+    for (const campo of ['plano', 'acaoHumana', 'insumoCritico', 'entrega', 'artefatos', 'autoavaliacao', 'ponderacoes']) {
       expect(js.required).toContain(campo);
     }
   });
 
   it('aceita uma execucao valida e rejeita nivel de complexidade fora de 1 a 4', () => {
-    expect(ResultadoExecucaoSchema.safeParse(execucaoValida).success).toBe(true);
+    const valida = ResultadoExecucaoSchema.safeParse(execucaoValida);
+    expect(valida.success).toBe(true);
+    if (valida.success) expect(valida.data.artefatos).toEqual([]);
     expect(ResultadoExecucaoSchema.safeParse({ ...execucaoValida, nivelComplexidade: 5 }).success).toBe(false);
+  });
+
+  it('aceita somente os 17 formatos e no máximo cinco arquivos finais', () => {
+    const artefato = { nomeArquivo: 'relatorio', formato: 'pdf', conteudo: 'texto' };
+    expect(ResultadoExecucaoSchema.safeParse({ ...execucaoValida, artefatos: [artefato] }).success).toBe(true);
+    expect(ResultadoExecucaoSchema.safeParse({ ...execucaoValida, artefatos: [{ ...artefato, formato: 'exe' }] }).success).toBe(false);
+    expect(ResultadoExecucaoSchema.safeParse({ ...execucaoValida, artefatos: Array(6).fill(artefato) }).success).toBe(false);
   });
 
   it('rejeita setor inexistente e alternativa de insumo desconhecida', () => {

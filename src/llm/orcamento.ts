@@ -1,5 +1,6 @@
 import type pg from 'pg';
 import { gastoDoMes, mesDe, obterFlags, pausarFrota, registrarAlerta, registrarPasso } from '../db/operacao.ts';
+import { cancelarReserva, liquidarReserva, reterReserva } from '../db/orquestracao.ts';
 import type { Notificador, NivelNotificacao } from '../notify/notificador.ts';
 import { LlmError, type Llm, type PedidoLlm, type RespostaLlm } from './llm.ts';
 import { custoUsd, modeloConhecido, ModeloDesconhecidoError, type Uso } from './models.ts';
@@ -40,6 +41,19 @@ export class LlmComOrcamento implements Llm {
     this.d = d;
   }
 
+  // Pré-checagem usada antes do registro de envio de uma tarefa. Assim uma frota pausada ou um orçamento
+  // mensal já esgotado não cria tentativa/reserva de tarefa que nunca será enviada.
+  async verificarPodeIniciar(): Promise<void> {
+    const agora = this.d.agora?.() ?? new Date();
+    const flags = await obterFlags(this.d.pool);
+    if (flags.pausado) throw new FrotaPausadaError(flags.pausadoMotivo ?? 'sem motivo informado');
+    const gasto = await gastoDoMes(this.d.pool, agora);
+    if (gasto >= this.d.orcamentoMensalUsd) {
+      await this.bloquearPorOrcamento(agora, gasto);
+      throw new OrcamentoExcedidoError(gasto, this.d.orcamentoMensalUsd);
+    }
+  }
+
   async gerar<T>(pedido: PedidoLlm<T>): Promise<RespostaLlm<T>> {
     if (!modeloConhecido(pedido.modelo)) throw new ModeloDesconhecidoError(pedido.modelo);
     const agora = this.d.agora?.() ?? new Date();
@@ -62,6 +76,71 @@ export class LlmComOrcamento implements Llm {
     }
     await this.contabilizar(pedido, resposta.uso, resposta.duracaoMs, agora);
     return resposta;
+  }
+
+  // Caminho das demandas com envelope. O custo é liquidado exatamente uma vez pela reserva criada antes do
+  // envio; o caminho legado acima continua gravando diretamente em agent_steps. Em caso de timeout, a chamada
+  // externa não é abortada pelo contrato atual do Llm: a reserva é retida agora e a continuação tardia liquida
+  // o uso quando a API finalmente responder, sem poder persistir artefato com o lease vencido.
+  async gerarComReserva<T>(
+    pedido: PedidoLlm<T>,
+    p: { reservaId: string; runId: string | null; timeoutMs: number },
+  ): Promise<RespostaLlm<T>> {
+    if (!modeloConhecido(pedido.modelo)) throw new ModeloDesconhecidoError(pedido.modelo);
+    const agora = this.d.agora?.() ?? new Date();
+    const flags = await obterFlags(this.d.pool);
+    if (flags.pausado) {
+      await cancelarReserva(this.d.pool, p.reservaId);
+      throw new FrotaPausadaError(flags.pausadoMotivo ?? 'sem motivo informado');
+    }
+    const gasto = await gastoDoMes(this.d.pool, agora);
+    if (gasto >= this.d.orcamentoMensalUsd) {
+      await cancelarReserva(this.d.pool, p.reservaId);
+      await this.bloquearPorOrcamento(agora, gasto);
+      throw new OrcamentoExcedidoError(gasto, this.d.orcamentoMensalUsd);
+    }
+
+    // Normaliza também uma implementação que lance antes de devolver a Promise: a reserva precisa seguir
+    // o mesmo caminho de liquidação/retenção em qualquer falha do adaptador.
+    const chamada = Promise.resolve().then(() => this.d.llm.gerar(pedido));
+    const liquidarComUso = async (resposta: RespostaLlm<T>): Promise<RespostaLlm<T>> => {
+      await liquidarReserva(this.d.pool, {
+        reservaId: p.reservaId,
+        passo: { runId: p.runId, papel: pedido.papel, uso: resposta.uso, duracaoMs: resposta.duracaoMs },
+      });
+      await this.avaliarLimiares(agora, await gastoDoMes(this.d.pool, agora));
+      return resposta;
+    };
+    const registrarErroComUso = async (erro: unknown): Promise<never> => {
+      if (erro instanceof LlmError && erro.uso) {
+        await liquidarReserva(this.d.pool, {
+          reservaId: p.reservaId,
+          passo: { runId: p.runId, papel: pedido.papel, uso: erro.uso, duracaoMs: null },
+        });
+        await this.avaliarLimiares(agora, await gastoDoMes(this.d.pool, agora));
+      } else if (erro instanceof LlmError && erro.status !== null && [400, 401, 403, 404, 413, 429].includes(erro.status)) {
+        await cancelarReserva(this.d.pool, p.reservaId);
+      } else {
+        await reterReserva(this.d.pool, p.reservaId);
+      }
+      throw erro;
+    };
+
+    const contabilizada = chamada.then(liquidarComUso, registrarErroComUso);
+    let temporizador: ReturnType<typeof setTimeout> | undefined;
+    const timeout = new Promise<never>((_, reject) => {
+      temporizador = setTimeout(() => reject(new LlmError('timeout', 'A chamada excedeu o timeout da tarefa.')), p.timeoutMs);
+    });
+    try {
+      return await Promise.race([contabilizada, timeout]);
+    } catch (erro) {
+      if (erro instanceof LlmError && erro.tipo === 'timeout') {
+        await reterReserva(this.d.pool, p.reservaId);
+      }
+      throw erro;
+    } finally {
+      if (temporizador) clearTimeout(temporizador);
+    }
   }
 
   private async contabilizar<T>(pedido: PedidoLlm<T>, uso: Uso, duracaoMs: number | null, agora: Date): Promise<void> {
