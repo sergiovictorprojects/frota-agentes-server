@@ -6,6 +6,7 @@ import {
   arquivarDemanda,
   contarPorStatus,
   criarDemanda,
+  excluirDemandaDefinitivamente,
   listarDemandas,
   obterDemanda,
   reabrirDemanda,
@@ -278,6 +279,14 @@ function registrarDetalheEAcoes(app: FastifyInstance, d: DependenciasUi, r: Resp
     const arquivada = UUID.test(req.params.id) ? await arquivarDemanda(d.pool, req.params.id) : null;
     if (!arquivada) return r.conflito(reply, 'Não é possível arquivar uma demanda em andamento ou já arquivada.');
     return reply.redirect('/', 303);
+  });
+
+  app.post<{ Params: { id: string } }>('/demandas/:id/excluir', async (req, reply) => {
+    if (!UUID.test(req.params.id)) return r.naoEncontrada(reply);
+    const resultado = await excluirDemandaDefinitivamente(d.pool, req.params.id);
+    if (resultado.excluida) return reply.redirect('/', 303);
+    if (resultado.motivo === 'em_andamento') return r.conflito(reply, 'Não é possível excluir uma demanda em andamento.');
+    return r.naoEncontrada(reply);
   });
 }
 

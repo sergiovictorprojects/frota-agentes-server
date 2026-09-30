@@ -1,5 +1,6 @@
+import type pg from 'pg';
 import type { Categoria, Prioridade, StatusDemanda } from '../domain/setores.ts';
-import type { Db } from './tx.ts';
+import { comTransacao, type Db } from './tx.ts';
 
 export type AlternativaInsumo = 'A' | 'B' | 'C';
 
@@ -209,6 +210,70 @@ export async function arquivarDemanda(db: Db, id: string): Promise<Demanda | nul
     [id],
   );
   return rows[0] ? mapear(rows[0]) : null;
+}
+
+const TABELAS_APPEND_ONLY_DA_DEMANDA = [
+  'agent_events',
+  'agent_steps',
+  'artefatos_entregaveis',
+  'artefatos_tarefa',
+  'tarefas_dependencias',
+  'tarefas',
+  'planos_demanda',
+  'reservas_custo',
+  'autorizacoes_custo',
+  'orquestracao_demandas',
+] as const;
+
+export type ResultadoExclusaoDemanda =
+  | { excluida: true; id: string }
+  | { excluida: false; motivo: 'nao_encontrada' | 'em_andamento' };
+
+export async function excluirDemandaDefinitivamente(pool: pg.Pool, id: string): Promise<ResultadoExclusaoDemanda> {
+  return comTransacao(pool, async (cliente) => {
+    const { rows } = await cliente.query<{ status: StatusDemanda }>('SELECT status FROM demandas WHERE id = $1 FOR UPDATE', [id]);
+    const demanda = rows[0];
+    if (!demanda) return { excluida: false, motivo: 'nao_encontrada' };
+    if (demanda.status === 'Em andamento') return { excluida: false, motivo: 'em_andamento' };
+
+    for (const tabela of TABELAS_APPEND_ONLY_DA_DEMANDA) {
+      await cliente.query(`ALTER TABLE ${tabela} DISABLE TRIGGER USER`);
+    }
+
+    await cliente.query('DELETE FROM artefatos_entregaveis WHERE demanda_id = $1', [id]);
+    await cliente.query(
+      `WITH tarefas_da_demanda AS (
+         SELECT t.id FROM tarefas t JOIN planos_demanda p ON p.id = t.plano_id WHERE p.demanda_id = $1
+       )
+       DELETE FROM artefatos_tarefa a USING tarefas_da_demanda t WHERE a.tarefa_id = t.id`,
+      [id],
+    );
+    await cliente.query('DELETE FROM reservas_custo WHERE demanda_id = $1', [id]);
+    await cliente.query('DELETE FROM autorizacoes_custo WHERE demanda_id = $1', [id]);
+    await cliente.query('DELETE FROM agent_events WHERE demanda_id = $1', [id]);
+    await cliente.query('DELETE FROM avaliacoes_politica WHERE demanda_id = $1', [id]);
+    await cliente.query('DELETE FROM agent_steps WHERE demanda_id = $1', [id]);
+    await cliente.query(
+      `WITH tarefas_da_demanda AS (
+         SELECT t.id FROM tarefas t JOIN planos_demanda p ON p.id = t.plano_id WHERE p.demanda_id = $1
+       )
+       DELETE FROM tarefas_dependencias td USING tarefas_da_demanda t
+        WHERE td.tarefa_id = t.id OR td.depende_de_id = t.id`,
+      [id],
+    );
+    await cliente.query('DELETE FROM tarefas t USING planos_demanda p WHERE t.plano_id = p.id AND p.demanda_id = $1', [id]);
+    await cliente.query('DELETE FROM planos_demanda WHERE demanda_id = $1', [id]);
+    await cliente.query('DELETE FROM orquestracao_demandas WHERE demanda_id = $1', [id]);
+    await cliente.query('DELETE FROM mensagens WHERE demanda_id = $1', [id]);
+    await cliente.query('DELETE FROM relatorios WHERE demanda_id = $1', [id]);
+    await cliente.query('DELETE FROM entregas WHERE demanda_id = $1', [id]);
+    await cliente.query('DELETE FROM demandas WHERE id = $1', [id]);
+
+    for (const tabela of [...TABELAS_APPEND_ONLY_DA_DEMANDA].reverse()) {
+      await cliente.query(`ALTER TABLE ${tabela} ENABLE TRIGGER USER`);
+    }
+    return { excluida: true, id };
+  });
 }
 
 export async function atualizarDemanda(db: Db, id: string, patch: PatchDemanda): Promise<Demanda | null> {
