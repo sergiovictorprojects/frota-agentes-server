@@ -10,6 +10,11 @@ O produto não deve ser tratado apenas como um conjunto de prompts. Ele é um si
 
 O usuário registra uma demanda. O sistema valida, classifica e avalia risco. Em seguida, o orquestrador seleciona agentes aptos, skills e fontes de conhecimento autorizadas. As etapas são executadas sob supervisão de políticas, coordenadores e, quando necessário, uma pessoa responsável.
 
+Validação e roteamento são decisões auditáveis: a categoria não deve ser aceita apenas porque foi selecionada no
+formulário. O sistema registra o resultado esperado e os critérios de aceite, aplica regras determinísticas de
+compatibilidade e pode recomendar papéis. Em caso de ambiguidade ou conflito, exige confirmação humana; um modelo
+nunca autoriza sozinho uma rota, um custo ou uma publicação.
+
 Ao término, a plataforma gera:
 
 - entrega final;

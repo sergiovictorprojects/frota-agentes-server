@@ -12,7 +12,7 @@ Implementar por fatias verticais, com migrations aditivas, testes e rollback. N�
 | 1 — Modelo Operacional Auditável | Concluída: ledger `agent_events` (002), dossiê ao vivo e CI |
 | 2 — Catálogo e Policy Engine shadow | Concluída: catálogo e histórico de agentes (003); Policy Engine shadow (004) |
 | Hotfix — URL de entrega segura | Concluído (ADR 0005) |
-| **3 — Orquestração Real por Tarefas** | Em andamento: 3.1 e 3.2a concluídas; 3.2b-1 implementada como motor interno inerte (ADR 0008); 3.2b-2 e 3.3/3.4 planejadas |
+| **3 — Orquestração Real por Tarefas** | Em andamento: 3.1, 3.2a, 3.2b-1 e 3.2b-2 implementadas; piloto controlado em staging em validação. 3.2c, 3.3 e 3.4 planejadas |
 | 4 a 9 | Sem mudança |
 
 Continuam pendentes, sem data: estados `idle` e `retired` no catálogo e o snapshot versionado do dossiê
@@ -139,9 +139,30 @@ dependências e uma tarefa de integração que produz a entrega única, sem queb
     `docs/adr/0007-execucao-sequencial-e-teto-de-custo.md`.
   - **3.2b-1 — Motor sequencial inerte (implementada).** Laço interno de tarefas, prompts serializados, prazo,
     timeouts, claims, leases, liquidação por reserva, artefatos intermediários e integração final.
-  - **3.2b-2 — Ativação controlada (em implementação).** Flag `executar`, uma categoria ligada por vez e teto base
-    explícito por demanda. Interface de autorização, fallback operacional completo e scripts de rollback seguem
-    como próximos incrementos do piloto.
+  - **3.2b-2 — Ativação controlada (implementada; piloto em staging).** Flag `executar`, uma categoria ligada por vez
+    e teto base explícito por demanda. O piloto permanece pausável e limitado a uma demanda até validar uma entrega
+    real de ponta a ponta.
+  - **3.2c — Validação em camadas e roteamento de demanda (planejada; próxima após o aceite do piloto).** Evita que
+    a categoria escolhida no formulário, hoje padronizada como `gestores`, contradiga o resultado solicitado.
+    1. O formulário passa a registrar explicitamente o resultado esperado (`interface`, `documento`, `análise`,
+       `automação`, `código` ou outro formato aprovado) e critérios de aceite observáveis.
+    2. Regras determinísticas validam a compatibilidade entre resultado esperado, categoria, capacidades do agente,
+       permissões de publicação e custo. Combinações incompatíveis são bloqueadas ou exigem confirmação explícita.
+    3. Um recomendador pode sugerir categoria e papéis, mas não pode autorizar a execução: catálogo, políticas e
+       regras determinísticas continuam sendo a fonte de decisão.
+    4. Casos ambíguos ou de baixa confiança ficam em `Aguardando humano`; não há troca silenciosa de categoria.
+    5. A conclusão exige uma entrega compatível com os critérios registrados. Um resumo textual não conclui uma
+       demanda cujo resultado esperado seja uma interface ou artefato baixável.
+    6. A decisão, a recomendação, a confirmação humana e o motivo do fallback são registrados em eventos e no
+       dossiê, sem armazenar prompt ou raciocínio interno.
+
+    **Não fazer nesta fatia:** classificador puramente por LLM, roteamento autônomo para múltiplos agentes sem
+    confirmação, alteração retroativa da categoria de demandas existentes ou publicação de HTML sem isolamento.
+
+    **Critério de aceite:** uma demanda de interface criada inicialmente em `gestores` é advertida e exige correção
+    ou confirmação; uma demanda em `d11` só conclui com entrega HTML/artefato compatível; uma demanda de análise
+    continua aceitando texto; todas as decisões são reproduzíveis por regras e cobertas por testes unitários,
+    integração e workflow.
 - **3.3 — Concorrência.** `agentes.max_concorrencia` com gatilho, histórico, Zod e testes; lock da linha do
   agente no claim; paralelismo de 2; estado `aguardando_agente`, que não consome tentativa e escala para
   humano no prazo.

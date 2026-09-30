@@ -64,8 +64,8 @@ const NovaDemandaForm = z.object({
       .optional(),
   ),
   solicitante: opcional(200, 'O solicitante aceita no máximo 200 caracteres.'),
-  descricao: opcional(20000, 'A descrição aceita no máximo 20000 caracteres.'),
-  referencias: opcional(5000, 'As referências aceitam no máximo 5000 caracteres.'),
+  descricao: opcional(100_000, 'A descrição aceita no máximo 100000 caracteres.'),
+  referencias: opcional(20_000, 'As referências aceitam no máximo 20000 caracteres.'),
 });
 
 const RespostaForm = z.object({

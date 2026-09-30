@@ -26,6 +26,7 @@ describe('migration 002_agent_events', () => {
       '005_planos_tarefas.sql',
       '006_execucao_tarefas.sql',
       '007_artefatos_entregaveis.sql',
+      '008_demanda_especificacao_extensa.sql',
     ]);
   });
 });

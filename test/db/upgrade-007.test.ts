@@ -6,7 +6,7 @@ import { criarEntrega } from '../../src/db/relatorios.ts';
 import { SETORES } from '../../src/domain/setores.ts';
 import { createTestDb, type TestDb } from '../helpers/db.ts';
 
-describe('upgrade 006 → 007', () => {
+describe('upgrade 006 → 008', () => {
   let db: TestDb;
   let demandaId: string;
   let entregaId: string;
@@ -21,11 +21,23 @@ describe('upgrade 006 → 007', () => {
   });
   afterAll(async () => db.drop());
 
-  it('aplica somente a 007 e preserva as linhas existentes', async () => {
-    expect(aplicadas).toEqual(['007_artefatos_entregaveis.sql']);
+  it('aplica 007 e 008 e preserva as linhas existentes', async () => {
+    expect(aplicadas).toEqual(['007_artefatos_entregaveis.sql', '008_demanda_especificacao_extensa.sql']);
     expect((await db.pool.query('SELECT id FROM demandas WHERE id = $1', [demandaId])).rowCount).toBe(1);
     expect((await db.pool.query('SELECT id FROM entregas WHERE id = $1', [entregaId])).rowCount).toBe(1);
     expect((await db.pool.query('SELECT 1 FROM artefatos_entregaveis')).rowCount).toBe(0);
+  });
+
+  it('eleva os limites de especificação no banco', async () => {
+    await expect(
+      db.pool.query("UPDATE demandas SET descricao = $1, referencias = $2 WHERE id = $3", ['a'.repeat(100_000), 'b'.repeat(20_000), demandaId]),
+    ).resolves.toMatchObject({ rowCount: 1 });
+    await expect(db.pool.query("UPDATE demandas SET descricao = $1 WHERE id = $2", ['a'.repeat(100_001), demandaId])).rejects.toThrow(
+      /demandas_descricao_check/,
+    );
+    await expect(db.pool.query("UPDATE demandas SET referencias = $1 WHERE id = $2", ['b'.repeat(20_001), demandaId])).rejects.toThrow(
+      /demandas_referencias_check/,
+    );
   });
 
   it('preenche e versiona as capacidades dos agentes já existentes', async () => {
