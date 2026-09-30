@@ -6,7 +6,7 @@ import { atualizarDemanda, registrarTentativa, type Demanda } from '../db/demand
 import { montarChaveIdempotencia, registrarEvento, type TipoEvento } from '../db/eventos.ts';
 import { adicionarMensagem, listarMensagens } from '../db/mensagens.ts';
 import { avaliarEregistrar, ESTADO_AGENTE_DESCONHECIDO, type EstagioPolitica, type OperacaoAvaliada } from '../db/politicas.ts';
-import { criarEntrega, registrarAprendizado, salvarRelatorio, type Metricas } from '../db/relatorios.ts';
+import { criarEntrega, obterEntrega, registrarAprendizado, salvarRelatorio, type Metricas } from '../db/relatorios.ts';
 import { comTransacao } from '../db/tx.ts';
 import type { ModoOrquestracao } from '../domain/orquestracao.ts';
 import { CATEGORIAS, SETORES, type Categoria, type StatusDemanda } from '../domain/setores.ts';
@@ -23,6 +23,7 @@ import {
   type FalaDaConversa,
 } from './prompts.ts';
 import { PAPEL_COORDENADOR, planejarEmShadow } from './planejamento.ts';
+import { processarExecucaoSequencial, type LlmComEnvelope } from './execucao-tarefas.ts';
 import { AuditoriaSchema, ResultadoExecucaoSchema, type ResultadoExecucao } from './schemas.ts';
 
 const MAX_TOKENS_EXECUCAO = 32_000;
@@ -37,9 +38,10 @@ export interface DependenciasDemanda {
   modeloTrabalho: string;
   modeloAuditoria: string;
   urlBase: string;
-  // Fase 3.1: "planejar" grava um plano de tarefas em shadow antes da execução legada; ausente ou
-  // "desligada", nada muda. Ver src/orchestrator/planejamento.ts.
+  // "planejar" grava um plano em shadow; "executar" usa o motor sequencial somente para a categoria piloto.
   orquestracao?: ModoOrquestracao;
+  orquestracaoCategoria?: Categoria;
+  orquestracaoCustoMaxUsd?: string;
   agora?: () => Date;
 }
 
@@ -56,6 +58,10 @@ export interface ResultadoDemanda {
 }
 
 type Checkpoint = (texto: string, agente: string | null) => Promise<void>;
+
+function llmComEnvelope(llm: Llm): llm is LlmComEnvelope {
+  return typeof (llm as Partial<LlmComEnvelope>).gerarComReserva === 'function';
+}
 
 // Emite um evento do ledger sem nunca quebrar o processamento: uma falha aqui (violação de FK, metadata
 // fora do schema do tipo, banco fora do ar) é logada e ignorada, igual ao notificador. O ledger é
@@ -496,6 +502,48 @@ export async function processarDemanda(d: DependenciasDemanda, demanda: Demanda,
       avaliar: (estagio) =>
         avaliarEstagio(d.pool, PAPEL_COORDENADOR, 'coordenador', demanda, 'planejamento', d.modeloTrabalho, estagio, runId, tentativaAtual),
     });
+  }
+
+  if (d.orquestracao === 'executar' && d.orquestracaoCategoria === demanda.categoria) {
+    if (!llmComEnvelope(d.llm)) throw new Error('ORQUESTRACAO_TAREFAS=executar exige LLM com reservas de custo.');
+    await checkpoint(`Executando por tarefas com categoria piloto ${demanda.categoria}.`, PAPEL_COORDENADOR);
+    const sequencial = await processarExecucaoSequencial({
+      pool: d.pool,
+      llm: d.llm,
+      modeloTrabalho: d.modeloTrabalho,
+      demanda,
+      conversa,
+      runId,
+      emitir,
+      tetoBaseUsd: d.orquestracaoCustoMaxUsd,
+    });
+    const entregaPersistida = await obterEntrega(d.pool, sequencial.entregaId);
+    if (!entregaPersistida) throw new Error('Entrega da execução por tarefas não encontrada.');
+    const entrega: EntregaHospedada = {
+      id: entregaPersistida.id,
+      url: `${d.urlBase}/entregas/${entregaPersistida.id}`,
+      titulo: entregaPersistida.titulo,
+      tipo: sequencial.execucao.entrega?.tipo ?? 'texto',
+      texto: entregaPersistida.conteudo,
+      convertidaParaTexto: false,
+      semEntregaSeparada: sequencial.execucao.entrega === null,
+    };
+    await checkpoint(`Entrega hospedada: ${entrega.url}`, PAPEL_COORDENADOR);
+    await emitir('entrega_criada', PAPEL_COORDENADOR, { entregaId: entrega.id, tipo: entrega.tipo, publicadaComoHtml: false });
+    const auditoria = await auditar(d, demanda, sequencial.execucao, entrega, checkpoint, emitir, contexto, tentativaAtual);
+    await checkpoint('Finalizando e registrando relatório.', null);
+    const statusFinal = await registrarResultado(d, demanda, sequencial.execucao, entrega, auditoria, sequencial.duracaoMs, emitir);
+    await checkpoint(`Relatório registrado. Status: ${statusFinal}.`, null);
+    await avaliarEstagio(d.pool, PAPEL_COORDENADOR, 'coordenador', demanda, 'integracao', d.modeloTrabalho, 'post', runId, tentativaAtual);
+    return {
+      demandaId: demanda.id,
+      titulo: demanda.titulo,
+      statusFinal,
+      entregaUrl: entrega.url,
+      resumo: sequencial.execucao.resumo,
+      antipadroes: auditoria.resultado?.antipadroesCount ?? null,
+      interrompidaPor: auditoria.interrupcao,
+    };
   }
 
   await checkpoint(`Executando o trabalho com ${setor.papel} (${d.modeloTrabalho}).`, setor.papel);

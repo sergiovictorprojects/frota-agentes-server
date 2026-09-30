@@ -28,6 +28,8 @@ function montarDependenciasDaFila(config: Config, pool: pg.Pool): DependenciasFi
     modeloAuditoria: config.MODEL_AUDIT,
     urlBase: config.PUBLIC_BASE_URL,
     orquestracao: config.ORQUESTRACAO_TAREFAS,
+    orquestracaoCategoria: config.ORQUESTRACAO_CATEGORIA,
+    orquestracaoCustoMaxUsd: config.ORQUESTRACAO_CUSTO_MAX_USD.toFixed(2),
     notificador,
     maxDemandasPorRun: config.MAX_DEMANDAS_POR_RUN,
     minutosAbandono: config.STALE_CLAIM_MINUTES,

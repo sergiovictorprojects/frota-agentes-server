@@ -24,9 +24,9 @@ relógio interno (pg-boss, dentro do Postgres)
 ## Execução por tarefas
 
 As migrations 005 e 006 já sustentam planos, tarefas, artefatos, leases e reservas de custo. O motor sequencial
-da 3.2b-1 existe em `src/orchestrator/execucao-tarefas.ts`, mas permanece interno e inerte: a variável
-`ORQUESTRACAO_TAREFAS` ainda aceita somente `desligada` e `planejar`. A ativação pública, a categoria piloto e a
-interface de autorização ficam para a 3.2b-2. Ver `docs/adr/0008-execucao-sequencial-inerte-e-capacidades.md`.
+existe em `src/orchestrator/execucao-tarefas.ts`. `ORQUESTRACAO_TAREFAS=executar` só liga o caminho novo para a
+categoria definida em `ORQUESTRACAO_CATEGORIA`; todas as outras demandas seguem pelo fluxo legado. Sem categoria
+piloto explícita, o serviço recusa o boot.
 
 O catálogo expõe capacidades fechadas de artefatos: executores podem produzir artefatos intermediários em texto
 ou JSON; somente o coordenador pode publicar a entrega final; auditor e avaliador não geram artefatos.
@@ -60,7 +60,9 @@ npm run typecheck
 | `CRON_PROCESSAR_FILA` | não | `*/10 * * * *` | Frequência das execuções |
 | `MAX_DEMANDAS_POR_RUN` | não | `3` | Demandas por execução |
 | `MODEL_WORK` / `MODEL_AUDIT` | não | `claude-sonnet-5` | Modelos de execução e de auditoria |
-| `ORQUESTRACAO_TAREFAS` | não | `desligada` | `planejar` grava um plano de tarefas em shadow antes da execução (uma chamada a mais ao modelo por demanda); a demanda segue pelo fluxo atual. Ver `docs/adr/0006-orquestracao-por-tarefas.md` |
+| `ORQUESTRACAO_TAREFAS` | não | `desligada` | `desligada` usa o fluxo legado; `planejar` grava plano shadow; `executar` liga o motor sequencial somente para `ORQUESTRACAO_CATEGORIA` |
+| `ORQUESTRACAO_CATEGORIA` | se `executar` | — | Categoria piloto (`gestores`, `d1`..`d18`) que pode usar o motor sequencial. Não deve ser definida fora de `executar` |
+| `ORQUESTRACAO_CUSTO_MAX_USD` | não | `2` | Teto base por demanda no caminho sequencial piloto; máximo aceito no boot: `20` |
 | `STALE_CLAIM_MINUTES` | não | `90` | Quando uma demanda presa volta para a fila (maior que o prazo de 60 min do job) |
 | `PORT` | não | `3000` | Porta HTTP |
 | `NOTIFY_CHANNEL` | não | `console` | `email` para receber os avisos por e-mail (além do log) |

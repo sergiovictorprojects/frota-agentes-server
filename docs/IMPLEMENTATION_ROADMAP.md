@@ -138,10 +138,10 @@ dependências e uma tarefa de integração que produz a entrega única, sem queb
     tabela de modelos com janela e custo em decimal. A proteção de ciclo no banco continua. Ver
     `docs/adr/0007-execucao-sequencial-e-teto-de-custo.md`.
   - **3.2b-1 — Motor sequencial inerte (implementada).** Laço interno de tarefas, prompts serializados, prazo,
-    timeouts, claims, leases, liquidação por reserva, artefatos intermediários e integração final. A flag pública
-    continua sem aceitar `executar`.
-  - **3.2b-2 — Ativação controlada (planejada).** Flag `executar`, uma categoria ligada por vez, interface de
-    autorização, fallback operacional completo, scripts de verificação de rollback e piloto.
+    timeouts, claims, leases, liquidação por reserva, artefatos intermediários e integração final.
+  - **3.2b-2 — Ativação controlada (em implementação).** Flag `executar`, uma categoria ligada por vez e teto base
+    explícito por demanda. Interface de autorização, fallback operacional completo e scripts de rollback seguem
+    como próximos incrementos do piloto.
 - **3.3 — Concorrência.** `agentes.max_concorrencia` com gatilho, histórico, Zod e testes; lock da linha do
   agente no claim; paralelismo de 2; estado `aguardando_agente`, que não consome tentativa e escala para
   humano no prazo.

@@ -8,7 +8,7 @@ import { adicionarMensagem, listarMensagens } from '../../src/db/mensagens.ts';
 import { iniciarRun } from '../../src/db/operacao.ts';
 import { listarAprendizado, obterEntrega, relatorioMaisRecente } from '../../src/db/relatorios.ts';
 import { SETORES } from '../../src/domain/setores.ts';
-import { LlmError } from '../../src/llm/llm.ts';
+import { LlmError, type PedidoLlm, type RespostaLlm } from '../../src/llm/llm.ts';
 import { OrcamentoExcedidoError } from '../../src/llm/orcamento.ts';
 import { AgenteNaoAutorizadoError } from '../../src/orchestrator/erros.ts';
 import { processarDemanda, type DependenciasDemanda } from '../../src/orchestrator/processar-demanda.ts';
@@ -50,6 +50,24 @@ describe('processarDemanda', () => {
 
   function llmPadrao(exec: Record<string, unknown> = {}, auditoria: unknown = auditoriaLimpa) {
     return new LlmFalso((p) => (p.papel === PAPEL_AUDITOR ? auditoria : { ...execucaoPadrao, ...exec }), USO_PADRAO);
+  }
+  class LlmComReservaFalso extends LlmFalso {
+    async gerarComReserva<T>(pedido: PedidoLlm<T>): Promise<RespostaLlm<T>> {
+      return this.gerar(pedido);
+    }
+    async verificarPodeIniciar(): Promise<void> {}
+  }
+  function llmSequencial() {
+    return new LlmComReservaFalso((p) => {
+      if (p.papel === PAPEL_AUDITOR) return auditoriaLimpa;
+      if (p.papel === SETORES.gestores.papel && p.maxTokens === 2_000) {
+        return { tarefas: [{ chave: 'design', capacidade: 'd11', objetivo: 'Projetar a interface solicitada.', dependeDe: [] }] };
+      }
+      if (p.papel === SETORES.d11.papel) {
+        return { formato: 'texto', resumo: 'Direção visual proposta.', conteudo: 'Interface clara com dashboard e biblioteca.', referencias: [] };
+      }
+      return { ...execucaoPadrao, setoresEnvolvidos: ['d11'], entrega: { tipo: 'texto', titulo: 'Interface proposta', conteudo: 'Entrega integrada.' } };
+    }, USO_PADRAO);
   }
   const deps = (llm: LlmFalso): DependenciasDemanda => ({
     pool: db.pool,
@@ -125,6 +143,47 @@ describe('processarDemanda', () => {
       ['modelo.json', 'json', SETORES.d1.papel, SETORES.gestores.papel],
     ]);
     expect((await listarMensagens(db.pool, demanda.id)).some((m) => m.texto.includes('2 arquivo(s) entregável(is)'))).toBe(true);
+  });
+
+  it('executar: fora da categoria piloto segue pelo fluxo legado', async () => {
+    const demanda = await reivindicada({ categoria: 'd1' });
+    const llm = llmSequencial();
+
+    await processarDemanda({ ...deps(llm), orquestracao: 'executar', orquestracaoCategoria: 'd11' }, demanda, randomUUID());
+
+    expect(llm.pedidos.map((p) => p.papel)).toEqual(['frota:architect', PAPEL_AUDITOR]);
+    const { rows } = await db.pool.query<{ n: string }>('SELECT count(*) AS n FROM planos_demanda WHERE demanda_id = $1', [demanda.id]);
+    expect(rows[0]!.n).toBe('0');
+  });
+
+  it('executar: categoria piloto conclui pelo motor sequencial e registra plano/tarefas', async () => {
+    const demanda = await reivindicada({ categoria: 'd11' });
+    const llm = llmSequencial();
+    const runId = await iniciarRun(db.pool);
+
+    const r = await processarDemanda(
+      { ...deps(llm), orquestracao: 'executar', orquestracaoCategoria: 'd11', orquestracaoCustoMaxUsd: '2.00' },
+      demanda,
+      runId,
+    );
+
+    expect(r).toMatchObject({ statusFinal: 'Concluída', resumo: 'Análise entregue', antipadroes: 0 });
+    expect(llm.pedidos.map((p) => p.papel)).toEqual(['frota:gestores', 'frota:product-designer', 'frota:gestores', PAPEL_AUDITOR]);
+    expect(await obterDemanda(db.pool, demanda.id)).toMatchObject({ status: 'Concluída', entregaUrl: r.entregaUrl });
+    expect(await relatorioMaisRecente(db.pool, demanda.id)).toMatchObject({
+      gerente: 'frota:product-designer → frota:agent-evaluator (agentes autônomos do servidor)',
+      entregaUrl: r.entregaUrl,
+    });
+    const { rows: planos } = await db.pool.query<{ estado: string }>('SELECT estado FROM planos_demanda WHERE demanda_id = $1', [demanda.id]);
+    expect(planos.map((p) => p.estado)).toEqual(['concluido']);
+    const { rows: tarefas } = await db.pool.query<{ estado: string; tipo: string }>(
+      'SELECT t.estado, t.tipo FROM tarefas t JOIN planos_demanda p ON p.id = t.plano_id WHERE p.demanda_id = $1 ORDER BY t.tipo',
+      [demanda.id],
+    );
+    expect(tarefas).toEqual([
+      { estado: 'concluida', tipo: 'especialista' },
+      { estado: 'concluida', tipo: 'integracao' },
+    ]);
   });
 
   it('calcula as metricas a partir das violacoes auditadas, ignorando citacoes sem base', async () => {
