@@ -159,11 +159,12 @@ describe('processarDemanda', () => {
   it('executar: categoria piloto conclui pelo motor sequencial e registra plano/tarefas', async () => {
     const demanda = await reivindicada({ categoria: 'd11' });
     const llm = llmSequencial();
+    const runId = await iniciarRun(db.pool);
 
     const r = await processarDemanda(
       { ...deps(llm), orquestracao: 'executar', orquestracaoCategoria: 'd11', orquestracaoCustoMaxUsd: '2.00' },
       demanda,
-      randomUUID(),
+      runId,
     );
 
     expect(r).toMatchObject({ statusFinal: 'Concluída', resumo: 'Análise entregue', antipadroes: 0 });
