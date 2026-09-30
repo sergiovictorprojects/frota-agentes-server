@@ -268,7 +268,7 @@ describe('processarDemanda', () => {
         return { tarefas: [{ chave: 'interface', capacidade: 'd11', objetivo: 'Projetar dashboard interativo.', dependeDe: [] }] };
       }
       if (indice === 1) {
-        return { formato: 'html', resumo: 'Protótipo base.', conteudo: htmlInterativo, referencias: [] };
+        return { formato: 'texto', resumo: 'Direção visual.', conteudo: 'Dashboard com cards, filtros e ações interativas.', referencias: [] };
       }
       if (indice === 2) {
         return {
