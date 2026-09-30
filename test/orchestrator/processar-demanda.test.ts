@@ -6,6 +6,7 @@ import { criarDemanda, obterDemanda, reivindicarDemandas, type Demanda, type Nov
 import { listarEventosDaDemanda } from '../../src/db/eventos.ts';
 import { adicionarMensagem, listarMensagens } from '../../src/db/mensagens.ts';
 import { iniciarRun } from '../../src/db/operacao.ts';
+import { criarEnvelope, fixarRotaLegado, obterEnvelope } from '../../src/db/orquestracao.ts';
 import { listarAprendizado, obterEntrega, relatorioMaisRecente } from '../../src/db/relatorios.ts';
 import { SETORES } from '../../src/domain/setores.ts';
 import { LlmError, type PedidoLlm, type RespostaLlm } from '../../src/llm/llm.ts';
@@ -184,6 +185,30 @@ describe('processarDemanda', () => {
       { estado: 'concluida', tipo: 'especialista' },
       { estado: 'concluida', tipo: 'integracao' },
     ]);
+  });
+
+  it('executar: respeita rota legado_fixo ja fixada e nao tenta novo plano de tarefas', async () => {
+    const demanda = await reivindicada({ categoria: 'd11' });
+    await criarEnvelope(db.pool, { demandaId: demanda.id, tetoBaseUsd: '5.00' });
+    await fixarRotaLegado(db.pool, { demandaId: demanda.id, motivo: 'plano_rejeitado' });
+    const llm = llmPadrao({ setoresEnvolvidos: ['d11'] });
+    const runId = await iniciarRun(db.pool);
+
+    const r = await processarDemanda(
+      { ...deps(llm), orquestracao: 'executar', orquestracaoCategoria: 'd11', orquestracaoCustoMaxUsd: '5.00' },
+      demanda,
+      runId,
+    );
+
+    expect(r.statusFinal).toBe('Concluída');
+    expect(llm.pedidos.map((p) => p.papel)).toEqual(['frota:product-designer', PAPEL_AUDITOR]);
+    expect(await obterEnvelope(db.pool, demanda.id)).toMatchObject({ rota: 'legado_fixo', motivoLegado: 'plano_rejeitado' });
+    const { rows: planos } = await db.pool.query<{ n: string }>('SELECT count(*) AS n FROM planos_demanda WHERE demanda_id = $1', [
+      demanda.id,
+    ]);
+    expect(planos[0]!.n).toBe('0');
+    const rota = (await listarEventosDaDemanda(db.pool, demanda.id)).find((e) => e.tipoEvento === 'rota_definida');
+    expect(rota?.metadata).toEqual({ rota: 'legado_fixo', motivoRota: 'rota_fixada' });
   });
 
   it('calcula as metricas a partir das violacoes auditadas, ignorando citacoes sem base', async () => {

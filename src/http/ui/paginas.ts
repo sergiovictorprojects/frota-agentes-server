@@ -49,6 +49,10 @@ function botaoAcao(acao: string, rotulo: string, secundario = false): Bruto {
   return html`<form method="post" action="${acao}"><button class="botao${secundario ? ' sec' : ''}" type="submit">${rotulo}</button></form>`;
 }
 
+function botaoExclusao(acao: string): Bruto {
+  return html`<form method="post" action="${acao}" onsubmit="return confirm('Excluir esta demanda definitivamente? Esta ação remove a demanda e todos os dados relacionados da base.')"><button class="botao sec" type="submit">Excluir definitivamente</button></form>`;
+}
+
 export function paginaFila(a: {
   demandas: readonly Demanda[];
   links: ReadonlyMap<string, LinkEntrega | null>;
@@ -136,6 +140,7 @@ export function paginaDetalhe(a: {
 <div class="acoes">
 ${d.status === 'Falhou' ? botaoAcao(`/demandas/${d.id}/reabrir`, 'Tentar novamente') : ''}
 ${d.status !== 'Arquivada' && d.status !== 'Em andamento' ? botaoAcao(`/demandas/${d.id}/arquivar`, 'Arquivar', true) : ''}
+${d.status !== 'Em andamento' ? botaoExclusao(`/demandas/${d.id}/excluir`) : ''}
 </div>
 </div>
 ${a.linkEntrega ? html`<p>${linkDeEntrega(a.linkEntrega, 'botao')}</p>` : ''}

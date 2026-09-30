@@ -5,6 +5,7 @@ import { inserirArtefatosEntregaveis } from '../db/artefatos-entregaveis.ts';
 import { atualizarDemanda, registrarTentativa, type Demanda } from '../db/demandas.ts';
 import { montarChaveIdempotencia, registrarEvento, type TipoEvento } from '../db/eventos.ts';
 import { adicionarMensagem, listarMensagens } from '../db/mensagens.ts';
+import { obterEnvelope } from '../db/orquestracao.ts';
 import { avaliarEregistrar, ESTADO_AGENTE_DESCONHECIDO, type EstagioPolitica, type OperacaoAvaliada } from '../db/politicas.ts';
 import { criarEntrega, obterEntrega, registrarAprendizado, salvarRelatorio, type Metricas } from '../db/relatorios.ts';
 import { comTransacao } from '../db/tx.ts';
@@ -505,45 +506,51 @@ export async function processarDemanda(d: DependenciasDemanda, demanda: Demanda,
   }
 
   if (d.orquestracao === 'executar' && d.orquestracaoCategoria === demanda.categoria) {
-    if (!llmComEnvelope(d.llm)) throw new Error('ORQUESTRACAO_TAREFAS=executar exige LLM com reservas de custo.');
-    await checkpoint(`Executando por tarefas com categoria piloto ${demanda.categoria}.`, PAPEL_COORDENADOR);
-    const sequencial = await processarExecucaoSequencial({
-      pool: d.pool,
-      llm: d.llm,
-      modeloTrabalho: d.modeloTrabalho,
-      demanda,
-      conversa,
-      runId,
-      emitir,
-      tetoBaseUsd: d.orquestracaoCustoMaxUsd,
-    });
-    const entregaPersistida = await obterEntrega(d.pool, sequencial.entregaId);
-    if (!entregaPersistida) throw new Error('Entrega da execução por tarefas não encontrada.');
-    const entrega: EntregaHospedada = {
-      id: entregaPersistida.id,
-      url: `${d.urlBase}/entregas/${entregaPersistida.id}`,
-      titulo: entregaPersistida.titulo,
-      tipo: sequencial.execucao.entrega?.tipo ?? 'texto',
-      texto: entregaPersistida.conteudo,
-      convertidaParaTexto: false,
-      semEntregaSeparada: sequencial.execucao.entrega === null,
-    };
-    await checkpoint(`Entrega hospedada: ${entrega.url}`, PAPEL_COORDENADOR);
-    await emitir('entrega_criada', PAPEL_COORDENADOR, { entregaId: entrega.id, tipo: entrega.tipo, publicadaComoHtml: false });
-    const auditoria = await auditar(d, demanda, sequencial.execucao, entrega, checkpoint, emitir, contexto, tentativaAtual);
-    await checkpoint('Finalizando e registrando relatório.', null);
-    const statusFinal = await registrarResultado(d, demanda, sequencial.execucao, entrega, auditoria, sequencial.duracaoMs, emitir);
-    await checkpoint(`Relatório registrado. Status: ${statusFinal}.`, null);
-    await avaliarEstagio(d.pool, PAPEL_COORDENADOR, 'coordenador', demanda, 'integracao', d.modeloTrabalho, 'post', runId, tentativaAtual);
-    return {
-      demandaId: demanda.id,
-      titulo: demanda.titulo,
-      statusFinal,
-      entregaUrl: entrega.url,
-      resumo: sequencial.execucao.resumo,
-      antipadroes: auditoria.resultado?.antipadroesCount ?? null,
-      interrompidaPor: auditoria.interrupcao,
-    };
+    const envelope = await obterEnvelope(d.pool, demanda.id);
+    if (envelope?.rota === 'legado_fixo') {
+      await emitir('rota_definida', 'sistema', { rota: 'legado_fixo', motivoRota: 'rota_fixada' });
+      await checkpoint(`Rota por tarefas já fixada como legado (${envelope.motivoLegado}); seguindo pelo fluxo legado.`, null);
+    } else {
+      if (!llmComEnvelope(d.llm)) throw new Error('ORQUESTRACAO_TAREFAS=executar exige LLM com reservas de custo.');
+      await checkpoint(`Executando por tarefas com categoria piloto ${demanda.categoria}.`, PAPEL_COORDENADOR);
+      const sequencial = await processarExecucaoSequencial({
+        pool: d.pool,
+        llm: d.llm,
+        modeloTrabalho: d.modeloTrabalho,
+        demanda,
+        conversa,
+        runId,
+        emitir,
+        tetoBaseUsd: d.orquestracaoCustoMaxUsd,
+      });
+      const entregaPersistida = await obterEntrega(d.pool, sequencial.entregaId);
+      if (!entregaPersistida) throw new Error('Entrega da execução por tarefas não encontrada.');
+      const entrega: EntregaHospedada = {
+        id: entregaPersistida.id,
+        url: `${d.urlBase}/entregas/${entregaPersistida.id}`,
+        titulo: entregaPersistida.titulo,
+        tipo: sequencial.execucao.entrega?.tipo ?? 'texto',
+        texto: entregaPersistida.conteudo,
+        convertidaParaTexto: false,
+        semEntregaSeparada: sequencial.execucao.entrega === null,
+      };
+      await checkpoint(`Entrega hospedada: ${entrega.url}`, PAPEL_COORDENADOR);
+      await emitir('entrega_criada', PAPEL_COORDENADOR, { entregaId: entrega.id, tipo: entrega.tipo, publicadaComoHtml: false });
+      const auditoria = await auditar(d, demanda, sequencial.execucao, entrega, checkpoint, emitir, contexto, tentativaAtual);
+      await checkpoint('Finalizando e registrando relatório.', null);
+      const statusFinal = await registrarResultado(d, demanda, sequencial.execucao, entrega, auditoria, sequencial.duracaoMs, emitir);
+      await checkpoint(`Relatório registrado. Status: ${statusFinal}.`, null);
+      await avaliarEstagio(d.pool, PAPEL_COORDENADOR, 'coordenador', demanda, 'integracao', d.modeloTrabalho, 'post', runId, tentativaAtual);
+      return {
+        demandaId: demanda.id,
+        titulo: demanda.titulo,
+        statusFinal,
+        entregaUrl: entrega.url,
+        resumo: sequencial.execucao.resumo,
+        antipadroes: auditoria.resultado?.antipadroesCount ?? null,
+        interrompidaPor: auditoria.interrupcao,
+      };
+    }
   }
 
   await checkpoint(`Executando o trabalho com ${setor.papel} (${d.modeloTrabalho}).`, setor.papel);
