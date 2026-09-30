@@ -2,8 +2,8 @@
 
 ## Status
 
-Implementado na continuação da 3.2b-1, em 2026-09-29. A configuração pública ainda aceita apenas
-`desligada` e `planejar`; portanto, o motor não entra no fluxo de produção por configuração.
+Implementado na continuação da 3.2b-1, em 2026-09-29. Na 3.2b-2, a configuração pública passa a aceitar
+`executar` somente com `ORQUESTRACAO_CATEGORIA` explícita; demandas fora da categoria piloto continuam no legado.
 
 ## Decisão
 
@@ -20,10 +20,10 @@ Implementado na continuação da 3.2b-1, em 2026-09-29. A configuração públic
 5. Especialistas produzem apenas artefatos intermediários. A capacidade de publicar é exclusiva do coordenador;
    auditor e avaliador não produzem artefatos. Essas capacidades são um contrato explícito derivado do catálogo,
    sem alteração da migration 006.
-6. A flag `executar`, a categoria piloto, a autorização administrativa, os scripts de rollback e a ligação ao
-   fluxo público permanecem para a 3.2b-2. Nenhuma migration 007 foi criada nesta entrega.
+6. A flag `executar` liga o motor apenas para a categoria piloto configurada. A autorização administrativa,
+   os scripts de rollback e o fallback operacional completo permanecem para incrementos seguintes.
 
 ## Rollback
 
-O motor continua inacessível por ambiente. O rollback operacional é manter `ORQUESTRACAO_TAREFAS=desligada` ou
-`planejar`; a migration 006 não é alterada e não há down migration.
+O rollback operacional é manter `ORQUESTRACAO_TAREFAS=desligada` ou `planejar`; a migration 006 não é alterada
+e não há down migration.
