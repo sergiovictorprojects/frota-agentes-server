@@ -308,6 +308,70 @@ describe('processarDemanda', () => {
     expect(await obterDemanda(db.pool, demanda.id)).toMatchObject({ status: 'Concluída', tentativas: 1 });
   });
 
+  it('executar: falha llm_api de tarefa retoma o plano ativo sem criar plano duplicado', async () => {
+    const demanda = await reivindicada({
+      categoria: 'd11',
+      titulo: 'Dashboard operacional',
+      descricao: 'Construa uma interface interativa com dashboard e indicadores.',
+    });
+    const runId1 = await iniciarRun(db.pool);
+    const primeira = new LlmComReservaFalso((p) => {
+      if (p.papel === SETORES.gestores.papel && p.maxTokens === 2_000) {
+        return { tarefas: [{ chave: 'interface', capacidade: 'd11', objetivo: 'Projetar dashboard interativo.', dependeDe: [] }] };
+      }
+      if (p.papel === SETORES.d11.papel) return new LlmError('api', 'serviço indisponível', null, 500);
+      return auditoriaLimpa;
+    }, USO_PADRAO);
+
+    await expect(
+      processarDemanda(
+        { ...deps(primeira), orquestracao: 'executar', orquestracaoCategoria: 'd11', orquestracaoCustoMaxUsd: '5.00' },
+        demanda,
+        runId1,
+      ),
+    ).rejects.toMatchObject({ tipo: 'api', status: 500 });
+
+    const eventosPrimeira = await listarEventosDaDemanda(db.pool, demanda.id);
+    expect(eventosPrimeira.some((e) => e.tipoEvento === 'tarefa_falhou' && e.metadata.codigoErro === 'llm_api' && e.metadata.definitiva === false)).toBe(true);
+    const { rows: planosAntes } = await db.pool.query<{ estado: string }>('SELECT estado FROM planos_demanda WHERE demanda_id = $1', [demanda.id]);
+    expect(planosAntes).toEqual([{ estado: 'ativo' }]);
+
+    const htmlInterativo = `<!doctype html>
+<html lang="pt-BR">
+  <head><meta charset="utf-8"><style>body{font-family:sans-serif}</style></head>
+  <body><button id="filtrar">Filtrar</button><script>document.getElementById("filtrar").addEventListener("click",()=>{});</script></body>
+</html>`;
+    const segunda = new LlmComReservaFalso((p) => {
+      if (p.papel === SETORES.gestores.papel && p.maxTokens === 2_000) throw new Error('não deveria planejar de novo');
+      if (p.papel === SETORES.d11.papel) {
+        return { formato: 'texto', resumo: 'Direção visual.', conteudo: 'Dashboard com filtros e indicadores.', referencias: [] };
+      }
+      if (p.papel === SETORES.gestores.papel) {
+        return {
+          ...execucaoPadrao,
+          setoresEnvolvidos: ['d11'],
+          entrega: { tipo: 'html', titulo: 'Dashboard operacional', conteudo: htmlInterativo },
+        };
+      }
+      return auditoriaLimpa;
+    }, USO_PADRAO);
+    const runId2 = await iniciarRun(db.pool);
+
+    const r = await processarDemanda(
+      { ...deps(segunda), orquestracao: 'executar', orquestracaoCategoria: 'd11', orquestracaoCustoMaxUsd: '5.00' },
+      demanda,
+      runId2,
+    );
+
+    expect(r.statusFinal).toBe('Concluída');
+    expect(segunda.pedidos.map((p) => p.papel)).toEqual(['frota:product-designer', 'frota:gestores', PAPEL_AUDITOR]);
+    const { rows: planosDepois } = await db.pool.query<{ estado: string }>('SELECT estado FROM planos_demanda WHERE demanda_id = $1', [demanda.id]);
+    expect(planosDepois).toEqual([{ estado: 'concluido' }]);
+    const eventos = await listarEventosDaDemanda(db.pool, demanda.id);
+    expect(eventos.some((e) => e.tipoEvento === 'plano_retomado')).toBe(true);
+    expect(eventos.some((e) => e.tipoEvento === 'demanda_devolvida_para_fila')).toBe(false);
+  });
+
   it('recusa briefing textual para demanda de dashboard e tenta corrigir para html interativo', async () => {
     const demanda = await reivindicada({
       categoria: 'd11',

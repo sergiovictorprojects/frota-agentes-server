@@ -29,6 +29,7 @@ export class AgenteNaoAutorizadoError extends Error {
 // mesmo erro a cada execução e travaria a fila, porque a demanda problemática é sempre a mais antiga.
 export function ehParadaSistemica(erro: unknown): boolean {
   if (erro instanceof FrotaPausadaError || erro instanceof OrcamentoExcedidoError) return true;
+  if (erro instanceof LlmError && erro.tipo === 'timeout') return true;
   if (!(erro instanceof LlmError) || erro.tipo !== 'api') return false;
   return erro.status === null || erro.status >= 500 || STATUS_DE_SISTEMA.has(erro.status);
 }
