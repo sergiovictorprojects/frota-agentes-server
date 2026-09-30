@@ -10,6 +10,7 @@ import { listarArtefatosDasDependencias, validarArtefato, ArtefatoPropostoSchema
 import { avaliarEregistrar } from '../db/politicas.ts';
 import { criarEnvelope, bloquearPorCusto, fixarRotaLegado, reservarCusto } from '../db/orquestracao.ts';
 import {
+  obterPlanoAtivo,
   registrarEAtivarPlanoExecucao,
   registrarPlanoRejeitado,
   validarPlanoExecucao,
@@ -22,8 +23,11 @@ import {
   concluirPlano,
   concluirTarefaEspecialista,
   falharPorContextoExcedido,
+  falharTentativa,
   falharTarefaDefinitivamente,
+  listarTarefasDoPlano,
   obterProximaTarefaPronta,
+  recuperarLeasesVencidos,
   reivindicarTarefa,
   reservarERegistrarEnvio,
   type TarefaReivindicada,
@@ -47,6 +51,7 @@ import { PrazoRunExcedidoError, criarRelogioRun } from './prazo-run.ts';
 import { comTransacao } from '../db/tx.ts';
 import type { EmitirEvento } from './processar-demanda.ts';
 import { inferirEntregaEsperada, instrucaoEntregaEsperada, mensagemEntregaInvalida, validarResultadoExecucao } from './validacao-entrega.ts';
+import { codigoDoErro, ehParadaSistemica } from './erros.ts';
 
 // A interface fica separada de Llm para tornar explícito que o motor nunca pode usar o caminho legado de
 // LlmComOrcamento: uma chamada com envelope precisa liquidar a reserva, não gravar um segundo agent_step.
@@ -151,6 +156,18 @@ function tipoErroTarefa(erro: unknown): 'llm_recusa' | 'llm_truncado' | 'llm_inv
   return 'falha_inesperada';
 }
 
+function erroApiSistemico(erro: LlmError): boolean {
+  if (erro.tipo !== 'api') return false;
+  return erro.status === null || erro.status >= 500 || [401, 402, 403, 404, 408, 429].includes(erro.status);
+}
+
+function falhaPlanejamentoControlavel(erro: unknown): boolean {
+  if (ehParadaSistemica(erro)) return false;
+  if (erro instanceof LlmError) return ['recusa', 'truncado', 'invalido', 'api'].includes(erro.tipo);
+  if (erro instanceof z.ZodError) return true;
+  return false;
+}
+
 async function avaliarTarefa(d: DependenciasExecucaoTarefas, tarefa: TarefaReivindicada, estagio: 'pre' | 'during' | 'post'): Promise<void> {
   await avaliarEregistrar(d.pool, {
     demandaId: d.demanda.id,
@@ -201,6 +218,26 @@ async function falharEAbandonar(
   });
 }
 
+async function falharTentativaSistemica(d: DependenciasExecucaoTarefas, tarefa: TarefaReivindicada, codigo: 'llm_api' | 'llm_timeout'): Promise<void> {
+  const falha = await falharTentativa(d.pool, { tarefaId: tarefa.id, leaseToken: tarefa.leaseToken, codigoErro: codigo });
+  if (!falha.registrada) return;
+  await d.emitir('tarefa_falhou', tarefa.agente.chave, {
+    claimId: falha.claimId,
+    tipo: tarefa.tipo,
+    tentativa: falha.tentativa,
+    codigoErro: codigo,
+    definitiva: falha.definitiva,
+  }, tarefa.id);
+  if (falha.abandono) {
+    await d.emitir('plano_abandonado', 'sistema', {
+      planoId: tarefa.planoId,
+      versao: falha.abandono.versao,
+      motivoAbandono: 'tarefa_falhou',
+      tarefasCanceladas: falha.abandono.tarefasCanceladas,
+    });
+  }
+}
+
 async function abandonarParaLegadoPorTarefa(
   d: DependenciasExecucaoTarefas,
   tarefa: TarefaReivindicada,
@@ -209,6 +246,53 @@ async function abandonarParaLegadoPorTarefa(
   await falharEAbandonar(d, tarefa, codigo);
   await fixarRotaLegado(d.pool, { demandaId: d.demanda.id, motivo: 'tarefa_falhou' });
   throw new RotaLegadoFixadaError('tarefa_falhou', `Tarefa falhou: ${codigo}`);
+}
+
+async function resumirTarefasPlano(d: DependenciasExecucaoTarefas, planoId: string): Promise<{ totalTarefas: number; totalDependencias: number; tarefasConcluidas: number; tarefasRestantes: number; tarefasEmExecucao: number }> {
+  const tarefas = await listarTarefasDoPlano(d.pool, planoId);
+  const { rows } = await d.pool.query<{ n: string }>('SELECT count(*) AS n FROM tarefas_dependencias td JOIN tarefas t ON t.id = td.tarefa_id WHERE t.plano_id = $1', [planoId]);
+  const tarefasConcluidas = tarefas.filter((t) => t.estado === 'concluida').length;
+  return {
+    totalTarefas: tarefas.length,
+    totalDependencias: Number(rows[0]?.n ?? 0),
+    tarefasConcluidas,
+    tarefasRestantes: tarefas.filter((t) => !['concluida', 'falhou', 'cancelada'].includes(t.estado)).length,
+    tarefasEmExecucao: tarefas.filter((t) => t.estado === 'em_execucao').length,
+  };
+}
+
+async function retomarPlanoAtivo(d: DependenciasExecucaoTarefas): Promise<PlanoGravado | null> {
+  const ativo = await obterPlanoAtivo(d.pool, d.demanda.id);
+  if (!ativo) return null;
+  const resumo = await resumirTarefasPlano(d, ativo.id);
+  await d.emitir('plano_retomado', 'sistema', {
+    planoId: ativo.id,
+    versao: ativo.versao,
+    tarefasConcluidas: resumo.tarefasConcluidas,
+    tarefasRestantes: resumo.tarefasRestantes,
+  });
+  return { id: ativo.id, versao: ativo.versao, totalTarefas: resumo.totalTarefas, totalDependencias: resumo.totalDependencias };
+}
+
+async function recuperarLeasesDoPlano(d: DependenciasExecucaoTarefas, plano: PlanoGravado): Promise<void> {
+  const recuperacao = await recuperarLeasesVencidos(d.pool, plano.id);
+  for (const lease of recuperacao.leases) {
+    await d.emitir('tarefa_lease_expirado', 'sistema', {
+      claimId: lease.claimId,
+      tentativa: lease.tentativa,
+      enviada: lease.enviada,
+      destino: lease.destino,
+    }, lease.tarefaId);
+  }
+  if (recuperacao.abandono) {
+    await d.emitir('plano_abandonado', 'sistema', {
+      planoId: plano.id,
+      versao: recuperacao.abandono.versao,
+      motivoAbandono: 'tarefa_falhou',
+      tarefasCanceladas: recuperacao.abandono.tarefasCanceladas,
+    });
+    throw new RotaLegadoFixadaError('tarefa_falhou', 'Plano abandonado após expiração de lease.');
+  }
 }
 
 async function bloquearDemandaPorCusto(d: DependenciasExecucaoTarefas, tarefa: TarefaReivindicada): Promise<void> {
@@ -228,6 +312,9 @@ async function desistirDoClaimComDb(db: Db, tarefa: TarefaReivindicada): Promise
 }
 
 async function registrarPlano(d: DependenciasExecucaoTarefas): Promise<PlanoGravado> {
+  const planoAtivo = await retomarPlanoAtivo(d);
+  if (planoAtivo) return planoAtivo;
+
   const sistema = sistemaPlanejamentoExecucao();
   const usuario = usuarioPlanejamentoExecucao(d.demanda, d.conversa);
   const medida = medirEntrada({ sistema, usuario, schema: dadosSchemaParaReserva(PlanoExecucaoPropostoSchema) });
@@ -258,6 +345,14 @@ async function registrarPlano(d: DependenciasExecucaoTarefas): Promise<PlanoGrav
   return plano;
 }
 
+async function fixarLegadoPorFalhaDePlanejamento(d: DependenciasExecucaoTarefas, erro: unknown): Promise<never> {
+  const codigoErro = codigoDoErro(erro);
+  await d.emitir('planejamento_falhou', 'frota:gestores', { codigoErro });
+  await fixarRotaLegado(d.pool, { demandaId: d.demanda.id, motivo: 'planejamento_falhou' });
+  await d.emitir('fallback_legado', 'sistema', { planoId: null, motivoFallback: 'planejamento_falhou', codigoErro });
+  throw new RotaLegadoFixadaError('planejamento_falhou', `Planejamento falhou: ${codigoErro}`);
+}
+
 export async function processarExecucaoSequencial(d: DependenciasExecucaoTarefas): Promise<ResultadoExecucaoTarefas> {
   const relogio = criarRelogioRun(d.agoraMonotono);
   const entregaEsperada = inferirEntregaEsperada(d.demanda, SETORES[d.demanda.categoria]);
@@ -268,16 +363,23 @@ export async function processarExecucaoSequencial(d: DependenciasExecucaoTarefas
   try {
     plano = await registrarPlano(d);
   } catch (erro) {
-    // A PR 3.2b-1 não altera o fluxo legado; o chamador decide se deixa a demanda em legado. O plano já
-    // rejeitado permanece auditável, e não há tentativa de executar tarefa sem plano ativo.
+    if (erro instanceof RotaLegadoFixadaError) throw erro;
+    if (falhaPlanejamentoControlavel(erro)) await fixarLegadoPorFalhaDePlanejamento(d, erro);
     throw erro;
   }
 
   let resultadoIntegracao: ResultadoExecucao | null = null;
   let entregaId: string | null = null;
+  await recuperarLeasesDoPlano(d, plano);
   for (;;) {
     const pronta = await obterProximaTarefaPronta(d.pool, plano.id);
-    if (!pronta) break;
+    if (!pronta) {
+      const resumo = await resumirTarefasPlano(d, plano.id);
+      if (resumo.tarefasEmExecucao > 0) {
+        throw new LlmError('api', 'Plano ativo ainda aguarda a conclusão ou expiração de uma tarefa anterior.', null, 429);
+      }
+      break;
+    }
     if (!relogio.podeIniciar(pronta.tipo === 'integracao' ? 720 : 480)) throw new PrazoRunExcedidoError();
 
     const linhas = await d.pool.query<{ chave: string; tipo: 'especialista' | 'integracao'; objetivo: string | null }>(
@@ -424,9 +526,16 @@ export async function processarExecucaoSequencial(d: DependenciasExecucaoTarefas
       // retida quando necessário e o watchdog/uma retomada futura decide o próximo passo. Só falhas de
       // conteúdo classificáveis (recusa, truncamento, schema inválido ou status HTTP determinístico)
       // podem abandonar o plano e cair no legado.
+      if (erro instanceof LlmError && erroApiSistemico(erro)) {
+        await falharTentativaSistemica(d, tarefa, 'llm_api');
+        throw erro;
+      }
+      if (erro instanceof LlmError && erro.tipo === 'timeout') {
+        await falharTentativaSistemica(d, tarefa, 'llm_timeout');
+        throw erro;
+      }
       if (
         !(erro instanceof LlmError) ||
-        erro.tipo === 'timeout' ||
         (erro.tipo === 'api' && (erro.status === null || erro.status >= 408 && erro.status !== 422))
       ) {
         throw erro;
