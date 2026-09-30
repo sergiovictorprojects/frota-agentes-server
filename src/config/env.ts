@@ -1,6 +1,7 @@
 import { z } from 'zod';
 import { problemaNaOrigemPublica } from '../domain/links-entrega.ts';
 import { MODOS_ORQUESTRACAO } from '../domain/orquestracao.ts';
+import { CATEGORIAS } from '../domain/setores.ts';
 
 // Uma variável presente mas vazia (`CHAVE=`) conta como ausente.
 const opcional = <T extends z.ZodType>(esquema: T) => z.preprocess((v) => (v === '' ? undefined : v), esquema.optional());
@@ -27,9 +28,10 @@ const schema = z.object({
   MODEL_AUDIT: z.string().min(1).default('claude-sonnet-5'),
   // Maior que o prazo do job no agendador (60 min): uma run só é dada como morta depois de o job expirar.
   STALE_CLAIM_MINUTES: z.coerce.number().int().min(5).default(90),
-  // Fase 3.1: "planejar" grava, em shadow, o plano de tarefas proposto pelo coordenador antes da execução
-  // atual (uma chamada a mais ao modelo por demanda). "desligada" (padrão) não muda nada.
+  // "planejar" grava o plano em shadow; "executar" só liga o motor sequencial para ORQUESTRACAO_CATEGORIA.
   ORQUESTRACAO_TAREFAS: z.enum(MODOS_ORQUESTRACAO).default('desligada'),
+  ORQUESTRACAO_CATEGORIA: opcional(z.enum(CATEGORIAS)),
+  ORQUESTRACAO_CUSTO_MAX_USD: z.coerce.number().positive('deve ser maior que zero').max(20, 'alto demais para piloto').default(2),
   // Sem canal de e-mail configurado, os avisos ficam só no log do serviço.
   NOTIFY_CHANNEL: z.enum(['console', 'email']).default('console'),
   RESEND_API_KEY: opcional(z.string().min(10, 'curta demais')),
@@ -37,6 +39,12 @@ const schema = z.object({
   // O remetente de teste do Resend só entrega para o e-mail com que a conta foi criada.
   NOTIFY_EMAIL_FROM: z.string().min(3).default('Frota <onboarding@resend.dev>'),
 }).superRefine((c, ctx) => {
+  if (c.ORQUESTRACAO_TAREFAS === 'executar' && !c.ORQUESTRACAO_CATEGORIA) {
+    ctx.addIssue({ code: 'custom', path: ['ORQUESTRACAO_CATEGORIA'], message: 'obrigatória quando ORQUESTRACAO_TAREFAS=executar' });
+  }
+  if (c.ORQUESTRACAO_TAREFAS !== 'executar' && c.ORQUESTRACAO_CATEGORIA) {
+    ctx.addIssue({ code: 'custom', path: ['ORQUESTRACAO_CATEGORIA'], message: 'só deve ser definida quando ORQUESTRACAO_TAREFAS=executar' });
+  }
   if (c.NOTIFY_CHANNEL !== 'email') return;
   for (const campo of ['RESEND_API_KEY', 'NOTIFY_EMAIL_TO'] as const) {
     if (!c[campo]) ctx.addIssue({ code: 'custom', path: [campo], message: 'obrigatória quando NOTIFY_CHANNEL=email' });
