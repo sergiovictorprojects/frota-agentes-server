@@ -19,7 +19,10 @@ export interface DependenciasApp {
   origemPublica: string;
 }
 
-const TAMANHO_MAXIMO_CORPO = 64 * 1024;
+// Demandas extensas podem conter especificações estruturadas (por exemplo, muitos requisitos e etapas).
+// O limite continua finito para proteger o serviço e é maior que os limites de caracteres aceitos no formulário,
+// inclusive depois da codificação application/x-www-form-urlencoded.
+const TAMANHO_MAXIMO_CORPO = 1024 * 1024;
 // Vale para tudo o que chega ao serviço. A 300 por minuto, adivinhar uma senha de 16+ caracteres aleatórios é inviável.
 const LIMITE_PADRAO_POR_MINUTO = 300;
 const CSP_UI = "default-src 'none'; style-src 'self'; form-action 'self'; base-uri 'none'; frame-ancestors 'none'";

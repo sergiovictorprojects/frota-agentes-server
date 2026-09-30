@@ -102,8 +102,8 @@ describe('aplicacao HTTP', () => {
       expect(r.headers['content-type']).toContain('text/css');
     });
 
-    it('recusa corpos maiores que 64 KB', async () => {
-      const r = await post('/demandas', { titulo: 'x', descricao: 'a'.repeat(70_000) });
+    it('recusa corpos maiores que 1 MiB', async () => {
+      const r = await post('/demandas', { titulo: 'x', descricao: 'a'.repeat(1_100_000) });
       expect(r.statusCode).toBe(413);
     });
   });
@@ -168,6 +168,22 @@ describe('aplicacao HTTP', () => {
         referencias: null,
         status: 'Nova',
       });
+    });
+
+    it('aceita especificacao extensa dentro dos novos limites', async () => {
+      const descricao = 'Etapa detalhada.\n'.repeat(5_000);
+      const referencias = 'https://exemplo.test/requisito\n'.repeat(600);
+      const r = await post('/demandas', { titulo: 'Especificação extensa', categoria: 'd11', descricao, referencias });
+      expect(r.statusCode).toBe(303);
+      const id = r.headers.location!.split('/').pop()!;
+      expect(await obterDemanda(db.pool, id)).toMatchObject({ descricao, referencias });
+    });
+
+    it('recusa campos de especificacao acima dos novos limites', async () => {
+      const r = await post('/demandas', { titulo: 'x', categoria: 'd1', descricao: 'a'.repeat(100_001), referencias: 'b'.repeat(20_001) });
+      expect(r.statusCode).toBe(400);
+      expect(r.body).toContain('A descrição aceita no máximo 100000 caracteres.');
+      expect(r.body).toContain('As referências aceitam no máximo 20000 caracteres.');
     });
 
     it('rejeita dados invalidos com mensagens e sem criar nada, preservando o que foi digitado', async () => {

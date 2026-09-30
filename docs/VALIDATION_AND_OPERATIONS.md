@@ -23,6 +23,15 @@
 5. Criar entrega.
 6. Consultar dossiê final.
 
+### Validação de entrada e entrega
+
+1. Criar demanda com resultado esperado e critérios de aceite.
+2. Escolher uma categoria incompatível (por exemplo, `gestores` para uma interface).
+3. Confirmar que a regra bloqueia ou exige confirmação, sem alterar a categoria silenciosamente.
+4. Aceitar a recomendação ou escolher uma categoria compatível.
+5. Processar a demanda e verificar que a conclusão contém o tipo de entrega exigido.
+6. Consultar evento/dossiê com a regra aplicada, recomendação, confirmação e motivo da rota.
+
 ### Demanda com insumo humano
 
 1. Agente identifica lacuna.

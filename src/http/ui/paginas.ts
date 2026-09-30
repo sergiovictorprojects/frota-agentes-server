@@ -91,8 +91,8 @@ ${a.erros.length ? html`<ul class="erros" role="alert">${a.erros.map((e) => html
 <label>Prioridade<select name="prioridade">${PRIORIDADES.map((p) => opcao(p, p, v('prioridade') || 'MEDIUM'))}</select></label>
 <label>Prazo<input type="date" name="prazo" value="${v('prazo')}"></label>
 <label>Solicitante<input name="solicitante" maxlength="200" value="${v('solicitante')}"></label>
-<label>Descrição<textarea name="descricao" rows="8" maxlength="20000">${v('descricao')}</textarea></label>
-<label>Referências<textarea name="referencias" rows="3" maxlength="5000">${v('referencias')}</textarea></label>
+<label>Descrição<textarea name="descricao" rows="16" maxlength="100000">${v('descricao')}</textarea></label>
+<label>Referências<textarea name="referencias" rows="5" maxlength="20000">${v('referencias')}</textarea></label>
 <div><button class="botao" type="submit">Criar demanda</button></div>
 </form>`;
 }
