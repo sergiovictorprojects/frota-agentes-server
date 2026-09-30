@@ -171,8 +171,8 @@ describe('aplicacao HTTP', () => {
     });
 
     it('aceita especificacao extensa dentro dos novos limites', async () => {
-      const descricao = 'Etapa detalhada.\n'.repeat(5_000);
-      const referencias = 'https://exemplo.test/requisito\n'.repeat(600);
+      const descricao = 'Etapa detalhada.\n'.repeat(5_000).trimEnd();
+      const referencias = 'https://exemplo.test/requisito\n'.repeat(600).trimEnd();
       const r = await post('/demandas', { titulo: 'Especificação extensa', categoria: 'd11', descricao, referencias });
       expect(r.statusCode).toBe(303);
       const id = r.headers.location!.split('/').pop()!;
