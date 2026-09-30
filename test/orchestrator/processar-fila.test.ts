@@ -1,9 +1,12 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { criarDemanda, obterDemanda } from '../../src/db/demandas.ts';
+import { listarEventosDaDemanda } from '../../src/db/eventos.ts';
 import { listarMensagens } from '../../src/db/mensagens.ts';
 import { pausarFrota, ultimaRun } from '../../src/db/operacao.ts';
+import { obterEnvelope } from '../../src/db/orquestracao.ts';
 import { listarRelatorios } from '../../src/db/relatorios.ts';
-import { LlmError } from '../../src/llm/llm.ts';
+import { SETORES } from '../../src/domain/setores.ts';
+import { LlmError, type PedidoLlm, type RespostaLlm } from '../../src/llm/llm.ts';
 import { OrcamentoExcedidoError } from '../../src/llm/orcamento.ts';
 import { processarFila, type DependenciasFila } from '../../src/orchestrator/processar-fila.ts';
 import { createTestDb, type TestDb } from '../helpers/db.ts';
@@ -28,6 +31,11 @@ const execucao = {
 };
 const auditoria = { violacoes: [], observacoes: '' };
 const respostaNormal = (p: { papel: string }) => (p.papel === PAPEL_AUDITOR ? auditoria : execucao);
+const htmlInterativo = `<!doctype html>
+<html lang="pt-BR">
+  <head><meta charset="utf-8"><style>body{font-family:sans-serif}</style></head>
+  <body><button id="filtrar">Filtrar</button><script>document.getElementById("filtrar").addEventListener("click",()=>{});</script></body>
+</html>`;
 
 describe('processarFila', () => {
   let db: TestDb;
@@ -55,6 +63,30 @@ describe('processarFila', () => {
       notificador,
       maxDemandasPorRun: max,
       minutosAbandono: 60,
+    };
+    return { deps, llm, notificador };
+  }
+  class LlmComReservaFalso extends LlmFalso {
+    async gerarComReserva<T>(pedido: PedidoLlm<T>): Promise<RespostaLlm<T>> {
+      return this.gerar(pedido);
+    }
+    async verificarPodeIniciar(): Promise<void> {}
+  }
+  function montarComReservas(responder: ConstructorParameters<typeof LlmFalso>[0], max = 3) {
+    const llm = new LlmComReservaFalso(responder, USO_PADRAO);
+    const notificador = new NotificadorMemoria();
+    const deps: DependenciasFila = {
+      pool: db.pool,
+      llm,
+      modeloTrabalho: 'claude-sonnet-5',
+      modeloAuditoria: 'claude-sonnet-5',
+      urlBase: 'https://frota.minhaempresa.com.br',
+      notificador,
+      maxDemandasPorRun: max,
+      minutosAbandono: 60,
+      orquestracao: 'executar',
+      orquestracaoCategoria: 'd11',
+      orquestracaoCustoMaxUsd: '5.00',
     };
     return { deps, llm, notificador };
   }
@@ -145,6 +177,73 @@ describe('processarFila', () => {
     expect(await obterDemanda(db.pool, primeira)).toMatchObject({ status: 'Nova', tentativas: 0 });
     expect(await obterDemanda(db.pool, segunda)).toMatchObject({ status: 'Nova', tentativas: 0 });
     expect(await ultimaRun(db.pool)).toMatchObject({ status: 'erro' });
+  });
+
+  it('motor por tarefas: falha sistemica de tarefa retoma o plano ativo na run seguinte', async () => {
+    const id = await criarComIdade('dashboard operacional', 10);
+    await db.pool.query("UPDATE demandas SET categoria = 'd11', descricao = 'Construa dashboard interativo com filtros.' WHERE id = $1", [id]);
+    let falharEspecialista = true;
+    const { deps, llm } = montarComReservas((p) => {
+      if (p.papel === PAPEL_AUDITOR) return auditoria;
+      if (p.papel === SETORES.gestores.papel && p.maxTokens === 2_000) {
+        return { tarefas: [{ chave: 'interface', capacidade: 'd11', objetivo: 'Projetar dashboard interativo.', dependeDe: [] }] };
+      }
+      if (p.papel === SETORES.d11.papel) {
+        if (falharEspecialista) {
+          falharEspecialista = false;
+          return new LlmError('api', 'serviço indisponível', null, 500);
+        }
+        return { formato: 'texto', resumo: 'Direção visual.', conteudo: 'Dashboard com filtros e indicadores.', referencias: [] };
+      }
+      if (p.papel === SETORES.gestores.papel) {
+        return { ...execucao, setoresEnvolvidos: ['d11'], entrega: { tipo: 'html', titulo: 'Dashboard operacional', conteudo: htmlInterativo } };
+      }
+      return execucao;
+    });
+
+    const primeira = await processarFila(deps);
+
+    expect(primeira).toMatchObject({ status: 'erro', processadas: [], falhas: [] });
+    expect(await obterDemanda(db.pool, id)).toMatchObject({ status: 'Nova', tentativas: 0 });
+    const { rows: planosAntes } = await db.pool.query<{ estado: string }>('SELECT estado FROM planos_demanda WHERE demanda_id = $1', [id]);
+    expect(planosAntes).toEqual([{ estado: 'ativo' }]);
+    const eventosPrimeira = await listarEventosDaDemanda(db.pool, id);
+    expect(eventosPrimeira.some((e) => e.tipoEvento === 'tarefa_falhou' && e.metadata.codigoErro === 'llm_api')).toBe(true);
+
+    const segunda = await processarFila(deps);
+
+    expect(segunda.status).toBe('ok');
+    expect(segunda.processadas.map((r) => r.titulo)).toEqual(['dashboard operacional']);
+    expect(llm.pedidos.filter((p) => p.papel === SETORES.gestores.papel && p.maxTokens === 2_000)).toHaveLength(1);
+    expect(await obterDemanda(db.pool, id)).toMatchObject({ status: 'Concluída', tentativas: 1 });
+    const { rows: planosDepois } = await db.pool.query<{ estado: string }>('SELECT estado FROM planos_demanda WHERE demanda_id = $1', [id]);
+    expect(planosDepois).toEqual([{ estado: 'concluido' }]);
+    const eventos = await listarEventosDaDemanda(db.pool, id);
+    expect(eventos.some((e) => e.tipoEvento === 'plano_retomado')).toBe(true);
+  });
+
+  it('motor por tarefas: planejamento invalido fixa legado e conclui pela fila na mesma tentativa', async () => {
+    const id = await criarComIdade('interface sem plano valido', 10);
+    await db.pool.query("UPDATE demandas SET categoria = 'd11', descricao = 'Construa uma interface interativa.' WHERE id = $1", [id]);
+    const { deps, llm } = montarComReservas((p) => {
+      if (p.papel === PAPEL_AUDITOR) return auditoria;
+      if (p.papel === SETORES.gestores.papel && p.maxTokens === 2_000) {
+        return new LlmError('invalido', 'A resposta do modelo fugiu do esquema esperado.', USO_PADRAO);
+      }
+      return { ...execucao, setoresEnvolvidos: ['d11'], entrega: { tipo: 'html', titulo: 'Interface', conteudo: htmlInterativo } };
+    });
+
+    const resumo = await processarFila(deps);
+
+    expect(resumo.status).toBe('ok');
+    expect(resumo.processadas.map((r) => r.titulo)).toEqual(['interface sem plano valido']);
+    expect(await obterDemanda(db.pool, id)).toMatchObject({ status: 'Concluída', tentativas: 1 });
+    expect(await obterEnvelope(db.pool, id)).toMatchObject({ rota: 'legado_fixo', motivoLegado: 'planejamento_falhou' });
+    expect(llm.pedidos.map((p) => p.papel)).toEqual([SETORES.gestores.papel, SETORES.d11.papel, PAPEL_AUDITOR]);
+    const eventos = await listarEventosDaDemanda(db.pool, id);
+    expect(eventos.some((e) => e.tipoEvento === 'planejamento_falhou' && e.metadata.codigoErro === 'llm_invalido')).toBe(true);
+    expect(eventos.some((e) => e.tipoEvento === 'fallback_legado' && e.metadata.motivoFallback === 'planejamento_falhou')).toBe(true);
+    expect(eventos.some((e) => e.tipoEvento === 'demanda_devolvida_para_fila')).toBe(false);
   });
 
   it('resposta invalida da execucao: registra a falha, volta para a fila e vira Falhou na terceira tentativa', async () => {
