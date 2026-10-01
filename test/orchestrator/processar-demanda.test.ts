@@ -157,6 +157,53 @@ describe('processarDemanda', () => {
     expect(rows[0]!.n).toBe('0');
   });
 
+  it('coloca demanda de interface em setor incompatível em aguardando humano antes de chamar LLM', async () => {
+    const demanda = await reivindicada({
+      categoria: 'gestores',
+      titulo: 'Portal operacional',
+      resultadoEsperado: 'interface',
+      criteriosAceite: 'Deve entregar uma tela interativa publicada como HTML.',
+    });
+    const llm = llmPadrao();
+    const runId = await iniciarRun(db.pool);
+
+    const r = await processarDemanda(deps(llm), demanda, runId);
+
+    expect(r).toMatchObject({ statusFinal: 'Aguardando humano', entregaUrl: null });
+    expect(llm.pedidos).toHaveLength(0);
+    expect(await obterDemanda(db.pool, demanda.id)).toMatchObject({
+      status: 'Aguardando humano',
+      bloqueioHumano: {
+        motivo: 'categoria_incompativel',
+        resultadoEsperado: 'interface',
+        categoriaAtual: 'gestores',
+        categoriaSugerida: 'd11',
+      },
+    });
+    const eventos = await listarEventosDaDemanda(db.pool, demanda.id);
+    expect(eventos.some((e) => e.tipoEvento === 'roteamento_validado' && e.metadata.decisao === 'aguardar_humano')).toBe(true);
+    expect(eventos.some((e) => e.tipoEvento === 'pendencia_humana_registrada')).toBe(true);
+  });
+
+  it('coloca demanda com resultado esperado explícito mas sem critérios em aguardando humano', async () => {
+    const demanda = await reivindicada({
+      categoria: 'd11',
+      titulo: 'Portal operacional',
+      resultadoEsperado: 'interface',
+      criteriosAceite: '',
+    });
+    const llm = llmPadrao();
+
+    const r = await processarDemanda(deps(llm), demanda, randomUUID());
+
+    expect(r.statusFinal).toBe('Aguardando humano');
+    expect(llm.pedidos).toHaveLength(0);
+    expect(await obterDemanda(db.pool, demanda.id)).toMatchObject({
+      status: 'Aguardando humano',
+      bloqueioHumano: { motivo: 'criterios_ausentes', categoriaSugerida: 'd11' },
+    });
+  });
+
   it('executar: categoria piloto conclui pelo motor sequencial e registra plano/tarefas', async () => {
     const demanda = await reivindicada({ categoria: 'd11' });
     const llm = llmSequencial();
@@ -412,6 +459,42 @@ describe('processarDemanda', () => {
     expect(entrega?.conteudo).toContain('<script>');
     expect(entrega?.conteudo).toContain('addEventListener');
     expect((await listarMensagens(db.pool, demanda.id)).some((m) => m.texto.includes('Entrega rejeitada pela validação'))).toBe(true);
+  });
+
+  it('resultado esperado interface exige html interativo mesmo sem termos inferidos no texto', async () => {
+    const demanda = await reivindicada({
+      categoria: 'd11',
+      titulo: 'Portal interno',
+      descricao: 'Organize a entrega principal.',
+      resultadoEsperado: 'interface',
+      criteriosAceite: 'Deve entregar HTML completo com CSS, JavaScript e controles interativos.',
+    });
+    const htmlInterativo = `<!doctype html>
+<html lang="pt-BR">
+  <head><meta charset="utf-8"><style>body{font-family:sans-serif}</style></head>
+  <body><button id="acao">Executar</button><script>document.getElementById("acao").addEventListener("click",()=>{});</script></body>
+</html>`;
+    const llm = new LlmFalso((p, indice) => {
+      if (p.papel === PAPEL_AUDITOR) return auditoriaLimpa;
+      if (indice === 0) {
+        return {
+          ...execucaoPadrao,
+          setoresEnvolvidos: ['d11'],
+          entrega: { tipo: 'texto', titulo: 'Briefing', conteudo: 'Resumo da interface sugerida.' },
+        };
+      }
+      return {
+        ...execucaoPadrao,
+        setoresEnvolvidos: ['d11'],
+        entrega: { tipo: 'html', titulo: 'Portal interno', conteudo: htmlInterativo },
+      };
+    });
+
+    const r = await processarDemanda(deps(llm), demanda, randomUUID());
+
+    expect(r.statusFinal).toBe('Concluída');
+    expect(llm.pedidos[0]!.usuario).toContain('Entrega esperada');
+    expect(llm.pedidos[1]!.usuario).toContain('Correção obrigatória da entrega');
   });
 
   it('falha de forma controlada quando demanda de dashboard continua sem html interativo', async () => {
@@ -701,8 +784,8 @@ describe('processarDemanda', () => {
     // Nenhuma chamada ao modelo aconteceu: a checagem barra antes do llm.gerar, não muda prompt nenhum.
     expect(llm.pedidos).toHaveLength(0);
     const eventos = await listarEventosDaDemanda(db.pool, demanda.id);
-    expect(eventos.map((e) => e.tipoEvento)).toEqual(['processamento_iniciado', 'politica_avaliada', 'chamada_trabalho_falhou']);
-    expect(eventos[2]!.metadata).toEqual({ codigoErro: 'agente_nao_autorizado' });
+    expect(eventos.map((e) => e.tipoEvento)).toEqual(['processamento_iniciado', 'roteamento_validado', 'politica_avaliada', 'chamada_trabalho_falhou']);
+    expect(eventos[3]!.metadata).toEqual({ codigoErro: 'agente_nao_autorizado' });
 
     await atualizarAgente(db.pool, SETORES.d1.papel, 'teste', { estado: 'ativo' });
   });
@@ -717,8 +800,8 @@ describe('processarDemanda', () => {
 
     expect(llm.pedidos).toHaveLength(0);
     const eventos = await listarEventosDaDemanda(db.pool, demanda.id);
-    expect(eventos.map((e) => e.tipoEvento)).toEqual(['processamento_iniciado', 'politica_avaliada', 'chamada_trabalho_falhou']);
-    expect(eventos[2]!.metadata).toEqual({ codigoErro: 'agente_nao_autorizado' });
+    expect(eventos.map((e) => e.tipoEvento)).toEqual(['processamento_iniciado', 'roteamento_validado', 'politica_avaliada', 'chamada_trabalho_falhou']);
+    expect(eventos[3]!.metadata).toEqual({ codigoErro: 'agente_nao_autorizado' });
 
     await atualizarAgente(db.pool, SETORES.d1.papel, 'teste', { modeloPermitido: 'claude-sonnet-5' });
   });
@@ -738,6 +821,7 @@ describe('processarDemanda', () => {
     const eventos = await listarEventosDaDemanda(db.pool, demanda.id);
     expect(eventos.map((e) => e.tipoEvento)).toEqual([
       'processamento_iniciado',
+      'roteamento_validado',
       'politica_avaliada',
       'chamada_trabalho_concluida',
       'entrega_criada',

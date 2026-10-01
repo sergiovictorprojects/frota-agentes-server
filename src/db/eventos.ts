@@ -1,6 +1,7 @@
 import type pg from 'pg';
 import { z } from 'zod';
 import { CATEGORIAS, PRIORIDADES } from '../domain/setores.ts';
+import { RESULTADOS_ESPERADOS } from '../domain/resultado-esperado.ts';
 
 // Nomes em português, para bater com o resto do schema (demandas, mensagens, relatorios...).
 // Cobre exatamente os pontos de transição listados na Entrega 1 — não é um catálogo aberto.
@@ -23,6 +24,7 @@ export const TIPOS_EVENTO = [
   'plano_registrado',
   'plano_rejeitado',
   'planejamento_falhou',
+  'roteamento_validado',
   // Fase 3.2 (execução por tarefas). Os schemas entram na PR 3.2a; quem emite é a PR 3.2b.
   'rota_definida',
   'plano_ativado',
@@ -109,6 +111,7 @@ const RESUMOS_POR_TIPO: Readonly<Record<TipoEvento, string>> = {
   plano_registrado: 'Plano de tarefas registrado (modo planejar — não executa).',
   plano_rejeitado: 'Plano de tarefas rejeitado pela validação.',
   planejamento_falhou: 'Planejamento de tarefas falhou; a demanda segue pelo fluxo atual.',
+  roteamento_validado: 'Roteamento da demanda validado por regras.',
   rota_definida: 'Rota do processamento definida.',
   plano_ativado: 'Plano de tarefas ativado para execução.',
   plano_retomado: 'Plano de tarefas retomado.',
@@ -138,6 +141,7 @@ function resumoDo(tipo: TipoEvento, metadata: Record<string, unknown>): string {
 
 const categoria = z.enum(CATEGORIAS);
 const prioridade = z.enum(PRIORIDADES);
+const resultadoEsperado = z.enum(RESULTADOS_ESPERADOS);
 const codigoErro = z.enum(CODIGOS_ERRO);
 const uuid = z.uuid();
 const contagem = z.number().int().nonnegative();
@@ -247,6 +251,13 @@ const METADATA_SCHEMAS: Readonly<Record<TipoEvento, z.ZodType>> = {
   }),
   plano_rejeitado: z.strictObject({ planoId: uuid, versao: versaoPlano, motivoRejeicao: z.enum(MOTIVOS_REJEICAO_PLANO) }),
   planejamento_falhou: z.strictObject({ codigoErro }),
+  roteamento_validado: z.strictObject({
+    resultadoEsperado,
+    categoria,
+    categoriaSugerida: categoria.nullable(),
+    decisao: z.enum(['permitir', 'aguardar_humano']),
+    motivo: z.enum(['compativel', 'categoria_incompativel', 'criterios_ausentes']),
+  }),
   // Fase 3.2 (seção 7 do plano). Nunca lease_token, lease, chave ou objetivo de tarefa, conteúdo, resumo ou
   // referência de artefato, URL, prompt ou texto de erro. claimId pode: identifica o claim, mas não autoriza nada.
   rota_definida: z.strictObject({ rota: z.enum(ROTAS_PROCESSAMENTO), motivoRota: z.enum(MOTIVOS_ROTA) }),

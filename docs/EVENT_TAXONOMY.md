@@ -131,6 +131,7 @@ Quando a etapa gerar material grande, grave:
 | `plano_registrado` | O plano proposto pelo coordenador passou na validação e foi gravado em shadow | `planoId`, `versao`, `modo` (sempre `shadow`), `totalTarefas`, `totalDependencias` |
 | `plano_rejeitado` | A validação determinística recusou o plano | `planoId`, `versao`, `motivoRejeicao` (código fechado) |
 | `planejamento_falhou` | O planejamento falhou e a demanda seguiu pelo fluxo legado | `codigoErro` |
+| `roteamento_validado` | A demanda passou pela validação determinística de resultado esperado, categoria e critérios de aceite | `resultadoEsperado`, `categoria`, `categoriaSugerida`, `decisao`, `motivo` |
 
 `politica_avaliada` ganhou `operacao` opcional, hoje só `planejamento`, presente só nas operações novas. Nenhuma chave de tarefa entra no ledger: ela é texto vindo do modelo.
 

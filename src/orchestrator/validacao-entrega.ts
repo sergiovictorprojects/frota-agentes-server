@@ -53,6 +53,12 @@ function textoDaDemanda(demanda: Demanda): string {
 }
 
 export function inferirEntregaEsperada(demanda: Demanda, setor: Setor): EntregaEsperada {
+  if (demanda.resultadoEsperado === 'interface') {
+    return {
+      tipo: 'html_interativo',
+      motivo: 'a demanda registrou interface, dashboard ou tela interativa como resultado esperado',
+    };
+  }
   if (!setor.podeEntregarHtml) return { tipo: 'livre', motivo: null };
   const texto = textoDaDemanda(demanda);
   const temTermoInterativo = TERMOS_INTERATIVOS.some((termo) => termo.test(texto));

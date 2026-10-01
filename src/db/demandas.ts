@@ -1,5 +1,6 @@
 import type pg from 'pg';
 import type { Categoria, Prioridade, StatusDemanda } from '../domain/setores.ts';
+import type { ResultadoEsperado } from '../domain/resultado-esperado.ts';
 import { comTransacao, type Db } from './tx.ts';
 
 export type AlternativaInsumo = 'A' | 'B' | 'C';
@@ -16,6 +17,8 @@ export interface Demanda {
   prazo: string | null;
   solicitante: string | null;
   referencias: string | null;
+  resultadoEsperado: ResultadoEsperado;
+  criteriosAceite: string;
   status: StatusDemanda;
   entregaUrl: string | null;
   criadoEm: string;
@@ -35,6 +38,8 @@ export interface NovaDemanda {
   prazo?: string | null;
   solicitante?: string | null;
   referencias?: string | null;
+  resultadoEsperado?: ResultadoEsperado;
+  criteriosAceite?: string;
 }
 
 export interface PatchDemanda {
@@ -53,6 +58,8 @@ interface Linha {
   prazo: string | null;
   solicitante: string | null;
   referencias: string | null;
+  resultado_esperado: ResultadoEsperado;
+  criterios_aceite: string;
   status: StatusDemanda;
   entrega_url: string | null;
   criado_em: Date;
@@ -65,7 +72,7 @@ interface Linha {
 }
 
 const COLUNAS = `id, titulo, descricao, categoria, prioridade, prazo::text AS prazo, solicitante, referencias,
-  status, entrega_url, criado_em, atualizado_em, claimed_by_run, claimed_at, alternativa_insumo,
+  resultado_esperado, criterios_aceite, status, entrega_url, criado_em, atualizado_em, claimed_by_run, claimed_at, alternativa_insumo,
   bloqueio_humano, tentativas`;
 
 function mapear(l: Linha): Demanda {
@@ -78,6 +85,8 @@ function mapear(l: Linha): Demanda {
     prazo: l.prazo,
     solicitante: l.solicitante,
     referencias: l.referencias,
+    resultadoEsperado: l.resultado_esperado,
+    criteriosAceite: l.criterios_aceite,
     status: l.status,
     entregaUrl: l.entrega_url,
     criadoEm: l.criado_em.toISOString(),
@@ -92,8 +101,8 @@ function mapear(l: Linha): Demanda {
 
 export async function criarDemanda(db: Db, d: NovaDemanda): Promise<Demanda> {
   const { rows } = await db.query<Linha>(
-    `INSERT INTO demandas (titulo, descricao, categoria, prioridade, prazo, solicitante, referencias)
-     VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING ${COLUNAS}`,
+    `INSERT INTO demandas (titulo, descricao, categoria, prioridade, prazo, solicitante, referencias, resultado_esperado, criterios_aceite)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9) RETURNING ${COLUNAS}`,
     [
       d.titulo,
       d.descricao ?? '',
@@ -102,6 +111,8 @@ export async function criarDemanda(db: Db, d: NovaDemanda): Promise<Demanda> {
       d.prazo ?? null,
       d.solicitante ?? null,
       d.referencias ?? null,
+      d.resultadoEsperado ?? 'outro',
+      d.criteriosAceite ?? '',
     ],
   );
   return mapear(rows[0]!);

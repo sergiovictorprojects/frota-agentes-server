@@ -11,6 +11,7 @@ import { criarEntrega, obterEntrega, registrarAprendizado, salvarRelatorio, type
 import { comTransacao } from '../db/tx.ts';
 import type { ModoOrquestracao } from '../domain/orquestracao.ts';
 import { CATEGORIAS, SETORES, type Categoria, type StatusDemanda } from '../domain/setores.ts';
+import { validarRoteamentoDemanda } from '../domain/resultado-esperado.ts';
 import { LlmError, type Llm } from '../llm/llm.ts';
 import { paginaDeTexto } from '../util/html.ts';
 import { log, mensagemDeErro } from '../util/log.ts';
@@ -246,6 +247,50 @@ async function tratarPendencia(
     return { ...base, statusFinal: 'Aguardando insumo' };
   }
   return null;
+}
+
+async function validarRoteamentoAntesDaExecucao(p: {
+  d: DependenciasDemanda;
+  demanda: Demanda;
+  setor: (typeof SETORES)[Categoria];
+  checkpoint: Checkpoint;
+  emitir: EmitirEvento;
+}): Promise<ResultadoDemanda | null> {
+  const validacao = validarRoteamentoDemanda({
+    resultadoEsperado: p.demanda.resultadoEsperado,
+    criteriosAceite: p.demanda.criteriosAceite,
+    categoria: p.demanda.categoria,
+    setor: p.setor,
+  });
+  await p.emitir('roteamento_validado', 'sistema', {
+    resultadoEsperado: p.demanda.resultadoEsperado,
+    categoria: p.demanda.categoria,
+    categoriaSugerida: validacao.categoriaSugerida,
+    decisao: validacao.decisao,
+    motivo: validacao.motivo,
+  });
+  if (validacao.decisao === 'permitir') return null;
+
+  await p.checkpoint('Ação humana necessária: revise o resultado esperado, os critérios de aceite ou o setor responsável antes da execução.', null);
+  await atualizarDemanda(p.d.pool, p.demanda.id, {
+    status: 'Aguardando humano',
+    bloqueioHumano: {
+      motivo: validacao.motivo,
+      resultadoEsperado: p.demanda.resultadoEsperado,
+      categoriaAtual: p.demanda.categoria,
+      categoriaSugerida: validacao.categoriaSugerida,
+    },
+  });
+  await p.emitir('pendencia_humana_registrada', 'sistema', { totalAcoes: 1 });
+  return {
+    demandaId: p.demanda.id,
+    titulo: p.demanda.titulo,
+    statusFinal: 'Aguardando humano',
+    entregaUrl: null,
+    resumo: 'Demanda aguardando revisão de roteamento.',
+    antipadroes: null,
+    interrompidaPor: null,
+  };
 }
 
 async function gerarExecucaoValidada(p: {
@@ -533,6 +578,9 @@ export async function processarDemanda(d: DependenciasDemanda, demanda: Demanda,
     await emitir('chamada_trabalho_falhou', setor.papel, { codigoErro: codigoDoErro(erro) });
     throw erro;
   }
+
+  const pendenciaRoteamento = await validarRoteamentoAntesDaExecucao({ d, demanda, setor, checkpoint, emitir });
+  if (pendenciaRoteamento) return pendenciaRoteamento;
 
   // Fase 3.1, modo "planejar": só grava o plano (shadow). A demanda segue inteira pelo fluxo legado abaixo,
   // com o mesmo resultado; uma falha no planejamento nunca a afeta.

@@ -21,6 +21,8 @@ const demanda: Demanda = {
   prazo: '2026-10-01',
   solicitante: 'Juliano',
   referencias: null,
+  resultadoEsperado: 'outro',
+  criteriosAceite: '',
   status: 'Em andamento',
   entregaUrl: null,
   criadoEm: '2026-09-21T12:00:00.000Z',

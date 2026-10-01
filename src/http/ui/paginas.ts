@@ -4,6 +4,7 @@ import type { Evento } from '../../db/eventos.ts';
 import type { Mensagem } from '../../db/mensagens.ts';
 import type { Relatorio } from '../../db/relatorios.ts';
 import type { LinkEntrega } from '../../domain/links-entrega.ts';
+import { RESULTADOS_ESPERADOS, ROTULOS_RESULTADO_ESPERADO } from '../../domain/resultado-esperado.ts';
 import { CATEGORIAS, PRIORIDADES, SETORES, STATUS, type StatusDemanda } from '../../domain/setores.ts';
 import { bruto, html, type Bruto } from './html.ts';
 import { formatarData } from './layout.ts';
@@ -92,10 +93,12 @@ ${a.erros.length ? html`<ul class="erros" role="alert">${a.erros.map((e) => html
 <form class="campos" method="post" action="/demandas">
 <label>Título<input name="titulo" required maxlength="200" value="${v('titulo')}"></label>
 <label>Setor responsável<select name="categoria">${CATEGORIAS.map((c) => opcao(c, `${c} — ${SETORES[c].nome}`, v('categoria') || 'gestores'))}</select></label>
+<label>Resultado esperado<select name="resultadoEsperado">${RESULTADOS_ESPERADOS.map((r) => opcao(r, ROTULOS_RESULTADO_ESPERADO[r], v('resultadoEsperado') || 'outro'))}</select></label>
 <label>Prioridade<select name="prioridade">${PRIORIDADES.map((p) => opcao(p, p, v('prioridade') || 'MEDIUM'))}</select></label>
 <label>Prazo<input type="date" name="prazo" value="${v('prazo')}"></label>
 <label>Solicitante<input name="solicitante" maxlength="200" value="${v('solicitante')}"></label>
 <label>Descrição<textarea name="descricao" rows="16" maxlength="100000">${v('descricao')}</textarea></label>
+<label>Critérios de aceite<textarea name="criteriosAceite" rows="5" maxlength="10000">${v('criteriosAceite')}</textarea></label>
 <label>Referências<textarea name="referencias" rows="5" maxlength="20000">${v('referencias')}</textarea></label>
 <div><button class="botao" type="submit">Criar demanda</button></div>
 </form>`;
@@ -149,6 +152,8 @@ ${blocoArtefatos(a.artefatos)}
 <p><a href="/demandas/${d.id}/dossie">Ver dossiê</a></p>
 <dl class="info">
 <dt>Solicitante</dt><dd>${d.solicitante ?? '—'}</dd>
+<dt>Resultado esperado</dt><dd>${ROTULOS_RESULTADO_ESPERADO[d.resultadoEsperado]}</dd>
+<dt>Critérios de aceite</dt><dd>${d.criteriosAceite || '—'}</dd>
 <dt>Prazo</dt><dd>${d.prazo ?? '—'}</dd>
 <dt>Criada em</dt><dd>${formatarData(d.criadoEm)}</dd>
 <dt>Tentativas</dt><dd>${d.tentativas}</dd>

@@ -121,7 +121,10 @@ describe('upgrade 005 → 006 com dados shadow existentes', () => {
     const { rows: migradas } = await db.pool.query<{ name: string }>('SELECT name FROM schema_migrations ORDER BY name');
     expect(migradas.map((l) => l.name).at(-1)).toBe('005_planos_tarefas.sql');
 
-    demandaId = (await criarDemanda(db.pool, { titulo: 'Demanda da Fase 3.1', categoria: 'd1' })).id;
+    const { rows } = await db.pool.query<{ id: string }>(
+      "INSERT INTO demandas (titulo, categoria) VALUES ('Demanda da Fase 3.1', 'd1') RETURNING id",
+    );
+    demandaId = rows[0]!.id;
     runId = await iniciarRun(db.pool);
     planoId = await planoShadow31(db.pool, demandaId, runId, tarefasValidas());
     await planoRejeitado31(db.pool, demandaId, runId, 'ciclo');
@@ -246,7 +249,10 @@ describe('upgrade 005 → 006 com dados shadow existentes', () => {
   });
 
   it('o SQL literal da 3.1 continua gravando planos shadow na 006 (codigo revertido com a 006 aplicada)', async () => {
-    const outra = (await criarDemanda(db.pool, { titulo: 'Depois do upgrade', categoria: 'd2' })).id;
+    const { rows } = await db.pool.query<{ id: string }>(
+      "INSERT INTO demandas (titulo, categoria) VALUES ('Depois do upgrade', 'd2') RETURNING id",
+    );
+    const outra = rows[0]!.id;
     const novo = await planoShadow31(db.pool, outra, runId, tarefasValidas());
     await planoRejeitado31(db.pool, outra, runId, 'limite_tarefas');
     const planos = await listarPlanosDaDemanda(db.pool, outra);

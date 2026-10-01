@@ -218,9 +218,9 @@ async function falharEAbandonar(
   });
 }
 
-async function falharTentativaSistemica(d: DependenciasExecucaoTarefas, tarefa: TarefaReivindicada, codigo: 'llm_api' | 'llm_timeout'): Promise<void> {
+async function falharTentativaSistemica(d: DependenciasExecucaoTarefas, tarefa: TarefaReivindicada, codigo: 'llm_api' | 'llm_timeout'): Promise<boolean> {
   const falha = await falharTentativa(d.pool, { tarefaId: tarefa.id, leaseToken: tarefa.leaseToken, codigoErro: codigo });
-  if (!falha.registrada) return;
+  if (!falha.registrada) return false;
   await d.emitir('tarefa_falhou', tarefa.agente.chave, {
     claimId: falha.claimId,
     tipo: tarefa.tipo,
@@ -236,6 +236,7 @@ async function falharTentativaSistemica(d: DependenciasExecucaoTarefas, tarefa: 
       tarefasCanceladas: falha.abandono.tarefasCanceladas,
     });
   }
+  return Boolean(falha.abandono);
 }
 
 async function abandonarParaLegadoPorTarefa(
@@ -527,11 +528,19 @@ export async function processarExecucaoSequencial(d: DependenciasExecucaoTarefas
       // conteúdo classificáveis (recusa, truncamento, schema inválido ou status HTTP determinístico)
       // podem abandonar o plano e cair no legado.
       if (erro instanceof LlmError && erroApiSistemico(erro)) {
-        await falharTentativaSistemica(d, tarefa, 'llm_api');
+        const esgotouPlano = await falharTentativaSistemica(d, tarefa, 'llm_api');
+        if (esgotouPlano) {
+          await fixarRotaLegado(d.pool, { demandaId: d.demanda.id, motivo: 'tarefa_falhou' });
+          throw new RotaLegadoFixadaError('tarefa_falhou', 'Plano abandonado após falhas sistêmicas repetidas na tarefa.');
+        }
         throw erro;
       }
       if (erro instanceof LlmError && erro.tipo === 'timeout') {
-        await falharTentativaSistemica(d, tarefa, 'llm_timeout');
+        const esgotouPlano = await falharTentativaSistemica(d, tarefa, 'llm_timeout');
+        if (esgotouPlano) {
+          await fixarRotaLegado(d.pool, { demandaId: d.demanda.id, motivo: 'tarefa_falhou' });
+          throw new RotaLegadoFixadaError('tarefa_falhou', 'Plano abandonado após timeouts repetidos na tarefa.');
+        }
         throw erro;
       }
       if (

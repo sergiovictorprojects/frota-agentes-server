@@ -45,6 +45,8 @@ describe('demandas', () => {
       prazo: '2026-10-01',
       solicitante: 'Juliano',
       referencias: 'imagem anexa',
+      resultadoEsperado: 'interface',
+      criteriosAceite: 'Deve entregar uma tela HTML interativa com filtros.',
     });
     const lida = await obterDemanda(db.pool, criada.id);
     expect(lida).toMatchObject({
@@ -53,6 +55,8 @@ describe('demandas', () => {
       prioridade: 'HIGH',
       prazo: '2026-10-01',
       solicitante: 'Juliano',
+      resultadoEsperado: 'interface',
+      criteriosAceite: 'Deve entregar uma tela HTML interativa com filtros.',
       status: 'Nova',
       entregaUrl: null,
       tentativas: 0,
@@ -63,6 +67,11 @@ describe('demandas', () => {
 
   it('devolve null para demanda inexistente', async () => {
     expect(await obterDemanda(db.pool, randomUUID())).toBeNull();
+  });
+
+  it('usa resultado esperado livre e criterios vazios por padrao', async () => {
+    const d = await criarDemanda(db.pool, { titulo: 'Sem contrato explícito', categoria: 'd1' });
+    expect(d).toMatchObject({ resultadoEsperado: 'outro', criteriosAceite: '' });
   });
 
   it('lista por status, da mais recente para a mais antiga', async () => {

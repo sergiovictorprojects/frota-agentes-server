@@ -142,7 +142,11 @@ dependências e uma tarefa de integração que produz a entrega única, sem queb
   - **3.2b-2 — Ativação controlada (implementada; piloto em staging).** Flag `executar`, uma categoria ligada por vez
     e teto base explícito por demanda. O piloto permanece pausável e limitado a uma demanda até validar uma entrega
     real de ponta a ponta.
-  - **3.2c — Validação em camadas e roteamento de demanda (planejada; próxima após o aceite do piloto).** Evita que
+  - **3.2c-0 — Robustez LLM e degradação inteligente (em implementação).** Endurece o piloto antes de expandir
+    roteamento: falhas `llm_api`/`llm_timeout` em tarefas continuam registradas como falhas sistêmicas enquanto há
+    tentativa disponível, mas quando a tarefa esgota o plano por tarefas fixa `legado_fixo` com motivo auditável e
+    permite seguir pela rota legada. Mantém a retomada de plano ativo sem criar plano duplicado.
+  - **3.2c — Validação em camadas e roteamento de demanda (em implementação).** Evita que
     a categoria escolhida no formulário, hoje padronizada como `gestores`, contradiga o resultado solicitado.
     1. O formulário passa a registrar explicitamente o resultado esperado (`interface`, `documento`, `análise`,
        `automação`, `código` ou outro formato aprovado) e critérios de aceite observáveis.
@@ -159,8 +163,8 @@ dependências e uma tarefa de integração que produz a entrega única, sem queb
     **Não fazer nesta fatia:** classificador puramente por LLM, roteamento autônomo para múltiplos agentes sem
     confirmação, alteração retroativa da categoria de demandas existentes ou publicação de HTML sem isolamento.
 
-    **Critério de aceite:** uma demanda de interface criada inicialmente em `gestores` é advertida e exige correção
-    ou confirmação; uma demanda em `d11` só conclui com entrega HTML/artefato compatível; uma demanda de análise
+    **Critério de aceite:** uma demanda de interface criada inicialmente em `gestores` fica em `Aguardando humano`
+    com decisão auditável; uma demanda em `d11` só conclui com entrega HTML/artefato compatível; uma demanda de análise
     continua aceitando texto; todas as decisões são reproduzíveis por regras e cobertas por testes unitários,
     integração e workflow.
 - **3.3 — Concorrência.** `agentes.max_concorrencia` com gatilho, histórico, Zod e testes; lock da linha do
