@@ -812,6 +812,7 @@ describe('agent_events da Fase 3.2 (execucao por tarefas)', () => {
     await aceito('plano_abandonado', { planoId: p.planoId, versao: 1, motivoAbandono: 'orquestracao_desligada', tarefasCanceladas: 0 });
     await aceito('demanda_devolvida_para_fila', { motivoDevolucao: 'prazo_da_run', codigoErro: 'prazo_da_run' });
     await aceito('chamada_trabalho_falhou', { codigoErro: 'llm_timeout' });
+    await aceito('retentativa_sistemica_agendada', { codigoErro: 'llm_api', motivoRetomada: 'erro_llm_temporario' });
     await aceito('rota_definida', { rota: 'legado_fixo', motivoRota: 'rota_fixada' });
   });
 

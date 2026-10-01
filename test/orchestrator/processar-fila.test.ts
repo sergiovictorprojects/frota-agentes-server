@@ -3,7 +3,7 @@ import { criarDemanda, obterDemanda } from '../../src/db/demandas.ts';
 import { listarEventosDaDemanda } from '../../src/db/eventos.ts';
 import { listarMensagens } from '../../src/db/mensagens.ts';
 import { pausarFrota, ultimaRun } from '../../src/db/operacao.ts';
-import { obterEnvelope } from '../../src/db/orquestracao.ts';
+import { criarEnvelope, fixarRotaLegado, obterEnvelope } from '../../src/db/orquestracao.ts';
 import { listarRelatorios } from '../../src/db/relatorios.ts';
 import { SETORES } from '../../src/domain/setores.ts';
 import { LlmError, type PedidoLlm, type RespostaLlm } from '../../src/llm/llm.ts';
@@ -269,6 +269,34 @@ describe('processarFila', () => {
     const { llm } = montar();
     await processarFila({ ...deps, llm });
     expect(llm.pedidos).toHaveLength(0);
+  });
+
+  it('erro llm_api da execucao e retomavel: desfaz tentativa e nao transforma a demanda em Falhou', async () => {
+    const id = await criarComIdade('provedor instavel', 10);
+    await criarEnvelope(db.pool, { demandaId: id, tetoBaseUsd: '5.00' });
+    await fixarRotaLegado(db.pool, { demandaId: id, motivo: 'tarefa_falhou' });
+    await db.pool.query("UPDATE demandas SET categoria = 'd11', resultado_esperado = 'interface', criterios_aceite = 'Entregar HTML.', tentativas = 2 WHERE id = $1", [id]);
+    const { deps, notificador } = montarComReservas(() => new LlmError('api', 'Falha na API da Anthropic (400): overloaded', null, 400));
+
+    const resumo = await processarFila(deps);
+
+    expect(resumo).toMatchObject({ status: 'erro', processadas: [], falhas: [] });
+    expect(await obterDemanda(db.pool, id)).toMatchObject({ status: 'Nova', tentativas: 2 });
+    expect(notificador.enviadas.at(-1)?.corpo).toContain('Execução interrompida');
+
+    const eventos = await listarEventosDaDemanda(db.pool, id);
+    expect(eventos.map((e) => e.tipoEvento)).toEqual([
+      'demanda_reivindicada',
+      'processamento_iniciado',
+      'roteamento_validado',
+      'rota_definida',
+      'politica_avaliada',
+      'chamada_trabalho_falhou',
+      'demanda_devolvida_para_fila',
+      'retentativa_sistemica_agendada',
+    ]);
+    expect(eventos.at(-2)?.metadata).toEqual({ motivoDevolucao: 'parada_sistemica', codigoErro: 'llm_api' });
+    expect(eventos.at(-1)?.metadata).toEqual({ codigoErro: 'llm_api', motivoRetomada: 'erro_llm_temporario' });
   });
 
   it('erro inesperado nao vaza detalhes internos para a mensagem da demanda', async () => {

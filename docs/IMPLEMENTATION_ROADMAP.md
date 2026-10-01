@@ -145,7 +145,9 @@ dependências e uma tarefa de integração que produz a entrega única, sem queb
   - **3.2c-0 — Robustez LLM e degradação inteligente (em implementação).** Endurece o piloto antes de expandir
     roteamento: falhas `llm_api`/`llm_timeout` em tarefas continuam registradas como falhas sistêmicas enquanto há
     tentativa disponível, mas quando a tarefa esgota o plano por tarefas fixa `legado_fixo` com motivo auditável e
-    permite seguir pela rota legada. Mantém a retomada de plano ativo sem criar plano duplicado.
+    permite seguir pela rota legada. No fluxo legado, `llm_api`/`llm_timeout` também são retomáveis: a demanda volta
+    para `Nova`, a tentativa é desfeita e o ledger recebe `retentativa_sistemica_agendada`, em vez de marcar a demanda
+    como `Falhou` por instabilidade do provedor. Mantém a retomada de plano ativo sem criar plano duplicado.
   - **3.2c — Validação em camadas e roteamento de demanda (em implementação).** Evita que
     a categoria escolhida no formulário, hoje padronizada como `gestores`, contradiga o resultado solicitado.
     1. O formulário passa a registrar explicitamente o resultado esperado (`interface`, `documento`, `análise`,

@@ -10,6 +10,7 @@ import {
 } from '../db/demandas.ts';
 import { adicionarMensagem } from '../db/mensagens.ts';
 import { finalizarRun, iniciarRun, obterFlags, type StatusRun } from '../db/operacao.ts';
+import { obterEnvelope } from '../db/orquestracao.ts';
 import { LlmError } from '../llm/llm.ts';
 import type { Notificador } from '../notify/notificador.ts';
 import { log, mensagemDeErro } from '../util/log.ts';
@@ -64,6 +65,35 @@ async function registrarFalha(d: DependenciasFila, demanda: Demanda, runId: stri
   return { titulo: demanda.titulo, motivo, statusFinal };
 }
 
+async function ehErroLlmRetomavel(d: DependenciasFila, demanda: Demanda, erro: unknown): Promise<boolean> {
+  if (!(erro instanceof LlmError)) return false;
+  if (erro.tipo === 'timeout') return true;
+  if (erro.tipo !== 'api') return false;
+  const envelope = await obterEnvelope(d.pool, demanda.id);
+  return envelope?.rota === 'legado_fixo';
+}
+
+async function devolverPorErroSistemico(d: DependenciasFila, demanda: Demanda, runId: string, erro: unknown): Promise<void> {
+  // Já tinha começado: erro de provedor/modelo não deve consumir tentativa da demanda.
+  await devolverParaFila(d.pool, demanda.id, true);
+  const codigoErro = codigoDoErro(erro);
+  const emitir = criarEmissor(d.pool, demanda.id, {
+    correlacaoId: runId,
+    runId,
+    tentativa: demanda.tentativas + 1,
+  });
+  await emitir('demanda_devolvida_para_fila', 'sistema', {
+    motivoDevolucao: 'parada_sistemica',
+    codigoErro,
+  });
+  if (codigoErro === 'llm_api' || codigoErro === 'llm_timeout') {
+    await emitir('retentativa_sistemica_agendada', 'sistema', {
+      codigoErro,
+      motivoRetomada: 'erro_llm_temporario',
+    });
+  }
+}
+
 async function processarLote(d: DependenciasFila, runId: string, demandas: Demanda[]): Promise<ResumoRun> {
   const resumo: ResumoRun = { runId, status: 'ok', processadas: [], falhas: [], interrompidaPor: null };
 
@@ -92,20 +122,10 @@ async function processarLote(d: DependenciasFila, runId: string, demandas: Deman
         resumo.status = resultado.interrompidaPor.status;
       }
     } catch (erro) {
-      if (ehParadaSistemica(erro)) {
+      if (ehParadaSistemica(erro) || (await ehErroLlmRetomavel(d, demanda, erro))) {
         resumo.interrompidaPor = mensagemDeErro(erro);
         resumo.status = statusDaInterrupcao(erro);
-        // Já tinha começado: essa tentativa não conta contra a demanda.
-        await devolverParaFila(d.pool, demanda.id, true);
-        const emitirDevolucao = criarEmissor(d.pool, demanda.id, {
-          correlacaoId: runId,
-          runId,
-          tentativa: demanda.tentativas + 1,
-        });
-        await emitirDevolucao('demanda_devolvida_para_fila', 'sistema', {
-          motivoDevolucao: 'parada_sistemica',
-          codigoErro: codigoDoErro(erro),
-        });
+        await devolverPorErroSistemico(d, demanda, runId, erro);
       } else {
         resumo.falhas.push(await registrarFalha(d, demanda, runId, erro));
       }
