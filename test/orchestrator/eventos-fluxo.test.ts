@@ -64,6 +64,7 @@ describe('ledger de eventos no fluxo real (processarFila)', () => {
     expect(eventos.map((e) => e.tipoEvento)).toEqual([
       'demanda_reivindicada',
       'processamento_iniciado',
+      'roteamento_validado',
       'politica_avaliada',
       'chamada_trabalho_concluida',
       'entrega_criada',
@@ -72,7 +73,7 @@ describe('ledger de eventos no fluxo real (processarFila)', () => {
       'demanda_concluida',
       'politica_avaliada',
     ]);
-    expect(eventos.map((e) => e.sequenciaDemanda)).toEqual([1, 2, 3, 4, 5, 6, 7, 8, 9]);
+    expect(eventos.map((e) => e.sequenciaDemanda)).toEqual([1, 2, 3, 4, 5, 6, 7, 8, 9, 10]);
     // demanda_reivindicada não prova execução: tentativa é null. Os demais, sim: tentativa 1.
     expect(eventos[0]!.tentativa).toBeNull();
     expect(eventos.slice(1).every((e) => e.tentativa === 1)).toBe(true);
@@ -125,19 +126,21 @@ describe('ledger de eventos no fluxo real (processarFila)', () => {
     expect(porTentativa.get(null)).toEqual(['demanda_reivindicada', 'demanda_reivindicada', 'demanda_reivindicada']);
     expect(porTentativa.get(1)).toEqual([
       'processamento_iniciado',
+      'roteamento_validado',
       'politica_avaliada',
       'chamada_trabalho_falhou',
       'demanda_devolvida_para_fila',
     ]);
     expect(porTentativa.get(2)).toEqual([
       'processamento_iniciado',
+      'roteamento_validado',
       'politica_avaliada',
       'chamada_trabalho_falhou',
       'demanda_devolvida_para_fila',
     ]);
-    expect(porTentativa.get(3)).toEqual(['processamento_iniciado', 'politica_avaliada', 'chamada_trabalho_falhou', 'demanda_falhou']);
-    // 3 tentativas x 5 eventos, nenhum descartado como "duplicata" de outra tentativa.
-    expect(eventos).toHaveLength(15);
+    expect(porTentativa.get(3)).toEqual(['processamento_iniciado', 'roteamento_validado', 'politica_avaliada', 'chamada_trabalho_falhou', 'demanda_falhou']);
+    // 3 reivindicações + 15 eventos com tentativa, nenhum descartado como "duplicata" de outra tentativa.
+    expect(eventos).toHaveLength(18);
   });
 
   it('pendencia humana registra o evento certo e para antes de entrega/auditoria', async () => {
@@ -152,6 +155,7 @@ describe('ledger de eventos no fluxo real (processarFila)', () => {
     expect(tipos).toEqual([
       'demanda_reivindicada',
       'processamento_iniciado',
+      'roteamento_validado',
       'politica_avaliada',
       'chamada_trabalho_concluida',
       'pendencia_humana_registrada',
@@ -169,6 +173,7 @@ describe('ledger de eventos no fluxo real (processarFila)', () => {
     expect(eventos.map((e) => e.tipoEvento)).toEqual([
       'demanda_reivindicada',
       'processamento_iniciado',
+      'roteamento_validado',
       'politica_avaliada',
       'chamada_trabalho_concluida',
       'entrega_criada',
@@ -190,6 +195,7 @@ describe('ledger de eventos no fluxo real (processarFila)', () => {
     expect(primeiraLeva.map((e) => e.tipoEvento)).toEqual([
       'demanda_reivindicada',
       'processamento_iniciado',
+      'roteamento_validado',
       'politica_avaliada',
       'chamada_trabalho_concluida',
       'pendencia_insumo_registrada',
@@ -204,12 +210,13 @@ describe('ledger de eventos no fluxo real (processarFila)', () => {
     await processarFila(montar());
 
     const todos = await listarEventosDaDemanda(db.pool, d.id);
-    expect(todos).toHaveLength(6 + 9); // nada da primeira leva foi perdido nem sobrescrito
-    const segundaLeva = todos.slice(6);
+    expect(todos).toHaveLength(7 + 10); // nada da primeira leva foi perdido nem sobrescrito
+    const segundaLeva = todos.slice(7);
     expect(segundaLeva.slice(1).every((e) => e.tentativa === 1)).toBe(true);
     expect(segundaLeva.map((e) => e.tipoEvento)).toEqual([
       'demanda_reivindicada',
       'processamento_iniciado',
+      'roteamento_validado',
       'politica_avaliada',
       'chamada_trabalho_concluida',
       'entrega_criada',
@@ -233,6 +240,7 @@ describe('ledger de eventos no fluxo real (processarFila)', () => {
     expect(primeiraLeva.map((e) => e.tipoEvento)).toEqual([
       'demanda_reivindicada',
       'processamento_iniciado',
+      'roteamento_validado',
       'politica_avaliada',
       'chamada_trabalho_falhou',
       'demanda_devolvida_para_fila',
@@ -244,12 +252,13 @@ describe('ledger de eventos no fluxo real (processarFila)', () => {
     await processarFila(montar());
 
     const todos = await listarEventosDaDemanda(db.pool, d.id);
-    expect(todos).toHaveLength(5 + 9);
-    const segundaLeva = todos.slice(5);
+    expect(todos).toHaveLength(6 + 10);
+    const segundaLeva = todos.slice(6);
     expect(segundaLeva.slice(1).every((e) => e.tentativa === 1)).toBe(true);
     expect(segundaLeva.map((e) => e.tipoEvento)).toEqual([
       'demanda_reivindicada',
       'processamento_iniciado',
+      'roteamento_validado',
       'politica_avaliada',
       'chamada_trabalho_concluida',
       'entrega_criada',
@@ -277,6 +286,7 @@ describe('ledger de eventos no fluxo real (processarFila)', () => {
     expect(eventosPrimeira.map((e) => e.tipoEvento)).toEqual([
       'demanda_reivindicada',
       'processamento_iniciado',
+      'roteamento_validado',
       'politica_avaliada',
       'chamada_trabalho_falhou',
       'demanda_devolvida_para_fila',
@@ -305,6 +315,7 @@ describe('ledger de eventos no fluxo real (processarFila)', () => {
     expect(eventos.map((e) => e.tipoEvento)).toEqual([
       'demanda_reivindicada',
       'processamento_iniciado',
+      'roteamento_validado',
       'politica_avaliada',
       'chamada_trabalho_concluida',
       'entrega_criada',

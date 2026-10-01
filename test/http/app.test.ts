@@ -155,6 +155,8 @@ describe('aplicacao HTTP', () => {
         prazo: '2026-10-01',
         solicitante: 'Juliano',
         descricao: 'Painel 3D',
+        resultadoEsperado: 'interface',
+        criteriosAceite: 'Deve entregar dashboard interativo com filtros.',
         referencias: '',
       });
       expect(r.statusCode).toBe(303);
@@ -165,6 +167,8 @@ describe('aplicacao HTTP', () => {
         prioridade: 'HIGH',
         prazo: '2026-10-01',
         solicitante: 'Juliano',
+        resultadoEsperado: 'interface',
+        criteriosAceite: 'Deve entregar dashboard interativo com filtros.',
         referencias: null,
         status: 'Nova',
       });
@@ -184,6 +188,12 @@ describe('aplicacao HTTP', () => {
       expect(r.statusCode).toBe(400);
       expect(r.body).toContain('A descrição aceita no máximo 100000 caracteres.');
       expect(r.body).toContain('As referências aceitam no máximo 20000 caracteres.');
+    });
+
+    it('recusa criterios de aceite acima do limite', async () => {
+      const r = await post('/demandas', { titulo: 'x', categoria: 'd1', criteriosAceite: 'a'.repeat(10_001) });
+      expect(r.statusCode).toBe(400);
+      expect(r.body).toContain('Os critérios de aceite aceitam no máximo 10000 caracteres.');
     });
 
     it('rejeita dados invalidos com mensagens e sem criar nada, preservando o que foi digitado', async () => {

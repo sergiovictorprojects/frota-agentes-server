@@ -27,6 +27,7 @@ describe('migration 002_agent_events', () => {
       '006_execucao_tarefas.sql',
       '007_artefatos_entregaveis.sql',
       '008_demanda_especificacao_extensa.sql',
+      '009_resultado_esperado_demanda.sql',
     ]);
   });
 });
@@ -612,6 +613,27 @@ describe('agent_events da Fase 3.2 (execucao por tarefas)', () => {
 
   it('cobre todos os tipos novos da Fase 3.2', () => {
     expect(CASOS.map((c) => c.tipo)).toEqual(TIPOS_EVENTO.slice(TIPOS_EVENTO.indexOf('rota_definida')));
+  });
+
+  it('roteamento_validado grava somente a decisão determinística classificada', async () => {
+    const e = await registrarEvento(
+      db.pool,
+      novo('roteamento_validado', {
+        resultadoEsperado: 'interface',
+        categoria: 'gestores',
+        categoriaSugerida: 'd11',
+        decisao: 'aguardar_humano',
+        motivo: 'categoria_incompativel',
+      }),
+    );
+    expect(e).toMatchObject({ tipoEvento: 'roteamento_validado', resumo: 'Roteamento da demanda validado por regras.' });
+    expect(e.metadata).toEqual({
+      resultadoEsperado: 'interface',
+      categoria: 'gestores',
+      categoriaSugerida: 'd11',
+      decisao: 'aguardar_humano',
+      motivo: 'categoria_incompativel',
+    });
   });
 
   it.each(CASOS)('$tipo: grava exatamente a metadata do schema, com o resumo fixo', async (c) => {

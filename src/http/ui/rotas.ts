@@ -18,6 +18,7 @@ import { obterFlags, pausarFrota, retomarFrota, ultimaRun } from '../../db/opera
 import { listarRelatorios, relatorioMaisRecente } from '../../db/relatorios.ts';
 import type { LinkEntrega } from '../../domain/links-entrega.ts';
 import { CATEGORIAS, PRIORIDADES, STATUS } from '../../domain/setores.ts';
+import { RESULTADOS_ESPERADOS } from '../../domain/resultado-esperado.ts';
 import { criarEmissor } from '../../orchestrator/processar-demanda.ts';
 import { log } from '../../util/log.ts';
 import { credenciaisValidas, origemConfiavel } from '../auth.ts';
@@ -55,6 +56,7 @@ function dataExiste(texto: string): boolean {
 const NovaDemandaForm = z.object({
   titulo: z.string().trim().min(1, 'Informe o título.').max(200, 'O título aceita no máximo 200 caracteres.'),
   categoria: z.enum(CATEGORIAS, 'Escolha um setor válido.'),
+  resultadoEsperado: z.enum(RESULTADOS_ESPERADOS, 'Escolha um resultado esperado válido.').default('outro'),
   prioridade: z.enum(PRIORIDADES, 'Escolha uma prioridade válida.').default('MEDIUM'),
   prazo: z.preprocess(
     vazioParaUndefined,
@@ -67,6 +69,7 @@ const NovaDemandaForm = z.object({
   solicitante: opcional(200, 'O solicitante aceita no máximo 200 caracteres.'),
   descricao: opcional(100_000, 'A descrição aceita no máximo 100000 caracteres.'),
   referencias: opcional(20_000, 'As referências aceitam no máximo 20000 caracteres.'),
+  criteriosAceite: opcional(10_000, 'Os critérios de aceite aceitam no máximo 10000 caracteres.'),
 });
 
 const RespostaForm = z.object({
