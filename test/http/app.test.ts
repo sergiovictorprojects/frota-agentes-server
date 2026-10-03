@@ -7,7 +7,7 @@ import { inserirArtefatosEntregaveis } from '../../src/db/artefatos-entregaveis.
 import { criarDemanda, obterDemanda } from '../../src/db/demandas.ts';
 import { listarEventosDaDemanda, montarChaveIdempotencia, registrarEvento } from '../../src/db/eventos.ts';
 import { adicionarMensagem, listarMensagens } from '../../src/db/mensagens.ts';
-import { finalizarRun, iniciarRun, obterFlags } from '../../src/db/operacao.ts';
+import { finalizarRun, iniciarRun, obterFlags, registrarPasso } from '../../src/db/operacao.ts';
 import { criarEntrega, salvarRelatorio } from '../../src/db/relatorios.ts';
 import { criarApp } from '../../src/http/app.ts';
 import { SETORES } from '../../src/domain/setores.ts';
@@ -240,6 +240,18 @@ describe('aplicacao HTTP', () => {
       const entrega = await criarEntrega(db.pool, { demandaId: d.id, titulo: 'T', conteudo: '<p>x</p>' });
       const url = `${ORIGEM}/entregas/${entrega.id}`;
       await db.pool.query('UPDATE demandas SET entrega_url = $2 WHERE id = $1', [d.id, url]);
+      await registrarPasso(db.pool, {
+        runId: null,
+        demandaId: d.id,
+        papel: 'frota:architect',
+        modelo: 'claude-sonnet-5',
+        tokensIn: 100,
+        tokensOut: 40,
+        cacheRead: 0,
+        cacheWrite: 0,
+        custoUsd: 0.0006,
+        duracaoMs: 120,
+      });
       await salvarRelatorio(db.pool, {
         demandaId: d.id,
         demandaTitulo: 'Detalhada',
@@ -266,6 +278,10 @@ describe('aplicacao HTTP', () => {
       expect(r.body).toContain(`href="/entregas/${entrega.id}"`);
       expect(r.body).toContain('88');
       expect(r.body).toContain('50%');
+      expect(r.body).toContain('Custo real');
+      expect(r.body).toContain('frota:architect');
+      expect(r.body).toContain('US$ 0.00');
+      expect(r.body).toContain('140');
     });
 
     it('devolve 404 para demanda inexistente ou id que nao e UUID, sem erro 500', async () => {

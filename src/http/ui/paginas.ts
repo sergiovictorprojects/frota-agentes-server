@@ -1,5 +1,6 @@
 import type { Demanda } from '../../db/demandas.ts';
 import type { ArtefatoEntregavelResumo } from '../../db/artefatos-entregaveis.ts';
+import type { ResumoCustoDemanda } from '../../db/custos.ts';
 import type { Evento } from '../../db/eventos.ts';
 import type { Mensagem } from '../../db/mensagens.ts';
 import type { Relatorio } from '../../db/relatorios.ts';
@@ -92,6 +93,32 @@ function blocoEstimativaDetalhe(e: EstimativaUsoDemanda): Bruto {
 </dl>`;
 }
 
+function blocoCustoReal(custo: ResumoCustoDemanda, estimativa: EstimativaUsoDemanda): Bruto {
+  if (custo.chamadas === 0) return html`<p class="vazio">Ainda não há chamadas LLM registradas para esta demanda.</p>`;
+  const estimado = Number(estimativa.custoEstimadoUsd);
+  const real = Number(custo.custoUsd);
+  const diferenca = real - estimado;
+  const linhas = custo.porPapel.map(
+    (p) => html`<tr>
+<td><code>${p.papel}</code></td>
+<td>${p.chamadas}</td>
+<td>${tokens(p.tokensTotal)}</td>
+<td>${usd(p.custoUsd)}</td>
+<td>${p.duracaoMediaMs === null ? '—' : `${p.duracaoMediaMs} ms`}</td>
+</tr>`,
+  );
+  return html`<dl class="info">
+<dt>Chamadas reais</dt><dd>${custo.chamadas}</dd>
+<dt>Tokens reais</dt><dd>${tokens(custo.tokensTotal)} (${tokens(custo.tokensEntrada)} entrada / ${tokens(custo.tokensSaida)} saída)</dd>
+<dt>Custo real</dt><dd>${usd(custo.custoUsd)}</dd>
+<dt>Comparação</dt><dd>${diferenca <= 0 ? 'Dentro da estimativa' : `Acima da estimativa em ${usd(diferenca.toFixed(6))}`}</dd>
+</dl>
+<table class="tabela-custo">
+<thead><tr><th>Agente</th><th>Chamadas</th><th>Tokens</th><th>Custo</th><th>Duração média</th></tr></thead>
+<tbody>${linhas}</tbody>
+</table>`;
+}
+
 export function paginaFila(a: {
   demandas: readonly Demanda[];
   links: ReadonlyMap<string, LinkEntrega | null>;
@@ -169,6 +196,7 @@ export function paginaDetalhe(a: {
   mensagens: readonly Mensagem[];
   relatorio: Relatorio | null;
   artefatos: readonly ArtefatoEntregavelResumo[];
+  custo: ResumoCustoDemanda;
   linkEntrega: LinkEntrega | null;
 }): Bruto {
   const d = a.demanda;
@@ -200,6 +228,8 @@ ${blocoArtefatos(a.artefatos)}
 </dl>
 <h2>Estimativa de uso</h2>
 ${blocoEstimativaDetalhe(d.estimativaUso)}
+<h2>Custo real</h2>
+${blocoCustoReal(a.custo, d.estimativaUso)}
 <h2>Descrição</h2><p class="texto">${d.descricao || '—'}</p>
 ${d.referencias ? html`<h2>Referências</h2><p class="texto">${d.referencias}</p>` : ''}
 ${
