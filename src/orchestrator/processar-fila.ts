@@ -14,7 +14,7 @@ import { obterEnvelope } from '../db/orquestracao.ts';
 import { LlmError } from '../llm/llm.ts';
 import type { Notificador } from '../notify/notificador.ts';
 import { log, mensagemDeErro } from '../util/log.ts';
-import { codigoDoErro, ehParadaSistemica, statusDaInterrupcao } from './erros.ts';
+import { codigoDoErro, detalheErroLlm, ehParadaSistemica, statusDaInterrupcao } from './erros.ts';
 import { criarEmissor, processarDemanda, type DependenciasDemanda, type ResultadoDemanda } from './processar-demanda.ts';
 
 const LIMITE_RETENTATIVAS_LLM = 3;
@@ -59,11 +59,12 @@ async function registrarFalha(d: DependenciasFila, demanda: Demanda, runId: stri
   await atualizarDemanda(d.pool, demanda.id, { status: statusFinal });
 
   const codigoErro = erro instanceof LlmError ? codigoDoErro(erro) : 'falha_inesperada';
+  const detalhe = detalheErroLlm(erro);
   const emitir = criarEmissor(d.pool, demanda.id, { correlacaoId: runId, runId, tentativa: tentativas });
   if (statusFinal === 'Falhou') {
-    await emitir('demanda_falhou', 'sistema', { codigoErro });
+    await emitir('demanda_falhou', 'sistema', { codigoErro, ...detalhe });
   } else {
-    await emitir('demanda_devolvida_para_fila', 'sistema', { motivoDevolucao: 'falha_da_demanda', codigoErro });
+    await emitir('demanda_devolvida_para_fila', 'sistema', { motivoDevolucao: 'falha_da_demanda', codigoErro, ...detalhe });
   }
   return { titulo: demanda.titulo, motivo, statusFinal };
 }
@@ -126,14 +127,17 @@ async function devolverPorErroSistemico(d: DependenciasFila, demanda: Demanda, r
     runId,
     tentativa: demanda.tentativas + 1,
   });
+  const detalhe = detalheErroLlm(erro);
   await emitir('demanda_devolvida_para_fila', 'sistema', {
     motivoDevolucao: 'parada_sistemica',
     codigoErro,
+    ...detalhe,
   });
   if (codigoErro === 'llm_api' || codigoErro === 'llm_timeout') {
     await emitir('retentativa_sistemica_agendada', 'sistema', {
       codigoErro,
       motivoRetomada: 'erro_llm_temporario',
+      ...detalhe,
     });
     const totalRetentativas = await contarRetentativasSistemicasLlm(d, demanda.id);
     if (totalRetentativas >= LIMITE_RETENTATIVAS_LLM) {
