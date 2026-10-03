@@ -9,9 +9,7 @@ export interface EstadoFrota {
 export type Aba = 'fila' | 'nova' | 'relatorios';
 
 const ABAS: readonly (readonly [Aba, string, string])[] = [
-  ['fila', '/', 'Fila'],
-  ['nova', '/demandas/nova', 'Nova demanda'],
-  ['relatorios', '/relatorios', 'Relatórios'],
+  ['fila', '/', 'Demandas'],
 ];
 
 export function formatarData(iso: string): string {
@@ -43,6 +41,7 @@ export function pagina(o: { titulo: string; ativo: Aba | null; estado: EstadoFro
 </head>
 <body>
 <header class="topo">
+<div class="marca"><strong>Frota</strong><span>Operação de demandas</span></div>
 <nav aria-label="Principal">${abas}</nav>
 <div class="estado">${resumoEstado(o.estado)}</div>
 </header>
