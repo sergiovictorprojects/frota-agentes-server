@@ -256,7 +256,7 @@ describe('Fase 3.1: planejamento em shadow dentro do orquestrador', () => {
     expect(llm.pedidos.map((p) => p.papel)).toEqual([PAPEL_COORDENADOR, PAPEL_EXECUTOR, PAPEL_AUDITOR]);
     expect(await listarPlanosDaDemanda(db.pool, demanda.id)).toEqual([]);
     const falhou = (await listarEventosDaDemanda(db.pool, demanda.id)).find((e) => e.tipoEvento === 'planejamento_falhou');
-    expect(falhou?.metadata).toEqual({ codigoErro: 'llm_api' });
+    expect(falhou?.metadata).toEqual({ codigoErro: 'llm_api', causaLlm: 'desconhecida', statusHttp: null });
   });
 
   it('coordenador suspenso: não chama o modelo para planejar, registra agente_nao_autorizado e segue', async () => {
