@@ -149,7 +149,9 @@ dependências e uma tarefa de integração que produz a entrega única, sem queb
     para `Nova`, a tentativa é desfeita e o ledger recebe `retentativa_sistemica_agendada`, em vez de marcar a demanda
     como `Falhou` por instabilidade do provedor. Para não girar para sempre, três retentativas sistêmicas de LLM na
     mesma demanda em 60 minutos pausam o retry automático e levam a demanda para `Aguardando humano` com
-    `bloqueio_humano.tipo = falha_sistemica_llm_recorrente`. Mantém a retomada de plano ativo sem criar plano duplicado.
+       `bloqueio_humano.tipo = falha_sistemica_llm_recorrente`. Mantém a retomada de plano ativo sem criar plano duplicado.
+    O detalhe da demanda passa a comparar estimativa e custo real registrado em `agent_steps`, com agregação por
+    agente, chamadas, tokens e duração média; isso permite calibrar orçamento antes de ampliar uso de API.
   - **3.2c — Validação em camadas e roteamento de demanda (em implementação).** Evita que
     a categoria escolhida no formulário, hoje padronizada como `gestores`, contradiga o resultado solicitado.
     1. O formulário passa a registrar explicitamente o resultado esperado (`interface`, `documento`, `análise`,
