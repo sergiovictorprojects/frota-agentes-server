@@ -132,6 +132,7 @@ Quando a etapa gerar material grande, grave:
 | `plano_rejeitado` | A validação determinística recusou o plano | `planoId`, `versao`, `motivoRejeicao` (código fechado) |
 | `planejamento_falhou` | O planejamento falhou e a demanda seguiu pelo fluxo legado | `codigoErro` |
 | `roteamento_validado` | A demanda passou pela validação determinística de resultado esperado, categoria e critérios de aceite | `resultadoEsperado`, `categoria`, `categoriaSugerida`, `decisao`, `motivo` |
+| `retentativa_sistemica_agendada` | A demanda voltou para a fila porque a falha foi sistêmica e retomável | `codigoErro` (`llm_api` ou `llm_timeout`), `motivoRetomada` |
 
 `politica_avaliada` ganhou `operacao` opcional, hoje só `planejamento`, presente só nas operações novas. Nenhuma chave de tarefa entra no ledger: ela é texto vindo do modelo.
 

@@ -19,6 +19,7 @@ export const TIPOS_EVENTO = [
   'demanda_concluida',
   'demanda_reaberta',
   'demanda_devolvida_para_fila',
+  'retentativa_sistemica_agendada',
   'demanda_falhou',
   'politica_avaliada',
   'plano_registrado',
@@ -106,6 +107,7 @@ const RESUMOS_POR_TIPO: Readonly<Record<TipoEvento, string>> = {
   demanda_concluida: 'Demanda concluída.',
   demanda_reaberta: 'Demanda reaberta.',
   demanda_devolvida_para_fila: 'Demanda devolvida para a fila.',
+  retentativa_sistemica_agendada: 'Retentativa sistêmica agendada.',
   demanda_falhou: 'Limite de tentativas atingido.',
   politica_avaliada: 'Política avaliada (modo shadow — não bloqueia).',
   plano_registrado: 'Plano de tarefas registrado (modo planejar — não executa).',
@@ -223,6 +225,10 @@ const METADATA_SCHEMAS: Readonly<Record<TipoEvento, z.ZodType>> = {
     motivoDevolucao: z.enum(['nunca_iniciada', 'parada_sistemica', 'falha_da_demanda', 'watchdog', 'prazo_da_run']),
     codigoErro: codigoErro.nullable(),
     tentativaPlanejada: tentativaPlanejada.optional(),
+  }),
+  retentativa_sistemica_agendada: z.strictObject({
+    codigoErro: z.enum(['llm_api', 'llm_timeout']),
+    motivoRetomada: z.enum(['erro_llm_temporario']),
   }),
   demanda_falhou: z.strictObject({ codigoErro }),
   // Fase 2 — Entrega 2 (Policy Engine, modo shadow): só decisão, estágio, ids/versionamento e código
