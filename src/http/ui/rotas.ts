@@ -169,7 +169,15 @@ function registrarFila(app: FastifyInstance, d: DependenciasUi, r: Respostas): v
   app.get('/relatorios', async (_req, reply) => {
     const relatorios = await listarRelatorios(d.pool, 100);
     const links = await linksPorId(d, relatorios.map((x) => ({ id: x.id, demandaId: x.demandaId, entregaUrl: x.entregaUrl })));
-    return r.enviar(reply, 200, 'Relatórios', 'relatorios', paginaRelatorios({ relatorios, links }));
+    const dados = await Promise.all(
+      relatorios.map(async (relatorio) => {
+        const [demanda, custo] = await Promise.all([obterDemanda(d.pool, relatorio.demandaId), resumoCustoDaDemanda(d.pool, relatorio.demandaId)]);
+        return { demanda, custo, demandaId: relatorio.demandaId };
+      }),
+    );
+    const demandas = new Map(dados.flatMap((x) => (x.demanda ? [[x.demandaId, x.demanda] as const] : [])));
+    const custos = new Map(dados.map((x) => [x.demandaId, x.custo] as const));
+    return r.enviar(reply, 200, 'Relatórios', 'relatorios', paginaRelatorios({ relatorios, links, demandas, custos }));
   });
 }
 

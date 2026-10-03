@@ -279,6 +279,9 @@ describe('aplicacao HTTP', () => {
       expect(r.body).toContain('88');
       expect(r.body).toContain('50%');
       expect(r.body).toContain('Custo real');
+      expect(r.body).toContain('Prestação de contas');
+      expect(r.body).toContain('Uso da API');
+      expect(r.body).toContain('Ver prestação detalhada');
       expect(r.body).toContain('frota:architect');
       expect(r.body).toContain('US$ 0.00');
       expect(r.body).toContain('140');
@@ -619,6 +622,8 @@ describe('aplicacao HTTP', () => {
       expect(r.statusCode).toBe(200);
       expect(r.body).toContain('Com relatorio');
       expect(r.body).toContain('não medido');
+      expect(r.body).toContain('Prestação emitida por g');
+      expect(r.body).toContain('Ver prestação detalhada');
     });
   });
 
