@@ -299,6 +299,39 @@ describe('processarFila', () => {
     expect(eventos.at(-1)?.metadata).toEqual({ codigoErro: 'llm_api', motivoRetomada: 'erro_llm_temporario' });
   });
 
+  it('circuit breaker: tres retentativas sistemicas de LLM pausam o retry automatico da demanda', async () => {
+    const id = await criarComIdade('loop de provedor', 10);
+    await criarEnvelope(db.pool, { demandaId: id, tetoBaseUsd: '5.00' });
+    await fixarRotaLegado(db.pool, { demandaId: id, motivo: 'tarefa_falhou' });
+    await db.pool.query("UPDATE demandas SET categoria = 'd11', resultado_esperado = 'interface', criterios_aceite = 'Entregar HTML.' WHERE id = $1", [id]);
+    const { deps, llm } = montarComReservas(() => new LlmError('api', 'Falha na API da Anthropic (400): overloaded', null, 400));
+
+    await processarFila(deps);
+    expect(await obterDemanda(db.pool, id)).toMatchObject({ status: 'Nova', tentativas: 0 });
+    await processarFila(deps);
+    expect(await obterDemanda(db.pool, id)).toMatchObject({ status: 'Nova', tentativas: 0 });
+    await processarFila(deps);
+
+    const demanda = await obterDemanda(db.pool, id);
+    expect(demanda).toMatchObject({
+      status: 'Aguardando humano',
+      tentativas: 0,
+      bloqueioHumano: {
+        tipo: 'falha_sistemica_llm_recorrente',
+        codigoErro: 'llm_api',
+        retentativas: 3,
+        janelaMinutos: 60,
+      },
+    });
+
+    const eventos = await listarEventosDaDemanda(db.pool, id);
+    expect(eventos.filter((e) => e.tipoEvento === 'retentativa_sistemica_agendada')).toHaveLength(3);
+    expect(eventos.at(-1)?.tipoEvento).toBe('pendencia_humana_registrada');
+
+    await processarFila(deps);
+    expect(llm.pedidos.filter((p) => p.contexto?.demandaId === id)).toHaveLength(3);
+  });
+
   it('erro inesperado nao vaza detalhes internos para a mensagem da demanda', async () => {
     const id = await criarComIdade('x', 10);
     const { deps } = montar(() => new Error('senha do banco: hunter2'));

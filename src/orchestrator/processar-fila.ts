@@ -17,6 +17,9 @@ import { log, mensagemDeErro } from '../util/log.ts';
 import { codigoDoErro, ehParadaSistemica, statusDaInterrupcao } from './erros.ts';
 import { criarEmissor, processarDemanda, type DependenciasDemanda, type ResultadoDemanda } from './processar-demanda.ts';
 
+const LIMITE_RETENTATIVAS_LLM = 3;
+const JANELA_RETENTATIVAS_LLM_MINUTOS = 60;
+
 export interface DependenciasFila extends DependenciasDemanda {
   notificador: Notificador;
   maxDemandasPorRun: number;
@@ -73,6 +76,47 @@ async function ehErroLlmRetomavel(d: DependenciasFila, demanda: Demanda, erro: u
   return envelope?.rota === 'legado_fixo';
 }
 
+async function contarRetentativasSistemicasLlm(d: DependenciasFila, demandaId: string): Promise<number> {
+  const { rows } = await d.pool.query<{ total: number }>(
+    `SELECT count(*)::int AS total
+       FROM agent_events
+      WHERE demanda_id = $1
+        AND tipo_evento = 'retentativa_sistemica_agendada'
+        AND metadata->>'codigoErro' IN ('llm_api', 'llm_timeout')
+        AND ocorrido_em >= now() - make_interval(mins => $2::int)`,
+    [demandaId, JANELA_RETENTATIVAS_LLM_MINUTOS],
+  );
+  return rows[0]?.total ?? 0;
+}
+
+async function bloquearRetrySistemicoRecorrente(
+  d: DependenciasFila,
+  demanda: Demanda,
+  runId: string,
+  tentativa: number,
+  codigoErro: 'llm_api' | 'llm_timeout',
+  totalRetentativas: number,
+): Promise<void> {
+  await atualizarDemanda(d.pool, demanda.id, {
+    status: 'Aguardando humano',
+    bloqueioHumano: {
+      tipo: 'falha_sistemica_llm_recorrente',
+      codigoErro,
+      retentativas: totalRetentativas,
+      janelaMinutos: JANELA_RETENTATIVAS_LLM_MINUTOS,
+      acaoNecessaria: 'Verificar provedor/modelo LLM e acionar tentativa manual quando estabilizar.',
+    },
+  });
+  await adicionarMensagem(d.pool, {
+    demandaId: demanda.id,
+    autor: 'agente',
+    setor: demanda.categoria === 'gestores' ? null : demanda.categoria,
+    texto: `Retry automático pausado: ${totalRetentativas} falhas sistêmicas de LLM em ${JANELA_RETENTATIVAS_LLM_MINUTOS} minutos. A demanda aguarda revisão humana antes de tentar novamente.`,
+  });
+  const emitir = criarEmissor(d.pool, demanda.id, { correlacaoId: runId, runId, tentativa });
+  await emitir('pendencia_humana_registrada', 'sistema', { totalAcoes: 1 });
+}
+
 async function devolverPorErroSistemico(d: DependenciasFila, demanda: Demanda, runId: string, erro: unknown): Promise<void> {
   // Já tinha começado: erro de provedor/modelo não deve consumir tentativa da demanda.
   await devolverParaFila(d.pool, demanda.id, true);
@@ -91,6 +135,10 @@ async function devolverPorErroSistemico(d: DependenciasFila, demanda: Demanda, r
       codigoErro,
       motivoRetomada: 'erro_llm_temporario',
     });
+    const totalRetentativas = await contarRetentativasSistemicasLlm(d, demanda.id);
+    if (totalRetentativas >= LIMITE_RETENTATIVAS_LLM) {
+      await bloquearRetrySistemicoRecorrente(d, demanda, runId, demanda.tentativas + 1, codigoErro, totalRetentativas);
+    }
   }
 }
 

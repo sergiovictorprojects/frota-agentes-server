@@ -147,7 +147,9 @@ dependências e uma tarefa de integração que produz a entrega única, sem queb
     tentativa disponível, mas quando a tarefa esgota o plano por tarefas fixa `legado_fixo` com motivo auditável e
     permite seguir pela rota legada. No fluxo legado, `llm_api`/`llm_timeout` também são retomáveis: a demanda volta
     para `Nova`, a tentativa é desfeita e o ledger recebe `retentativa_sistemica_agendada`, em vez de marcar a demanda
-    como `Falhou` por instabilidade do provedor. Mantém a retomada de plano ativo sem criar plano duplicado.
+    como `Falhou` por instabilidade do provedor. Para não girar para sempre, três retentativas sistêmicas de LLM na
+    mesma demanda em 60 minutos pausam o retry automático e levam a demanda para `Aguardando humano` com
+    `bloqueio_humano.tipo = falha_sistemica_llm_recorrente`. Mantém a retomada de plano ativo sem criar plano duplicado.
   - **3.2c — Validação em camadas e roteamento de demanda (em implementação).** Evita que
     a categoria escolhida no formulário, hoje padronizada como `gestores`, contradiga o resultado solicitado.
     1. O formulário passa a registrar explicitamente o resultado esperado (`interface`, `documento`, `análise`,
