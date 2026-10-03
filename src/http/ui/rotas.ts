@@ -205,9 +205,10 @@ function registrarDetalheEAcoes(app: FastifyInstance, d: DependenciasUi, r: Resp
   app.get<{ Params: { id: string } }>('/demandas/:id', async (req, reply) => {
     const demanda = UUID.test(req.params.id) ? await obterDemanda(d.pool, req.params.id) : null;
     if (!demanda) return r.naoEncontrada(reply);
-    const [mensagens, relatorio, artefatos, custo, [linkEntrega]] = await Promise.all([
+    const [mensagens, relatorio, eventos, artefatos, custo, [linkEntrega]] = await Promise.all([
       listarMensagens(d.pool, demanda.id),
       relatorioMaisRecente(d.pool, demanda.id),
+      listarEventosDaDemanda(d.pool, demanda.id),
       listarArtefatosEntregaveisDaDemanda(d.pool, demanda.id),
       resumoCustoDaDemanda(d.pool, demanda.id),
       resolverLinksDeEntrega(d.pool, d.origemPublica, [{ demandaId: demanda.id, entregaUrl: demanda.entregaUrl }]),
@@ -217,7 +218,7 @@ function registrarDetalheEAcoes(app: FastifyInstance, d: DependenciasUi, r: Resp
       200,
       demanda.titulo,
       'fila',
-      paginaDetalhe({ demanda, mensagens, relatorio, artefatos, custo, linkEntrega: linkEntrega ?? null }),
+      paginaDetalhe({ demanda, mensagens, relatorio, eventos, artefatos, custo, linkEntrega: linkEntrega ?? null }),
     );
   });
 

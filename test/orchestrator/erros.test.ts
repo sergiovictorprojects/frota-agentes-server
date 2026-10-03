@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { LlmError } from '../../src/llm/llm.ts';
 import { FrotaPausadaError, OrcamentoExcedidoError } from '../../src/llm/orcamento.ts';
-import { ehParadaSistemica, statusDaInterrupcao } from '../../src/orchestrator/erros.ts';
+import { detalheErroLlm, ehParadaSistemica, statusDaInterrupcao } from '../../src/orchestrator/erros.ts';
 
 const api = (status: number | null) => new LlmError('api', 'falha', null, status);
 
@@ -29,6 +29,20 @@ describe('ehParadaSistemica', () => {
     expect(ehParadaSistemica(new LlmError('invalido', 'x'))).toBe(false);
     expect(ehParadaSistemica(new Error('qualquer'))).toBe(false);
     expect(ehParadaSistemica('texto')).toBe(false);
+  });
+});
+
+describe('detalheErroLlm', () => {
+  it('expoe causa e status HTTP de LlmError de API sem texto bruto', () => {
+    expect(detalheErroLlm(new LlmError('api', 'Falha na API da Anthropic (402): credit balance', null, 402, 'quota'))).toEqual({
+      causaLlm: 'quota',
+      statusHttp: 402,
+    });
+  });
+
+  it('normaliza timeout sem status HTTP e ignora erros que nao sao de LLM', () => {
+    expect(detalheErroLlm(new LlmError('timeout', 'tempo esgotado'))).toEqual({ causaLlm: 'timeout', statusHttp: null });
+    expect(detalheErroLlm(new Error('x'))).toBeNull();
   });
 });
 

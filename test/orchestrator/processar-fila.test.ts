@@ -295,8 +295,18 @@ describe('processarFila', () => {
       'demanda_devolvida_para_fila',
       'retentativa_sistemica_agendada',
     ]);
-    expect(eventos.at(-2)?.metadata).toEqual({ motivoDevolucao: 'parada_sistemica', codigoErro: 'llm_api' });
-    expect(eventos.at(-1)?.metadata).toEqual({ codigoErro: 'llm_api', motivoRetomada: 'erro_llm_temporario' });
+    expect(eventos.at(-2)?.metadata).toEqual({
+      motivoDevolucao: 'parada_sistemica',
+      codigoErro: 'llm_api',
+      causaLlm: 'desconhecida',
+      statusHttp: 400,
+    });
+    expect(eventos.at(-1)?.metadata).toEqual({
+      codigoErro: 'llm_api',
+      motivoRetomada: 'erro_llm_temporario',
+      causaLlm: 'desconhecida',
+      statusHttp: 400,
+    });
   });
 
   it('circuit breaker: tres retentativas sistemicas de LLM pausam o retry automatico da demanda', async () => {

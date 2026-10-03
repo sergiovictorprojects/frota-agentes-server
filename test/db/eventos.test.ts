@@ -797,6 +797,8 @@ describe('agent_events da Fase 3.2 (execucao por tarefas)', () => {
     await recusado('tarefa_devolvida', { claimId, codigoErro: 'llm_api' }, { tarefaId });
     await recusado('tarefa_resultado_descartado', { claimId, tentativa: 1, motivoDescarte: 'duplicado' }, { tarefaId });
     await recusado('tarefa_lease_expirado', { claimId, tentativa: 1, enviada: true, destino: 'cancelada' }, { tarefaId });
+    await recusado('chamada_trabalho_falhou', { codigoErro: 'llm_api', causaLlm: 'saldo acabou', statusHttp: 402 });
+    await recusado('chamada_trabalho_falhou', { codigoErro: 'llm_api', causaLlm: 'quota', mensagem: 'credit balance too low' });
     // O auditor (d17) não é capacidade de tarefa; a chave do agente tem formato fechado.
     await recusado('agente_selecionado', { claimId, agente: 'frota:agent-evaluator', versaoAgente: 1, capacidade: 'd17' }, { tarefaId });
     await recusado('agente_selecionado', { claimId, agente: 'Frota Architect', versaoAgente: 1, capacidade: 'd1' }, { tarefaId });
@@ -812,8 +814,8 @@ describe('agent_events da Fase 3.2 (execucao por tarefas)', () => {
     await aceito('plano_rejeitado', { planoId: p.planoId, versao: 2, motivoRejeicao: 'objetivo_invalido' });
     await aceito('plano_abandonado', { planoId: p.planoId, versao: 1, motivoAbandono: 'orquestracao_desligada', tarefasCanceladas: 0 });
     await aceito('demanda_devolvida_para_fila', { motivoDevolucao: 'prazo_da_run', codigoErro: 'prazo_da_run' });
-    await aceito('chamada_trabalho_falhou', { codigoErro: 'llm_timeout' });
-    await aceito('retentativa_sistemica_agendada', { codigoErro: 'llm_api', motivoRetomada: 'erro_llm_temporario' });
+    await aceito('chamada_trabalho_falhou', { codigoErro: 'llm_timeout', causaLlm: 'timeout', statusHttp: null });
+    await aceito('retentativa_sistemica_agendada', { codigoErro: 'llm_api', motivoRetomada: 'erro_llm_temporario', causaLlm: 'quota', statusHttp: 402 });
     await aceito('rota_definida', { rota: 'legado_fixo', motivoRota: 'rota_fixada' });
   });
 

@@ -119,6 +119,72 @@ function blocoCustoReal(custo: ResumoCustoDemanda, estimativa: EstimativaUsoDema
 </table>`;
 }
 
+const ROTULOS_CAUSA_LLM: Readonly<Record<string, string>> = {
+  auth: 'Credencial ou permissão',
+  quota: 'Saldo ou cota',
+  rate_limit: 'Limite de requisições',
+  timeout: 'Tempo esgotado',
+  overload: 'Sobrecarga do provedor',
+  bad_request: 'Pedido inválido',
+  nao_encontrado: 'Modelo ou rota não encontrados',
+  servidor: 'Erro do provedor',
+  rede: 'Rede ou conexão',
+  desconhecida: 'Causa não identificada',
+};
+
+const ACOES_CAUSA_LLM: Readonly<Record<string, string>> = {
+  auth: 'Revisar a chave da API e permissões do projeto antes de tentar novamente.',
+  quota: 'Verificar saldo, limite mensal ou créditos da conta antes de retomar a frota.',
+  rate_limit: 'Aguardar alguns minutos ou reduzir a frequência de execuções.',
+  timeout: 'Tentar novamente com demanda menor ou timeout maior se repetir.',
+  overload: 'Aguardar estabilização do provedor; retry automático é adequado, mas deve ser limitado.',
+  bad_request: 'Revisar prompt, schema e tamanho da demanda; repetir sem ajuste tende a falhar de novo.',
+  nao_encontrado: 'Conferir nome do modelo e configuração do provedor.',
+  servidor: 'Aguardar estabilização do provedor e acompanhar novas tentativas.',
+  rede: 'Checar conectividade do servidor e tentar novamente.',
+  desconhecida: 'Consultar eventos e logs operacionais antes de insistir em novas tentativas.',
+};
+
+function textoMetadata(e: Evento, chave: string): string | null {
+  const valor = e.metadata[chave];
+  return typeof valor === 'string' ? valor : null;
+}
+
+function numeroMetadata(e: Evento, chave: string): number | null {
+  const valor = e.metadata[chave];
+  return typeof valor === 'number' ? valor : null;
+}
+
+function ultimoEventoComErro(eventos: readonly Evento[]): Evento | null {
+  return [...eventos]
+    .reverse()
+    .find((e) => typeof e.metadata.codigoErro === 'string' || typeof e.metadata.causaLlm === 'string') ?? null;
+}
+
+function blocoDiagnosticoOperacional(eventos: readonly Evento[], custo: ResumoCustoDemanda): Bruto {
+  const evento = ultimoEventoComErro(eventos);
+  if (!evento) {
+    return html`<section class="diagnostico ok">
+<div><strong>Sem falhas registradas</strong><span>A demanda ainda não encontrou bloqueios operacionais.</span></div>
+<span class="medidor">pronta</span>
+</section>`;
+  }
+  const codigo = textoMetadata(evento, 'codigoErro') ?? '—';
+  const causa = textoMetadata(evento, 'causaLlm');
+  const statusHttp = numeroMetadata(evento, 'statusHttp');
+  const rotuloCausa = causa ? (ROTULOS_CAUSA_LLM[causa] ?? causa) : codigo;
+  const acao = causa ? (ACOES_CAUSA_LLM[causa] ?? ACOES_CAUSA_LLM.desconhecida) : 'Acompanhar a linha do tempo antes de nova tentativa.';
+  const risco = causa === 'bad_request' || causa === 'auth' || causa === 'quota' ? 'acao' : 'retry';
+  return html`<section class="diagnostico ${risco}">
+<div>
+<strong>${rotuloCausa}</strong>
+<span>${acao}</span>
+<small><code>${evento.tipoEvento}</code> · <code>${codigo}</code>${statusHttp ? html` · HTTP ${statusHttp}` : ''} · ${formatarData(evento.ocorridoEm)}</small>
+</div>
+<span class="medidor">${custo.chamadas} chamada(s)</span>
+</section>`;
+}
+
 export function paginaFila(a: {
   demandas: readonly Demanda[];
   links: ReadonlyMap<string, LinkEntrega | null>;
@@ -195,6 +261,7 @@ export function paginaDetalhe(a: {
   demanda: Demanda;
   mensagens: readonly Mensagem[];
   relatorio: Relatorio | null;
+  eventos: readonly Evento[];
   artefatos: readonly ArtefatoEntregavelResumo[];
   custo: ResumoCustoDemanda;
   linkEntrega: LinkEntrega | null;
@@ -215,6 +282,8 @@ ${d.status !== 'Em andamento' ? botaoExclusao(`/demandas/${d.id}/excluir`) : ''}
 </div>
 </div>
 ${a.linkEntrega ? html`<p>${linkDeEntrega(a.linkEntrega, 'botao')}</p>` : ''}
+<h2>Diagnóstico operacional</h2>
+${blocoDiagnosticoOperacional(a.eventos, a.custo)}
 <h2>Arquivos para download</h2>
 ${blocoArtefatos(a.artefatos)}
 <p><a href="/demandas/${d.id}/dossie">Ver dossiê</a></p>

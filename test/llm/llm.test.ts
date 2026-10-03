@@ -142,12 +142,24 @@ describe('AnthropicLlm', () => {
     const erro = await falha(Object.assign(new Error('overloaded'), { status: 529 }));
     expect(erro.tipo).toBe('api');
     expect(erro.status).toBe(529);
+    expect(erro.causa).toBe('overload');
     expect(erro.uso).toBeNull();
     expect(erro.message).toContain('529');
   });
 
   it('classifica falha de API sem status', async () => {
     const erro = await falha(new Error('socket hang up'));
-    expect(erro).toMatchObject({ tipo: 'api', status: null });
+    expect(erro).toMatchObject({ tipo: 'api', status: null, causa: 'rede' });
+  });
+
+  it.each([
+    [401, 'invalid api key', 'auth'],
+    [402, 'credit balance too low', 'quota'],
+    [429, 'rate limit exceeded', 'rate_limit'],
+    [400, 'schema is invalid', 'bad_request'],
+    [500, 'internal server error', 'servidor'],
+  ] as const)('classifica causa operacional de status %i', async (status, mensagem, causa) => {
+    const erro = await falha(Object.assign(new Error(mensagem), { status }));
+    expect(erro).toMatchObject({ tipo: 'api', status, causa });
   });
 });
