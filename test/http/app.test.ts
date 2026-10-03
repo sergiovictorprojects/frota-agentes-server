@@ -235,7 +235,7 @@ describe('aplicacao HTTP', () => {
 
   describe('detalhe e acoes', () => {
     it('mostra a linha do tempo dos agentes, o relatorio e o link da entrega, tudo escapado', async () => {
-      const d = await criarDemanda(db.pool, { titulo: 'Detalhada', categoria: 'd1', descricao: '<img src=x onerror=alert(1)>' });
+      const d = await criarDemanda(db.pool, { titulo: 'Detalhada', categoria: 'd1', descricao: '<img src=x onerror=alert(1)>', resultadoEsperado: 'interface' });
       await adicionarMensagem(db.pool, { demandaId: d.id, autor: 'agente', agente: 'frota:architect', texto: 'Plano: <b>entregar</b>' });
       const entrega = await criarEntrega(db.pool, { demandaId: d.id, titulo: 'T', conteudo: '<p>x</p>' });
       const url = `${ORIGEM}/entregas/${entrega.id}`;
@@ -276,6 +276,8 @@ describe('aplicacao HTTP', () => {
       expect(r.body).not.toContain('<img src=x');
       // Link verificado em `entregas`: href relativo, montado a partir do registro.
       expect(r.body).toContain(`href="/entregas/${entrega.id}"`);
+      expect(r.body).toContain('Miniatura da entrega');
+      expect(r.body).toContain(`src="/entregas/${entrega.id}/conteudo"`);
       expect(r.body).toContain('88');
       expect(r.body).toContain('50%');
       expect(r.body).toContain('Custo real');
@@ -285,6 +287,8 @@ describe('aplicacao HTTP', () => {
       expect(r.body).toContain('frota:architect');
       expect(r.body).toContain('US$ 0.00');
       expect(r.body).toContain('140');
+      expect(r.body).toContain('botao warn');
+      expect(r.body).toContain('botao danger');
     });
 
     it('devolve 404 para demanda inexistente ou id que nao e UUID, sem erro 500', async () => {
@@ -506,6 +510,8 @@ describe('aplicacao HTTP', () => {
       // texto da mensagem NÃO aparece — só metadado estrutural (ver teste de redaction abaixo).
       expect(r.body).not.toContain('Executando.');
       expect(r.body).toContain('Demanda concluída.');
+      expect(r.body).toContain('class="evento-timeline"');
+      expect(r.body).toContain('ator: architect');
       // Link verificado em `entregas`: href relativo, montado a partir do registro.
       expect(r.body).toContain(`href="/entregas/${entrega.id}"`);
       expect(r.body).toContain('90');
