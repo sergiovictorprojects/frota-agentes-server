@@ -51,7 +51,7 @@ import { PrazoRunExcedidoError, criarRelogioRun } from './prazo-run.ts';
 import { comTransacao } from '../db/tx.ts';
 import type { EmitirEvento } from './processar-demanda.ts';
 import { inferirEntregaEsperada, instrucaoEntregaEsperada, mensagemEntregaInvalida, validarResultadoExecucao } from './validacao-entrega.ts';
-import { codigoDoErro, ehParadaSistemica } from './erros.ts';
+import { codigoDoErro, detalheErroLlm, ehParadaSistemica } from './erros.ts';
 
 // A interface fica separada de Llm para tornar explícito que o motor nunca pode usar o caminho legado de
 // LlmComOrcamento: uma chamada com envelope precisa liquidar a reserva, não gravar um segundo agent_step.
@@ -218,7 +218,7 @@ async function falharEAbandonar(
   });
 }
 
-async function falharTentativaSistemica(d: DependenciasExecucaoTarefas, tarefa: TarefaReivindicada, codigo: 'llm_api' | 'llm_timeout'): Promise<boolean> {
+async function falharTentativaSistemica(d: DependenciasExecucaoTarefas, tarefa: TarefaReivindicada, codigo: 'llm_api' | 'llm_timeout', erro: unknown): Promise<boolean> {
   const falha = await falharTentativa(d.pool, { tarefaId: tarefa.id, leaseToken: tarefa.leaseToken, codigoErro: codigo });
   if (!falha.registrada) return false;
   await d.emitir('tarefa_falhou', tarefa.agente.chave, {
@@ -227,6 +227,7 @@ async function falharTentativaSistemica(d: DependenciasExecucaoTarefas, tarefa: 
     tentativa: falha.tentativa,
     codigoErro: codigo,
     definitiva: falha.definitiva,
+    ...detalheErroLlm(erro),
   }, tarefa.id);
   if (falha.abandono) {
     await d.emitir('plano_abandonado', 'sistema', {
@@ -348,7 +349,7 @@ async function registrarPlano(d: DependenciasExecucaoTarefas): Promise<PlanoGrav
 
 async function fixarLegadoPorFalhaDePlanejamento(d: DependenciasExecucaoTarefas, erro: unknown): Promise<never> {
   const codigoErro = codigoDoErro(erro);
-  await d.emitir('planejamento_falhou', 'frota:gestores', { codigoErro });
+  await d.emitir('planejamento_falhou', 'frota:gestores', { codigoErro, ...detalheErroLlm(erro) });
   await fixarRotaLegado(d.pool, { demandaId: d.demanda.id, motivo: 'planejamento_falhou' });
   await d.emitir('fallback_legado', 'sistema', { planoId: null, motivoFallback: 'planejamento_falhou', codigoErro });
   throw new RotaLegadoFixadaError('planejamento_falhou', `Planejamento falhou: ${codigoErro}`);
@@ -528,7 +529,7 @@ export async function processarExecucaoSequencial(d: DependenciasExecucaoTarefas
       // conteúdo classificáveis (recusa, truncamento, schema inválido ou status HTTP determinístico)
       // podem abandonar o plano e cair no legado.
       if (erro instanceof LlmError && erroApiSistemico(erro)) {
-        const esgotouPlano = await falharTentativaSistemica(d, tarefa, 'llm_api');
+        const esgotouPlano = await falharTentativaSistemica(d, tarefa, 'llm_api', erro);
         if (esgotouPlano) {
           await fixarRotaLegado(d.pool, { demandaId: d.demanda.id, motivo: 'tarefa_falhou' });
           throw new RotaLegadoFixadaError('tarefa_falhou', 'Plano abandonado após falhas sistêmicas repetidas na tarefa.');
@@ -536,7 +537,7 @@ export async function processarExecucaoSequencial(d: DependenciasExecucaoTarefas
         throw erro;
       }
       if (erro instanceof LlmError && erro.tipo === 'timeout') {
-        const esgotouPlano = await falharTentativaSistemica(d, tarefa, 'llm_timeout');
+        const esgotouPlano = await falharTentativaSistemica(d, tarefa, 'llm_timeout', erro);
         if (esgotouPlano) {
           await fixarRotaLegado(d.pool, { demandaId: d.demanda.id, motivo: 'tarefa_falhou' });
           throw new RotaLegadoFixadaError('tarefa_falhou', 'Plano abandonado após timeouts repetidos na tarefa.');
