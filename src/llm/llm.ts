@@ -26,29 +26,57 @@ export interface Llm {
 }
 
 export type TipoErroLlm = 'recusa' | 'truncado' | 'invalido' | 'api' | 'timeout';
+export type CausaErroApiLlm =
+  | 'auth'
+  | 'quota'
+  | 'rate_limit'
+  | 'timeout'
+  | 'overload'
+  | 'bad_request'
+  | 'nao_encontrado'
+  | 'servidor'
+  | 'rede'
+  | 'desconhecida';
 
 export class LlmError extends Error {
   readonly tipo: TipoErroLlm;
   // Tokens já consumidos: mesmo uma resposta ruim custa dinheiro e precisa ser contabilizada.
   readonly uso: Uso | null;
   readonly status: number | null;
+  readonly causa: CausaErroApiLlm | null;
 
-  constructor(tipo: TipoErroLlm, mensagem: string, uso: Uso | null = null, status: number | null = null) {
+  constructor(tipo: TipoErroLlm, mensagem: string, uso: Uso | null = null, status: number | null = null, causa: CausaErroApiLlm | null = null) {
     super(mensagem);
     this.name = 'LlmError';
     this.tipo = tipo;
     this.uso = uso;
     this.status = status;
+    this.causa = causa;
   }
 }
 
-function descreverErroApi(erro: unknown): { mensagem: string; status: number | null } {
+function classificarCausaApi(status: number | null, texto: string): CausaErroApiLlm {
+  const normalizado = texto.toLowerCase();
+  if (status === 401 || status === 403) return 'auth';
+  if (status === 402 || normalizado.includes('credit') || normalizado.includes('quota') || normalizado.includes('balance')) return 'quota';
+  if (status === 429 || normalizado.includes('rate limit')) return 'rate_limit';
+  if (status === 408 || normalizado.includes('timeout') || normalizado.includes('timed out')) return 'timeout';
+  if (status === 400 || status === 413 || status === 422) return 'bad_request';
+  if (status === 404) return 'nao_encontrado';
+  if (status === 529 || normalizado.includes('overload') || normalizado.includes('overloaded')) return 'overload';
+  if (status !== null && status >= 500) return 'servidor';
+  if (status === null) return 'rede';
+  return 'desconhecida';
+}
+
+function descreverErroApi(erro: unknown): { mensagem: string; status: number | null; causa: CausaErroApiLlm } {
   const status =
     typeof erro === 'object' && erro !== null && 'status' in erro && typeof erro.status === 'number'
       ? erro.status
       : null;
   const texto = erro instanceof Error ? erro.message : String(erro);
-  return { mensagem: `Falha na API da Anthropic${status ? ` (${status})` : ''}: ${texto.slice(0, 300)}`, status };
+  const causa = classificarCausaApi(status, texto);
+  return { mensagem: `Falha na API da Anthropic${status ? ` (${status})` : ''}: ${texto.slice(0, 300)}`, status, causa };
 }
 
 function extrairUso(usage: Anthropic.Usage): Uso {
@@ -84,8 +112,8 @@ export class AnthropicLlm implements Llm {
         })
         .finalMessage();
     } catch (erro) {
-      const { mensagem: texto, status } = descreverErroApi(erro);
-      throw new LlmError('api', texto, null, status);
+      const { mensagem: texto, status, causa } = descreverErroApi(erro);
+      throw new LlmError('api', texto, null, status, causa);
     }
 
     const uso = extrairUso(mensagem.usage);
