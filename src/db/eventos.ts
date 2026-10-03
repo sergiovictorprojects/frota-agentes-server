@@ -147,6 +147,11 @@ const prioridade = z.enum(PRIORIDADES);
 const complexidadeDemanda = z.enum(COMPLEXIDADES_DEMANDA);
 const resultadoEsperado = z.enum(RESULTADOS_ESPERADOS);
 const codigoErro = z.enum(CODIGOS_ERRO);
+const causaLlm = z.enum(['auth', 'quota', 'rate_limit', 'timeout', 'overload', 'bad_request', 'nao_encontrado', 'servidor', 'rede', 'desconhecida']).optional();
+const detalheLlm = {
+  causaLlm,
+  statusHttp: z.number().int().min(100).max(599).nullable().optional(),
+};
 const uuid = z.uuid();
 const contagem = z.number().int().nonnegative();
 const percentual = z.number().int().min(0).max(100);
@@ -222,24 +227,26 @@ const METADATA_SCHEMAS: Readonly<Record<TipoEvento, z.ZodType>> = {
     nivelComplexidade: z.number().int().min(1).max(4),
     setoresEnvolvidos: z.array(categoria).max(18),
   }),
-  chamada_trabalho_falhou: z.strictObject({ codigoErro }),
+  chamada_trabalho_falhou: z.strictObject({ codigoErro, ...detalheLlm }),
   pendencia_humana_registrada: z.strictObject({ totalAcoes: contagem }),
   pendencia_insumo_registrada: z.strictObject({ alternativa: z.enum(['A', 'B']) }),
   entrega_criada: z.strictObject({ entregaId: uuid, tipo: z.enum(['html', 'texto']), publicadaComoHtml: z.boolean() }),
   auditoria_concluida: z.strictObject({ antipadroesCount: contagem, regrasCumpridasPercent: percentual }),
-  auditoria_interrompida: z.strictObject({ codigoErro }),
+  auditoria_interrompida: z.strictObject({ codigoErro, ...detalheLlm }),
   demanda_concluida: z.strictObject({ indiceGeral: percentual.nullable(), antipadroesCount: contagem.nullable() }),
   demanda_reaberta: z.strictObject({ origem: z.enum(['resposta', 'manual']) }),
   demanda_devolvida_para_fila: z.strictObject({
     motivoDevolucao: z.enum(['nunca_iniciada', 'parada_sistemica', 'falha_da_demanda', 'watchdog', 'prazo_da_run']),
     codigoErro: codigoErro.nullable(),
     tentativaPlanejada: tentativaPlanejada.optional(),
+    ...detalheLlm,
   }),
   retentativa_sistemica_agendada: z.strictObject({
     codigoErro: z.enum(['llm_api', 'llm_timeout']),
     motivoRetomada: z.enum(['erro_llm_temporario']),
+    ...detalheLlm,
   }),
-  demanda_falhou: z.strictObject({ codigoErro }),
+  demanda_falhou: z.strictObject({ codigoErro, ...detalheLlm }),
   // Fase 2 — Entrega 2 (Policy Engine, modo shadow): só decisão, estágio, ids/versionamento e código
   // fechado — nunca a condição da regra, o nome da política ou qualquer texto. Os enums de estagio/decisao
   // são redeclarados aqui (em vez de importados de src/db/politicas.ts) para não criar import circular —
@@ -265,7 +272,7 @@ const METADATA_SCHEMAS: Readonly<Record<TipoEvento, z.ZodType>> = {
     totalDependencias: contagem,
   }),
   plano_rejeitado: z.strictObject({ planoId: uuid, versao: versaoPlano, motivoRejeicao: z.enum(MOTIVOS_REJEICAO_PLANO) }),
-  planejamento_falhou: z.strictObject({ codigoErro }),
+  planejamento_falhou: z.strictObject({ codigoErro, ...detalheLlm }),
   roteamento_validado: z.strictObject({
     resultadoEsperado,
     categoria,
@@ -323,6 +330,7 @@ const METADATA_SCHEMAS: Readonly<Record<TipoEvento, z.ZodType>> = {
       tentativa: contagem,
       codigoErro: z.enum(CODIGOS_ERRO_TAREFA),
       definitiva: z.boolean(),
+      ...detalheLlm,
     })
     .refine((m) => (m.codigoErro === 'contexto_excedido') === (m.claimId === null), {
       message: 'tarefa_falhou: claimId é nulo exatamente em contexto_excedido',
