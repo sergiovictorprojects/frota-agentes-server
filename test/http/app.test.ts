@@ -152,6 +152,7 @@ describe('aplicacao HTTP', () => {
         titulo: '  Sistema de estoque  ',
         categoria: 'd11',
         prioridade: 'HIGH',
+        complexidade: 'HIGH',
         prazo: '2026-10-01',
         solicitante: 'Juliano',
         descricao: 'Painel 3D',
@@ -169,9 +170,22 @@ describe('aplicacao HTTP', () => {
         solicitante: 'Juliano',
         resultadoEsperado: 'interface',
         criteriosAceite: 'Deve entregar dashboard interativo com filtros.',
+        complexidade: 'HIGH',
         referencias: null,
         status: 'Nova',
       });
+      const detalhe = await get(`/demandas/${id}`);
+      expect(detalhe.body).toContain('Estimativa de uso');
+      expect(detalhe.body).toContain('Orçamento sugerido');
+    });
+
+    it('mostra estimativas de uso no formulario de nova demanda', async () => {
+      const r = await get('/demandas/nova');
+      expect(r.statusCode).toBe(200);
+      expect(r.body).toContain('Complexidade do projeto');
+      expect(r.body).toContain('Estimativa de uso');
+      expect(r.body).toContain('Orçamento sugerido');
+      expect(r.body).toContain('US$ 3.00');
     });
 
     it('aceita especificacao extensa dentro dos novos limites', async () => {
@@ -334,7 +348,10 @@ describe('aplicacao HTTP', () => {
       expect(eventos[0]!.ator).toBe('solicitante');
       expect(eventos[0]!.tentativa).toBeNull();
       expect(eventos[0]!.resumo).toBe('Demanda criada.');
-      expect(eventos[0]!.metadata).toEqual({ categoria: 'd1', prioridade: 'HIGH' });
+      expect(eventos[0]!.metadata).toMatchObject({ categoria: 'd1', prioridade: 'HIGH', complexidade: 'MEDIUM' });
+      expect(eventos[0]!.metadata).toHaveProperty('orcamentoSugeridoUsd', 3);
+      expect(eventos[0]!.metadata).toHaveProperty('chamadasLlmMax');
+      expect(eventos[0]!.metadata).toHaveProperty('tokensTotaisEstimados');
       expect(JSON.stringify(eventos)).not.toContain('Com segredo no titulo');
     });
 

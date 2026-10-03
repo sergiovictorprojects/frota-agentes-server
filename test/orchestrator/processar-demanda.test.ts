@@ -218,6 +218,7 @@ describe('processarDemanda', () => {
     expect(r).toMatchObject({ statusFinal: 'Concluída', resumo: 'Análise entregue', antipadroes: 0 });
     expect(llm.pedidos.map((p) => p.papel)).toEqual(['frota:gestores', 'frota:product-designer', 'frota:gestores', PAPEL_AUDITOR]);
     expect(await obterDemanda(db.pool, demanda.id)).toMatchObject({ status: 'Concluída', entregaUrl: r.entregaUrl });
+    expect(await obterEnvelope(db.pool, demanda.id)).toMatchObject({ tetoBaseUsd: '3.00' });
     expect(await relatorioMaisRecente(db.pool, demanda.id)).toMatchObject({
       gerente: 'frota:product-designer → frota:agent-evaluator (agentes autônomos do servidor)',
       entregaUrl: r.entregaUrl,

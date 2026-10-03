@@ -36,6 +36,11 @@ main{max-width:56rem;margin:0 auto;padding:1.25rem 1rem 4rem}
 form.campos{display:grid;gap:.9rem;max-width:40rem}
 label{display:grid;gap:.25rem;font-weight:600;font-size:.9rem}
 input,select,textarea{font:inherit;color:var(--text);background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:.5rem .6rem;width:100%}
+.painel-custo{margin-top:1.25rem;max-width:56rem}
+.tabela-custo{width:100%;border-collapse:collapse;background:var(--surface);border:1px solid var(--border);border-radius:8px;overflow:hidden}
+.tabela-custo th,.tabela-custo td{text-align:left;border-bottom:1px solid var(--border);padding:.5rem .6rem;font-size:.9rem}
+.tabela-custo th{color:var(--dim);font-weight:600;background:var(--accent-soft)}
+.tabela-custo tr:last-child td{border-bottom:0}
 dl.info{display:grid;grid-template-columns:max-content 1fr;gap:.25rem 1rem;margin:0}
 dl.info dt{color:var(--dim)}
 dl.info dd{margin:0}

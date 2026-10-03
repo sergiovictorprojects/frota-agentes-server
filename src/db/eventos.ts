@@ -1,5 +1,6 @@
 import type pg from 'pg';
 import { z } from 'zod';
+import { COMPLEXIDADES_DEMANDA } from '../domain/estimativa-demanda.ts';
 import { CATEGORIAS, PRIORIDADES } from '../domain/setores.ts';
 import { RESULTADOS_ESPERADOS } from '../domain/resultado-esperado.ts';
 
@@ -143,6 +144,7 @@ function resumoDo(tipo: TipoEvento, metadata: Record<string, unknown>): string {
 
 const categoria = z.enum(CATEGORIAS);
 const prioridade = z.enum(PRIORIDADES);
+const complexidadeDemanda = z.enum(COMPLEXIDADES_DEMANDA);
 const resultadoEsperado = z.enum(RESULTADOS_ESPERADOS);
 const codigoErro = z.enum(CODIGOS_ERRO);
 const uuid = z.uuid();
@@ -206,7 +208,14 @@ const usd = z
 // valor livre é. Uma allowlist por tipo torna o texto livre impossível de entrar, não apenas os nomes
 // óbvios (prompt, chain_of_thought, api_key...).
 const METADATA_SCHEMAS: Readonly<Record<TipoEvento, z.ZodType>> = {
-  demanda_criada: z.strictObject({ categoria, prioridade }),
+  demanda_criada: z.strictObject({
+    categoria,
+    prioridade,
+    complexidade: complexidadeDemanda.optional(),
+    orcamentoSugeridoUsd: usd.optional(),
+    chamadasLlmMax: contagem.optional(),
+    tokensTotaisEstimados: contagem.optional(),
+  }),
   demanda_reivindicada: z.strictObject({ tentativaPlanejada }),
   processamento_iniciado: z.strictObject({}),
   chamada_trabalho_concluida: z.strictObject({

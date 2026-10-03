@@ -16,6 +16,7 @@ import { listarEventosDaDemanda } from '../../db/eventos.ts';
 import { adicionarMensagem, listarMensagens } from '../../db/mensagens.ts';
 import { obterFlags, pausarFrota, retomarFrota, ultimaRun } from '../../db/operacao.ts';
 import { listarRelatorios, relatorioMaisRecente } from '../../db/relatorios.ts';
+import { COMPLEXIDADES_DEMANDA } from '../../domain/estimativa-demanda.ts';
 import type { LinkEntrega } from '../../domain/links-entrega.ts';
 import { CATEGORIAS, PRIORIDADES, STATUS } from '../../domain/setores.ts';
 import { RESULTADOS_ESPERADOS } from '../../domain/resultado-esperado.ts';
@@ -57,6 +58,7 @@ const NovaDemandaForm = z.object({
   titulo: z.string().trim().min(1, 'Informe o título.').max(200, 'O título aceita no máximo 200 caracteres.'),
   categoria: z.enum(CATEGORIAS, 'Escolha um setor válido.'),
   resultadoEsperado: z.enum(RESULTADOS_ESPERADOS, 'Escolha um resultado esperado válido.').default('outro'),
+  complexidade: z.enum(COMPLEXIDADES_DEMANDA, 'Escolha uma complexidade válida.').default('MEDIUM'),
   prioridade: z.enum(PRIORIDADES, 'Escolha uma prioridade válida.').default('MEDIUM'),
   prazo: z.preprocess(
     vazioParaUndefined,
@@ -186,7 +188,14 @@ function registrarCriacao(app: FastifyInstance, d: DependenciasUi, r: Respostas)
     // Sem run: correlacaoId é gerado uma única vez para esta requisição, nunca reaproveitado.
     // tentativa: null — criar uma demanda não é executá-la.
     const emitir = criarEmissor(d.pool, criada.id, { correlacaoId: randomUUID(), runId: null, tentativa: null });
-    await emitir('demanda_criada', 'solicitante', { categoria: criada.categoria, prioridade: criada.prioridade });
+    await emitir('demanda_criada', 'solicitante', {
+      categoria: criada.categoria,
+      prioridade: criada.prioridade,
+      complexidade: criada.complexidade,
+      orcamentoSugeridoUsd: Number(criada.estimativaUso.orcamentoSugeridoUsd),
+      chamadasLlmMax: criada.estimativaUso.chamadasLlmMax,
+      tokensTotaisEstimados: criada.estimativaUso.tokensTotaisEstimados,
+    });
     return reply.redirect(`/demandas/${criada.id}`, 303);
   });
 }

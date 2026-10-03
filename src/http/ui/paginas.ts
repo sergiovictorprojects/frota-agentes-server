@@ -3,6 +3,11 @@ import type { ArtefatoEntregavelResumo } from '../../db/artefatos-entregaveis.ts
 import type { Evento } from '../../db/eventos.ts';
 import type { Mensagem } from '../../db/mensagens.ts';
 import type { Relatorio } from '../../db/relatorios.ts';
+import {
+  estimativasBasePorComplexidade,
+  ROTULOS_COMPLEXIDADE_DEMANDA,
+  type EstimativaUsoDemanda,
+} from '../../domain/estimativa-demanda.ts';
 import type { LinkEntrega } from '../../domain/links-entrega.ts';
 import { RESULTADOS_ESPERADOS, ROTULOS_RESULTADO_ESPERADO } from '../../domain/resultado-esperado.ts';
 import { CATEGORIAS, PRIORIDADES, SETORES, STATUS, type StatusDemanda } from '../../domain/setores.ts';
@@ -33,6 +38,8 @@ function linkDeEntrega(link: LinkEntrega | null | undefined, classe = ''): Bruto
   return html`<span class="vazio">Link de entrega não verificado</span>`;
 }
 const numero = (n: number | null | undefined, sufixo = ''): string => (n === null || n === undefined ? 'não medido' : `${n}${sufixo}`);
+const usd = (valor: string): string => `US$ ${Number(valor).toFixed(2)}`;
+const tokens = (valor: number): string => new Intl.NumberFormat('pt-BR').format(valor);
 
 function tamanho(bytes: number): string {
   return bytes < 1024 ? `${bytes} B` : bytes < 1024 * 1024 ? `${(bytes / 1024).toFixed(1)} KB` : `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
@@ -54,6 +61,37 @@ function botaoExclusao(acao: string): Bruto {
   return html`<form method="post" action="${acao}" onsubmit="return confirm('Excluir esta demanda definitivamente? Esta ação remove a demanda e todos os dados relacionados da base.')"><button class="botao sec" type="submit">Excluir definitivamente</button></form>`;
 }
 
+function blocoEstimativasCriacao(): Bruto {
+  const linhas = estimativasBasePorComplexidade().map(
+    (e) => html`<tr>
+<td>${ROTULOS_COMPLEXIDADE_DEMANDA[e.complexidade]}</td>
+<td>${e.modoExecucao}</td>
+<td>${e.chamadasLlmMin}–${e.chamadasLlmMax}</td>
+<td>${tokens(e.tokensTotaisEstimados)}</td>
+<td>${usd(e.orcamentoSugeridoUsd)}</td>
+</tr>`,
+  );
+  return html`<section class="painel-custo" aria-labelledby="estimativa-uso">
+<h2 id="estimativa-uso">Estimativa de uso</h2>
+<p class="vazio">A previsão é determinística e não chama a API. O valor final da demanda criada também considera o tamanho da descrição, critérios e referências.</p>
+<table class="tabela-custo">
+<thead><tr><th>Complexidade</th><th>Modo</th><th>Chamadas LLM</th><th>Tokens estimados</th><th>Orçamento sugerido</th></tr></thead>
+<tbody>${linhas}</tbody>
+</table>
+</section>`;
+}
+
+function blocoEstimativaDetalhe(e: EstimativaUsoDemanda): Bruto {
+  return html`<dl class="info">
+<dt>Complexidade</dt><dd>${ROTULOS_COMPLEXIDADE_DEMANDA[e.complexidade]}</dd>
+<dt>Modo estimado</dt><dd>${e.modoExecucao}</dd>
+<dt>Chamadas LLM</dt><dd>${e.chamadasLlmMin}–${e.chamadasLlmMax}</dd>
+<dt>Tokens estimados</dt><dd>${tokens(e.tokensTotaisEstimados)} (${tokens(e.tokensEntradaEstimados)} entrada / ${tokens(e.tokensSaidaEstimados)} saída)</dd>
+<dt>Custo estimado</dt><dd>${usd(e.custoEstimadoUsd)} em ${e.modeloReferencia}</dd>
+<dt>Orçamento sugerido</dt><dd>${usd(e.orcamentoSugeridoUsd)}</dd>
+</dl>`;
+}
+
 export function paginaFila(a: {
   demandas: readonly Demanda[];
   links: ReadonlyMap<string, LinkEntrega | null>;
@@ -70,7 +108,7 @@ export function paginaFila(a: {
   const cartoes = a.demandas.map((d) => {
     return html`<li class="card">
 <h3><a href="/demandas/${d.id}">${d.titulo}</a> ${chip(d.status)}</h3>
-<div class="meta"><span>${d.categoria} — ${SETORES[d.categoria].nome}</span><span>${d.prioridade}</span><span>${formatarData(d.criadoEm)}</span>${linkDeEntrega(a.links.get(d.id))}</div>
+<div class="meta"><span>${d.categoria} — ${SETORES[d.categoria].nome}</span><span>${d.prioridade}</span><span>${ROTULOS_COMPLEXIDADE_DEMANDA[d.complexidade]}</span><span>${usd(d.estimativaUso.orcamentoSugeridoUsd)}</span><span>${formatarData(d.criadoEm)}</span>${linkDeEntrega(a.links.get(d.id))}</div>
 </li>`;
   });
   return html`<div class="cabecalho">
@@ -94,6 +132,7 @@ ${a.erros.length ? html`<ul class="erros" role="alert">${a.erros.map((e) => html
 <label>Título<input name="titulo" required maxlength="200" value="${v('titulo')}"></label>
 <label>Setor responsável<select name="categoria">${CATEGORIAS.map((c) => opcao(c, `${c} — ${SETORES[c].nome}`, v('categoria') || 'gestores'))}</select></label>
 <label>Resultado esperado<select name="resultadoEsperado">${RESULTADOS_ESPERADOS.map((r) => opcao(r, ROTULOS_RESULTADO_ESPERADO[r], v('resultadoEsperado') || 'outro'))}</select></label>
+<label>Complexidade do projeto<select name="complexidade">${estimativasBasePorComplexidade().map((e) => opcao(e.complexidade, `${ROTULOS_COMPLEXIDADE_DEMANDA[e.complexidade]} — ${usd(e.orcamentoSugeridoUsd)} sugerido`, v('complexidade') || 'MEDIUM'))}</select></label>
 <label>Prioridade<select name="prioridade">${PRIORIDADES.map((p) => opcao(p, p, v('prioridade') || 'MEDIUM'))}</select></label>
 <label>Prazo<input type="date" name="prazo" value="${v('prazo')}"></label>
 <label>Solicitante<input name="solicitante" maxlength="200" value="${v('solicitante')}"></label>
@@ -101,7 +140,8 @@ ${a.erros.length ? html`<ul class="erros" role="alert">${a.erros.map((e) => html
 <label>Critérios de aceite<textarea name="criteriosAceite" rows="5" maxlength="10000">${v('criteriosAceite')}</textarea></label>
 <label>Referências<textarea name="referencias" rows="5" maxlength="20000">${v('referencias')}</textarea></label>
 <div><button class="botao" type="submit">Criar demanda</button></div>
-</form>`;
+</form>
+${blocoEstimativasCriacao()}`;
 }
 
 function blocoRelatorio(r: Relatorio | null): Bruto {
@@ -158,6 +198,8 @@ ${blocoArtefatos(a.artefatos)}
 <dt>Criada em</dt><dd>${formatarData(d.criadoEm)}</dd>
 <dt>Tentativas</dt><dd>${d.tentativas}</dd>
 </dl>
+<h2>Estimativa de uso</h2>
+${blocoEstimativaDetalhe(d.estimativaUso)}
 <h2>Descrição</h2><p class="texto">${d.descricao || '—'}</p>
 ${d.referencias ? html`<h2>Referências</h2><p class="texto">${d.referencias}</p>` : ''}
 ${

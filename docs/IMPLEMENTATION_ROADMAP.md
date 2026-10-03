@@ -154,6 +154,8 @@ dependências e uma tarefa de integração que produz a entrega única, sem queb
     a categoria escolhida no formulário, hoje padronizada como `gestores`, contradiga o resultado solicitado.
     1. O formulário passa a registrar explicitamente o resultado esperado (`interface`, `documento`, `análise`,
        `automação`, `código` ou outro formato aprovado) e critérios de aceite observáveis.
+       Também passa a registrar complexidade operacional e uma estimativa determinística de chamadas LLM,
+       tokens, custo previsto e orçamento sugerido por demanda, exibida ao solicitante antes e depois da criação.
     2. Regras determinísticas validam a compatibilidade entre resultado esperado, categoria, capacidades do agente,
        permissões de publicação e custo. Combinações incompatíveis são bloqueadas ou exigem confirmação explícita.
     3. Um recomendador pode sugerir categoria e papéis, mas não pode autorizar a execução: catálogo, políticas e
