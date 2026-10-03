@@ -82,6 +82,29 @@ dl.info dd{margin:0}
 .diagnostico.ok{border-left-color:var(--ok)}
 .diagnostico.retry{border-left-color:var(--warn)}
 .diagnostico.acao{border-left-color:var(--bad)}
+.prestacao{display:grid;gap:.9rem}
+.vazio-prestacao{border:1px dashed var(--border);border-radius:8px;padding:1rem;background:var(--surface-2)}
+.prestacao-head{display:flex;justify-content:space-between;gap:1rem;align-items:flex-start}
+.prestacao-head h3{margin:0 0 .2rem;font-size:1.08rem}
+.resumo-humano{margin:.15rem 0 0;color:var(--dim);max-width:42rem}
+.selo-retorno{border:1px solid var(--border);background:var(--accent-soft);color:var(--accent);border-radius:999px;padding:.2rem .7rem;font-weight:800;white-space:nowrap}
+.indicadores-retorno{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:.55rem}
+.indicador-retorno{border:1px solid var(--border);border-radius:8px;background:var(--surface);padding:.65rem .75rem}
+.indicador-retorno span{display:block;color:var(--faint);font-size:.72rem;text-transform:uppercase;letter-spacing:.08em}
+.indicador-retorno strong{display:block;margin:.16rem 0;font-size:1.05rem;overflow-wrap:anywhere}
+.indicador-retorno small{display:block;color:var(--dim)}
+.uso-api{border:1px solid var(--border);border-radius:8px;background:var(--surface);padding:.7rem .8rem}
+.uso-api-topo{display:flex;justify-content:space-between;gap:1rem;font-weight:800}
+.uso-api-topo span{color:var(--dim)}
+.uso-api small{display:block;color:var(--dim);margin-top:.35rem}
+.uso-barra{height:9px;border-radius:999px;background:var(--surface-2);overflow:hidden;margin:.5rem 0 0}
+.uso-barra span{display:block;height:100%;border-radius:inherit;background:linear-gradient(90deg,var(--accent),var(--ok))}
+.uso-api.alerta .uso-barra span{background:linear-gradient(90deg,var(--warn),var(--bad))}
+.uso-api.neutro .uso-barra span{background:var(--faint)}
+.relatorio-detalhado{border:1px solid var(--border);border-radius:8px;background:var(--surface);padding:.15rem .75rem .75rem}
+.relatorio-detalhado summary{cursor:pointer;font-weight:800;color:var(--accent);padding:.6rem 0}
+.relatorio-detalhado[open] summary{border-bottom:1px solid var(--border);margin-bottom:.75rem}
+.grade-detalhes{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:1rem;margin-bottom:1rem}
 .linha-do-tempo{list-style:none;margin:0;padding:0;border-left:2px solid var(--border)}
 .linha-do-tempo li{padding:.3rem 0 .6rem 1rem}
 .linha-do-tempo time{color:var(--dim);font-size:.8rem}
@@ -95,8 +118,9 @@ body.moldura{height:100vh;display:flex;flex-direction:column}
 .entrega{flex:1;width:100%;border:0;background:#fff}
 @media (max-width:800px){
   .hero{align-items:flex-start;flex-direction:column}
-  .metricas,.grid-operacional,.atalhos{grid-template-columns:1fr}
+  .metricas,.grid-operacional,.atalhos,.indicadores-retorno,.grade-detalhes{grid-template-columns:1fr}
   .secao-titulo{display:block}
+  .prestacao-head,.uso-api-topo{display:block}
   .card-head{display:block}
   dl.info,dl.info.compacto{grid-template-columns:1fr}
 }
