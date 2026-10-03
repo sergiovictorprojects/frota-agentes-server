@@ -56,12 +56,12 @@ function blocoArtefatos(artefatos: readonly ArtefatoEntregavelResumo[]): Bruto {
 </li>`)}</ul>`;
 }
 
-function botaoAcao(acao: string, rotulo: string, secundario = false): Bruto {
-  return html`<form method="post" action="${acao}"><button class="botao${secundario ? ' sec' : ''}" type="submit">${rotulo}</button></form>`;
+function botaoAcao(acao: string, rotulo: string, variante: 'principal' | 'sec' | 'warn' = 'principal'): Bruto {
+  return html`<form method="post" action="${acao}"><button class="botao ${variante}" type="submit">${rotulo}</button></form>`;
 }
 
 function botaoExclusao(acao: string): Bruto {
-  return html`<form method="post" action="${acao}" onsubmit="return confirm('Excluir esta demanda definitivamente? Esta ação remove a demanda e todos os dados relacionados da base.')"><button class="botao sec" type="submit">Excluir definitivamente</button></form>`;
+  return html`<form method="post" action="${acao}" onsubmit="return confirm('Excluir esta demanda definitivamente? Esta ação remove a demanda e todos os dados relacionados da base.')"><button class="botao danger" type="submit">Excluir definitivamente</button></form>`;
 }
 
 function painel(titulo: string, conteudo: Bruto, apoio = ''): Bruto {
@@ -73,6 +73,18 @@ ${conteudo}
 
 function metrica(rotulo: string, valor: string | number | Bruto, detalhe = ''): Bruto {
   return html`<div class="metrica"><span>${rotulo}</span><strong>${valor}</strong>${detalhe ? html`<small>${detalhe}</small>` : ''}</div>`;
+}
+
+function tituloAgente(valor: string | null | undefined): string {
+  if (!valor) return 'orquestrador';
+  return (
+    valor
+      .replace(/\s*\([^)]*\)\s*/g, '')
+      .split(/\s*→\s*/)
+      .map((parte) => parte.replace(/^frota:/, '').trim())
+      .filter(Boolean)
+      .join(' → ') || valor
+  );
 }
 
 function blocoEstimativasCriacao(): Bruto {
@@ -189,6 +201,17 @@ function blocoUsoApi(custo: ResumoCustoDemanda, estimativa: EstimativaUsoDemanda
 </div>`;
 }
 
+function miniaturaEntrega(demanda: Demanda, link: LinkEntrega | null): Bruto | '' {
+  if (demanda.resultadoEsperado !== 'interface' || link?.tipo !== 'interna') return '';
+return html`<section class="painel preview-entrega">
+<div class="secao-titulo"><h2>Miniatura da entrega</h2><p>Prévia visual da interface entregue, isolada em modo somente visual.</p></div>
+<div class="preview-frame">
+<iframe title="Miniatura da entrega ${demanda.titulo}" sandbox="allow-scripts" referrerpolicy="no-referrer" loading="lazy" src="${link.href}/conteudo"></iframe>
+<a href="${link.href}">Abrir entrega completa</a>
+</div>
+</section>`;
+}
+
 function blocoRelatorioPrestacao(r: Relatorio | null, demanda: Demanda, custo: ResumoCustoDemanda, linkEntrega: LinkEntrega | null): Bruto {
   if (!r) {
     return html`<div class="prestacao vazio-prestacao">
@@ -204,7 +227,7 @@ ${blocoUsoApi(custo, demanda.estimativaUso)}
 <span class="selo-retorno">finalizado</span>
 </div>
 <div class="indicadores-retorno">
-${indicadorRetorno('Responsável', r.gerente, `nível ${r.nivelComplexidade}`)}
+${indicadorRetorno('Responsável', tituloAgente(r.gerente), `nível ${r.nivelComplexidade}`)}
 ${indicadorRetorno('Índice geral', numero(m.indiceGeral), m.auditoriaFalhou ? 'auditoria incompleta' : 'qualidade auditada')}
 ${indicadorRetorno('Custo API', `${usd(custo.custoUsd)}`, `${usd(demanda.estimativaUso.custoEstimadoUsd)} estimado`)}
 ${indicadorRetorno('Tokens', tokens(custo.tokensTotal), `${custo.chamadas} chamada(s)`)}
@@ -333,7 +356,7 @@ export function paginaFila(a: {
 <div class="acoes">
 <a class="botao" href="/demandas/nova">Nova demanda</a>
 ${a.podeExecutar ? botaoAcao('/executar', 'Executar agora') : ''}
-${a.pausado ? botaoAcao('/frota/retomar', 'Retomar frota') : botaoAcao('/frota/pausar', 'Pausar frota', true)}
+${a.pausado ? botaoAcao('/frota/retomar', 'Retomar frota') : botaoAcao('/frota/pausar', 'Pausar frota', 'sec')}
 </div>
 </section>
 <section class="metricas">
@@ -391,7 +414,7 @@ export function paginaDetalhe(a: {
   const d = a.demanda;
   const linhas = a.mensagens.map(
     (m) => html`<li><time datetime="${m.criadoEm}">${formatarData(m.criadoEm)}</time>
-<span class="${m.autor === 'solicitante' ? 'solicitante' : 'agente'}">${m.autor === 'solicitante' ? 'Solicitante' : (m.agente ?? 'orquestrador')}</span>
+<span class="${m.autor === 'solicitante' ? 'solicitante' : 'agente'}">${m.autor === 'solicitante' ? 'Solicitante' : tituloAgente(m.agente)}</span>
 <div class="texto">${m.texto}</div></li>`,
   );
   const aguardando = d.status === 'Aguardando humano' || d.status === 'Aguardando insumo';
@@ -401,11 +424,12 @@ export function paginaDetalhe(a: {
 <a class="botao sec" href="/">Voltar</a>
 <a class="botao sec" href="/demandas/${d.id}/dossie">Dossiê</a>
 ${d.status === 'Falhou' ? botaoAcao(`/demandas/${d.id}/reabrir`, 'Tentar novamente') : ''}
-${d.status !== 'Arquivada' && d.status !== 'Em andamento' ? botaoAcao(`/demandas/${d.id}/arquivar`, 'Arquivar', true) : ''}
+${d.status !== 'Arquivada' && d.status !== 'Em andamento' ? botaoAcao(`/demandas/${d.id}/arquivar`, 'Arquivar', 'warn') : ''}
 ${d.status !== 'Em andamento' ? botaoExclusao(`/demandas/${d.id}/excluir`) : ''}
 </div>
 </section>
 ${a.linkEntrega ? html`<p>${linkDeEntrega(a.linkEntrega, 'botao')}</p>` : ''}
+${miniaturaEntrega(d, a.linkEntrega)}
 <section class="metricas">
 ${metrica('Orçamento', usd(d.estimativaUso.orcamentoSugeridoUsd), ROTULOS_COMPLEXIDADE_DEMANDA[d.complexidade])}
 ${metrica('Custo real', usd(a.custo.custoUsd), `${a.custo.chamadas} chamada(s)`)}
@@ -478,9 +502,14 @@ function metadataResumida(m: Record<string, unknown>): string {
 function linhaDoTempoDeEventos(eventos: readonly Evento[]): Bruto {
   if (!eventos.length) return html`<p class="vazio">Nenhum evento registrado ainda.</p>`;
   const linhas = eventos.map(
-    (e) => html`<li><time datetime="${e.ocorridoEm}">${formatarData(e.ocorridoEm)}</time>
-<span class="agente">${e.resumo}</span>
-<div class="texto"><code>${e.tipoEvento}</code> · ator: ${e.ator} · tentativa: ${e.tentativa ?? '—'} · ${metadataResumida(e.metadata)}</div></li>`,
+    (e) => html`<li class="evento-timeline">
+<time datetime="${e.ocorridoEm}">${formatarData(e.ocorridoEm)}</time>
+<div class="evento-corpo">
+<strong>${e.resumo}</strong>
+<div class="meta"><span><code>${e.tipoEvento}</code></span><span>ator: ${tituloAgente(e.ator)}</span><span>tentativa: ${e.tentativa ?? '—'}</span></div>
+<p class="texto">${metadataResumida(e.metadata)}</p>
+</div>
+</li>`,
   );
   return html`<ol class="linha-do-tempo">${linhas}</ol>`;
 }
@@ -492,8 +521,8 @@ function linhaDoTempoDeEventos(eventos: readonly Evento[]): Bruto {
 function linhaDoTempoDeMensagens(mensagens: readonly Mensagem[]): Bruto {
   if (!mensagens.length) return html`<p class="vazio">Nenhuma mensagem registrada ainda.</p>`;
   const linhas = mensagens.map(
-    (m) => html`<li><time datetime="${m.criadoEm}">${formatarData(m.criadoEm)}</time>
-<span class="${m.autor === 'solicitante' ? 'solicitante' : 'agente'}">${m.autor === 'solicitante' ? 'Solicitante' : (m.agente ?? 'orquestrador')}</span></li>`,
+    (m) => html`<li class="evento-timeline"><time datetime="${m.criadoEm}">${formatarData(m.criadoEm)}</time>
+<div class="evento-corpo"><strong class="${m.autor === 'solicitante' ? 'solicitante' : 'agente'}">${m.autor === 'solicitante' ? 'Solicitante' : tituloAgente(m.agente)}</strong></div></li>`,
   );
   return html`<ol class="linha-do-tempo">${linhas}</ol>`;
 }
@@ -506,7 +535,7 @@ function blocoRelatorioSeguro(r: Relatorio | null): Bruto {
   if (!r) return html`<p class="vazio">Ainda não há relatório para esta demanda.</p>`;
   const m = r.metricas;
   return html`<dl class="info">
-<dt>Executado por</dt><dd>${r.gerente}</dd>
+<dt>Executado por</dt><dd>${tituloAgente(r.gerente)}</dd>
 <dt>Complexidade</dt><dd>nível ${r.nivelComplexidade}</dd>
 <dt>Setores</dt><dd>${r.setoresEnvolvidos.join(', ') || '—'}</dd>
 <dt>Índice geral</dt><dd>${numero(m.indiceGeral)}</dd>
@@ -532,6 +561,7 @@ export function paginaDossie(a: {
 <div class="acoes"><a class="botao sec" href="/demandas/${d.id}">Voltar para demanda</a></div>
 </section>
 ${a.linkEntrega ? html`<p>${linkDeEntrega(a.linkEntrega, 'botao')}</p>` : ''}
+${miniaturaEntrega(d, a.linkEntrega)}
 <section class="metricas">
 ${metrica('Eventos', a.eventos.length, 'agent_events')}
 ${metrica('Mensagens', a.mensagens.length, 'metadados seguros')}
@@ -593,7 +623,7 @@ function cartaoRelatorioPrestacao(
   const uso = resumoUsoApi(c, estimativa);
   return html`<li class="card relatorio-card prestacao">
 <div class="prestacao-head">
-<div><h3><a href="/demandas/${r.demandaId}">${r.demandaTitulo}</a></h3><p class="resumo-humano">Prestação emitida por ${r.gerente}: resultado, consumo e aprendizado em um único retorno.</p></div>
+<div><h3><a href="/demandas/${r.demandaId}">${r.demandaTitulo}</a></h3><p class="resumo-humano">Prestação emitida por ${tituloAgente(r.gerente)}: resultado, consumo e aprendizado em um único retorno.</p></div>
 <span class="selo-retorno">${numero(r.metricas.indiceGeral)}</span>
 </div>
 <div class="indicadores-retorno">
@@ -608,7 +638,7 @@ ${blocoUsoApi(c, estimativa)}
 <summary>Ver prestação detalhada</summary>
 <div class="grade-detalhes">
 <dl class="info">
-<dt>Responsável</dt><dd>${r.gerente}</dd>
+<dt>Responsável</dt><dd>${tituloAgente(r.gerente)}</dd>
 <dt>Setores</dt><dd>${r.setoresEnvolvidos.join(', ') || '—'}</dd>
 <dt>Tempo</dt><dd>${r.metricas.tempoTotal}</dd>
 <dt>Ações</dt><dd>${r.metricas.acoesRealizadas}</dd>
