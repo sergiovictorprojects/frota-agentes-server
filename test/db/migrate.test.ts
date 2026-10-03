@@ -49,17 +49,20 @@ describe('migrate', () => {
     expect(rows.map((r) => r.name)).toEqual(await listarMigracoesDisponiveis());
   });
 
-  it('cria demandas com status Nova e prioridade MEDIUM por padrao', async () => {
+  it('cria demandas com status Nova, prioridade MEDIUM e complexidade MEDIUM por padrao', async () => {
     const { rows } = await db.pool.query(
-      "INSERT INTO demandas (titulo, categoria) VALUES ('Teste', 'd1') RETURNING status, prioridade, tentativas",
+      "INSERT INTO demandas (titulo, categoria) VALUES ('Teste', 'd1') RETURNING status, prioridade, complexidade, estimativa_uso, tentativas",
     );
-    expect(rows[0]).toEqual({ status: 'Nova', prioridade: 'MEDIUM', tentativas: 0 });
+    expect(rows[0]).toEqual({ status: 'Nova', prioridade: 'MEDIUM', complexidade: 'MEDIUM', estimativa_uso: {}, tentativas: 0 });
   });
 
-  it('rejeita categoria, prioridade e status fora do dominio', async () => {
+  it('rejeita categoria, prioridade, complexidade e status fora do dominio', async () => {
     await expect(db.pool.query("INSERT INTO demandas (titulo, categoria) VALUES ('x', 'd99')")).rejects.toThrow();
     await expect(
       db.pool.query("INSERT INTO demandas (titulo, categoria, prioridade) VALUES ('x', 'd1', 'URGENT')"),
+    ).rejects.toThrow();
+    await expect(
+      db.pool.query("INSERT INTO demandas (titulo, categoria, complexidade) VALUES ('x', 'd1', 'EXTREME')"),
     ).rejects.toThrow();
     await expect(
       db.pool.query("INSERT INTO demandas (titulo, categoria, status) VALUES ('x', 'd1', 'Inexistente')"),

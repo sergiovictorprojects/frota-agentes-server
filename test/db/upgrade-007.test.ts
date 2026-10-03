@@ -5,7 +5,7 @@ import { criarEntrega } from '../../src/db/relatorios.ts';
 import { SETORES } from '../../src/domain/setores.ts';
 import { createTestDb, type TestDb } from '../helpers/db.ts';
 
-describe('upgrade 006 → 009', () => {
+describe('upgrade 006 → 010', () => {
   let db: TestDb;
   let demandaId: string;
   let entregaId: string;
@@ -22,14 +22,23 @@ describe('upgrade 006 → 009', () => {
   });
   afterAll(async () => db.drop());
 
-  it('aplica 007, 008 e 009 e preserva as linhas existentes', async () => {
-    expect(aplicadas).toEqual(['007_artefatos_entregaveis.sql', '008_demanda_especificacao_extensa.sql', '009_resultado_esperado_demanda.sql']);
+  it('aplica 007, 008, 009 e 010 e preserva as linhas existentes', async () => {
+    expect(aplicadas).toEqual([
+      '007_artefatos_entregaveis.sql',
+      '008_demanda_especificacao_extensa.sql',
+      '009_resultado_esperado_demanda.sql',
+      '010_estimativa_uso_demanda.sql',
+    ]);
     expect((await db.pool.query('SELECT id FROM demandas WHERE id = $1', [demandaId])).rowCount).toBe(1);
     expect((await db.pool.query('SELECT id FROM entregas WHERE id = $1', [entregaId])).rowCount).toBe(1);
     expect((await db.pool.query('SELECT 1 FROM artefatos_entregaveis')).rowCount).toBe(0);
     expect((await db.pool.query('SELECT resultado_esperado, criterios_aceite FROM demandas WHERE id = $1', [demandaId])).rows[0]).toEqual({
       resultado_esperado: 'outro',
       criterios_aceite: '',
+    });
+    expect((await db.pool.query('SELECT complexidade, estimativa_uso FROM demandas WHERE id = $1', [demandaId])).rows[0]).toEqual({
+      complexidade: 'MEDIUM',
+      estimativa_uso: {},
     });
   });
 

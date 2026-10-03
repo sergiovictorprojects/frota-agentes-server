@@ -28,6 +28,7 @@ describe('migration 002_agent_events', () => {
       '007_artefatos_entregaveis.sql',
       '008_demanda_especificacao_extensa.sql',
       '009_resultado_esperado_demanda.sql',
+      '010_estimativa_uso_demanda.sql',
     ]);
   });
 });

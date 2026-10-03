@@ -47,6 +47,7 @@ describe('demandas', () => {
       referencias: 'imagem anexa',
       resultadoEsperado: 'interface',
       criteriosAceite: 'Deve entregar uma tela HTML interativa com filtros.',
+      complexidade: 'HIGH',
     });
     const lida = await obterDemanda(db.pool, criada.id);
     expect(lida).toMatchObject({
@@ -57,11 +58,18 @@ describe('demandas', () => {
       solicitante: 'Juliano',
       resultadoEsperado: 'interface',
       criteriosAceite: 'Deve entregar uma tela HTML interativa com filtros.',
+      complexidade: 'HIGH',
       status: 'Nova',
       entregaUrl: null,
       tentativas: 0,
       claimedByRun: null,
     });
+    expect(lida!.estimativaUso).toMatchObject({
+      complexidade: 'HIGH',
+      modoExecucao: 'completo',
+      modeloReferencia: 'claude-sonnet-5',
+    });
+    expect(Number(lida!.estimativaUso.orcamentoSugeridoUsd)).toBeGreaterThanOrEqual(8);
     expect(new Date(lida!.criadoEm).toString()).not.toBe('Invalid Date');
   });
 
@@ -69,9 +77,10 @@ describe('demandas', () => {
     expect(await obterDemanda(db.pool, randomUUID())).toBeNull();
   });
 
-  it('usa resultado esperado livre e criterios vazios por padrao', async () => {
+  it('usa resultado esperado livre, criterios vazios e complexidade media por padrao', async () => {
     const d = await criarDemanda(db.pool, { titulo: 'Sem contrato explícito', categoria: 'd1' });
-    expect(d).toMatchObject({ resultadoEsperado: 'outro', criteriosAceite: '' });
+    expect(d).toMatchObject({ resultadoEsperado: 'outro', criteriosAceite: '', complexidade: 'MEDIUM' });
+    expect(d.estimativaUso).toMatchObject({ complexidade: 'MEDIUM', orcamentoSugeridoUsd: '3.00' });
   });
 
   it('lista por status, da mais recente para a mais antiga', async () => {

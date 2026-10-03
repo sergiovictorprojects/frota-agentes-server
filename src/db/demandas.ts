@@ -1,4 +1,10 @@
 import type pg from 'pg';
+import {
+  estimarUsoDemanda,
+  normalizarEstimativaUso,
+  type ComplexidadeDemanda,
+  type EstimativaUsoDemanda,
+} from '../domain/estimativa-demanda.ts';
 import type { Categoria, Prioridade, StatusDemanda } from '../domain/setores.ts';
 import type { ResultadoEsperado } from '../domain/resultado-esperado.ts';
 import { comTransacao, type Db } from './tx.ts';
@@ -19,6 +25,8 @@ export interface Demanda {
   referencias: string | null;
   resultadoEsperado: ResultadoEsperado;
   criteriosAceite: string;
+  complexidade: ComplexidadeDemanda;
+  estimativaUso: EstimativaUsoDemanda;
   status: StatusDemanda;
   entregaUrl: string | null;
   criadoEm: string;
@@ -40,6 +48,7 @@ export interface NovaDemanda {
   referencias?: string | null;
   resultadoEsperado?: ResultadoEsperado;
   criteriosAceite?: string;
+  complexidade?: ComplexidadeDemanda;
 }
 
 export interface PatchDemanda {
@@ -60,6 +69,8 @@ interface Linha {
   referencias: string | null;
   resultado_esperado: ResultadoEsperado;
   criterios_aceite: string;
+  complexidade: ComplexidadeDemanda;
+  estimativa_uso: unknown;
   status: StatusDemanda;
   entrega_url: string | null;
   criado_em: Date;
@@ -72,10 +83,18 @@ interface Linha {
 }
 
 const COLUNAS = `id, titulo, descricao, categoria, prioridade, prazo::text AS prazo, solicitante, referencias,
-  resultado_esperado, criterios_aceite, status, entrega_url, criado_em, atualizado_em, claimed_by_run, claimed_at, alternativa_insumo,
+  resultado_esperado, criterios_aceite, complexidade, estimativa_uso, status, entrega_url, criado_em, atualizado_em, claimed_by_run, claimed_at, alternativa_insumo,
   bloqueio_humano, tentativas`;
 
 function mapear(l: Linha): Demanda {
+  const estimativaUso = normalizarEstimativaUso(l.estimativa_uso, {
+    complexidade: l.complexidade,
+    resultadoEsperado: l.resultado_esperado,
+    categoria: l.categoria,
+    descricao: l.descricao,
+    criteriosAceite: l.criterios_aceite,
+    referencias: l.referencias,
+  });
   return {
     id: l.id,
     titulo: l.titulo,
@@ -87,6 +106,8 @@ function mapear(l: Linha): Demanda {
     referencias: l.referencias,
     resultadoEsperado: l.resultado_esperado,
     criteriosAceite: l.criterios_aceite,
+    complexidade: l.complexidade,
+    estimativaUso,
     status: l.status,
     entregaUrl: l.entrega_url,
     criadoEm: l.criado_em.toISOString(),
@@ -100,9 +121,20 @@ function mapear(l: Linha): Demanda {
 }
 
 export async function criarDemanda(db: Db, d: NovaDemanda): Promise<Demanda> {
+  const complexidade = d.complexidade ?? 'MEDIUM';
+  const resultadoEsperado = d.resultadoEsperado ?? 'outro';
+  const criteriosAceite = d.criteriosAceite ?? '';
+  const estimativaUso = estimarUsoDemanda({
+    complexidade,
+    resultadoEsperado,
+    categoria: d.categoria,
+    descricao: d.descricao ?? '',
+    criteriosAceite,
+    referencias: d.referencias ?? null,
+  });
   const { rows } = await db.query<Linha>(
-    `INSERT INTO demandas (titulo, descricao, categoria, prioridade, prazo, solicitante, referencias, resultado_esperado, criterios_aceite)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9) RETURNING ${COLUNAS}`,
+    `INSERT INTO demandas (titulo, descricao, categoria, prioridade, prazo, solicitante, referencias, resultado_esperado, criterios_aceite, complexidade, estimativa_uso)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11) RETURNING ${COLUNAS}`,
     [
       d.titulo,
       d.descricao ?? '',
@@ -111,8 +143,10 @@ export async function criarDemanda(db: Db, d: NovaDemanda): Promise<Demanda> {
       d.prazo ?? null,
       d.solicitante ?? null,
       d.referencias ?? null,
-      d.resultadoEsperado ?? 'outro',
-      d.criteriosAceite ?? '',
+      resultadoEsperado,
+      criteriosAceite,
+      complexidade,
+      JSON.stringify(estimativaUso),
     ],
   );
   return mapear(rows[0]!);

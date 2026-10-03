@@ -616,7 +616,7 @@ export async function processarDemanda(d: DependenciasDemanda, demanda: Demanda,
           conversa,
           runId,
           emitir,
-          tetoBaseUsd: d.orquestracaoCustoMaxUsd,
+          tetoBaseUsd: demanda.estimativaUso.orcamentoSugeridoUsd || d.orquestracaoCustoMaxUsd,
         });
       } catch (erro) {
         if (erro instanceof RotaLegadoFixadaError) {

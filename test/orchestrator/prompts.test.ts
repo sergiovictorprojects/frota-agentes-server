@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { Demanda } from '../../src/db/demandas.ts';
 import { capacidadesPadraoDoAgente } from '../../src/domain/capacidades-agentes.ts';
+import { estimarUsoDemanda } from '../../src/domain/estimativa-demanda.ts';
 import { SETORES } from '../../src/domain/setores.ts';
 import {
   cortarSemQuebrarCaractere,
@@ -23,6 +24,8 @@ const demanda: Demanda = {
   referencias: null,
   resultadoEsperado: 'outro',
   criteriosAceite: '',
+  complexidade: 'MEDIUM',
+  estimativaUso: estimarUsoDemanda({ complexidade: 'MEDIUM', resultadoEsperado: 'outro', categoria: 'd11' }),
   status: 'Em andamento',
   entregaUrl: null,
   criadoEm: '2026-09-21T12:00:00.000Z',
