@@ -42,6 +42,7 @@ const numero = (n: number | null | undefined, sufixo = ''): string => (n === nul
 const usd = (valor: string): string => `US$ ${Number(valor).toFixed(2)}`;
 const tokens = (valor: number): string => new Intl.NumberFormat('pt-BR').format(valor);
 const pct = (valor: number, total: number): string => (total === 0 ? '0' : Math.round((valor / total) * 100).toString());
+const pctUso = (valor: number, total: number): number => (total <= 0 ? (valor > 0 ? 100 : 0) : Math.min(100, Math.round((valor / total) * 100)));
 
 function tamanho(bytes: number): string {
   return bytes < 1024 ? `${bytes} B` : bytes < 1024 * 1024 ? `${(bytes / 1024).toFixed(1)} KB` : `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
@@ -129,6 +130,111 @@ function blocoCustoReal(custo: ResumoCustoDemanda, estimativa: EstimativaUsoDema
 <thead><tr><th>Agente</th><th>Chamadas</th><th>Tokens</th><th>Custo</th><th>Duração média</th></tr></thead>
 <tbody>${linhas}</tbody>
 </table>`;
+}
+
+function resumoUsoApi(custo: ResumoCustoDemanda, estimativa: EstimativaUsoDemanda): {
+  custoEstimado: number;
+  custoReal: number;
+  percentual: number;
+  classe: 'ok' | 'alerta' | 'neutro';
+  texto: string;
+} {
+  const custoEstimado = Number(estimativa.custoEstimadoUsd);
+  const custoReal = Number(custo.custoUsd);
+  const diferenca = custoReal - custoEstimado;
+  if (custo.chamadas === 0) {
+    return {
+      custoEstimado,
+      custoReal,
+      percentual: 0,
+      classe: 'neutro',
+      texto: 'Sem consumo real registrado pela API.',
+    };
+  }
+  return {
+    custoEstimado,
+    custoReal,
+    percentual: pctUso(custoReal, custoEstimado),
+    classe: diferenca <= 0 ? 'ok' : 'alerta',
+    texto: diferenca <= 0 ? `Dentro da estimativa, com ${usd(Math.abs(diferenca).toFixed(6))} de margem.` : `Acima da estimativa em ${usd(diferenca.toFixed(6))}.`,
+  };
+}
+
+function linhasCustoPorPapel(custo: ResumoCustoDemanda): Bruto {
+  if (!custo.porPapel.length) return html`<p class="vazio">Sem detalhamento por agente ainda.</p>`;
+  return html`<table class="tabela-custo">
+<thead><tr><th>Responsável técnico</th><th>Chamadas</th><th>Tokens</th><th>Custo</th><th>Duração média</th></tr></thead>
+<tbody>${custo.porPapel.map(
+    (p) => html`<tr>
+<td><code>${p.papel}</code></td>
+<td>${p.chamadas}</td>
+<td>${tokens(p.tokensTotal)}</td>
+<td>${usd(p.custoUsd)}</td>
+<td>${p.duracaoMediaMs === null ? '—' : `${p.duracaoMediaMs} ms`}</td>
+</tr>`,
+  )}</tbody>
+</table>`;
+}
+
+function indicadorRetorno(rotulo: string, valor: string | number | Bruto, detalhe = ''): Bruto {
+  return html`<div class="indicador-retorno"><span>${rotulo}</span><strong>${valor}</strong>${detalhe ? html`<small>${detalhe}</small>` : ''}</div>`;
+}
+
+function blocoUsoApi(custo: ResumoCustoDemanda, estimativa: EstimativaUsoDemanda): Bruto {
+  const uso = resumoUsoApi(custo, estimativa);
+  return html`<div class="uso-api ${uso.classe}">
+<div class="uso-api-topo"><span>Uso da API</span><strong>${usd(custo.custoUsd)} / ${usd(estimativa.custoEstimadoUsd)}</strong></div>
+<div class="uso-barra" aria-label="Percentual do custo estimado utilizado"><span style="width:${uso.percentual}%"></span></div>
+<small>${uso.texto}</small>
+</div>`;
+}
+
+function blocoRelatorioPrestacao(r: Relatorio | null, demanda: Demanda, custo: ResumoCustoDemanda, linkEntrega: LinkEntrega | null): Bruto {
+  if (!r) {
+    return html`<div class="prestacao vazio-prestacao">
+<div class="prestacao-head"><div><p class="kicker">Prestação de contas</p><h3>Relatório ainda não emitido</h3></div><span class="selo-retorno">em aberto</span></div>
+<p class="vazio">Quando a demanda for concluída, este espaço vira o retorno oficial do responsável: resultado, uso da API, entrega, aprendizados e próximos cuidados.</p>
+${blocoUsoApi(custo, demanda.estimativaUso)}
+</div>`;
+  }
+  const m = r.metricas;
+  return html`<div class="prestacao">
+<div class="prestacao-head">
+<div><p class="kicker">Prestação de contas</p><h3>Retorno do responsável</h3><p class="resumo-humano">Eu conduzi esta demanda até o encerramento e deixo abaixo o saldo da execução: qualidade, custo consumido, entrega e pontos de aprendizado.</p></div>
+<span class="selo-retorno">finalizado</span>
+</div>
+<div class="indicadores-retorno">
+${indicadorRetorno('Responsável', r.gerente, `nível ${r.nivelComplexidade}`)}
+${indicadorRetorno('Índice geral', numero(m.indiceGeral), m.auditoriaFalhou ? 'auditoria incompleta' : 'qualidade auditada')}
+${indicadorRetorno('Custo API', `${usd(custo.custoUsd)}`, `${usd(demanda.estimativaUso.custoEstimadoUsd)} estimado`)}
+${indicadorRetorno('Tokens', tokens(custo.tokensTotal), `${custo.chamadas} chamada(s)`)}
+</div>
+${blocoUsoApi(custo, demanda.estimativaUso)}
+<div class="meta">${linkDeEntrega(linkEntrega)}<span>criado em ${formatarData(r.criadoEm)}</span><span>setores ${r.setoresEnvolvidos.join(', ') || '—'}</span></div>
+${m.auditoriaFalhou ? html`<p class="aviso">A auditoria automática não terminou: os números de conformidade não foram calculados.</p>` : ''}
+<details class="relatorio-detalhado">
+<summary>Ver prestação detalhada</summary>
+<div class="grade-detalhes">
+<dl class="info">
+<dt>Regras cumpridas</dt><dd>${numero(m.regrasCumpridasPercent, '%')}</dd>
+<dt>Antipadrões auditados</dt><dd>${numero(m.antipadroesCount)}</dd>
+<dt>Tempo</dt><dd>${m.tempoTotal}</dd>
+<dt>Ações</dt><dd>${m.acoesRealizadas}</dd>
+</dl>
+<dl class="info">
+<dt>Orçamento sugerido</dt><dd>${usd(demanda.estimativaUso.orcamentoSugeridoUsd)}</dd>
+<dt>Custo estimado</dt><dd>${usd(demanda.estimativaUso.custoEstimadoUsd)}</dd>
+<dt>Custo utilizado</dt><dd>${usd(custo.custoUsd)}</dd>
+<dt>Chamadas planejadas</dt><dd>${demanda.estimativaUso.chamadasLlmMin}–${demanda.estimativaUso.chamadasLlmMax}</dd>
+</dl>
+</div>
+${linhasCustoPorPapel(custo)}
+<h2>Ganhos</h2><p class="texto">${r.ganhos}</p>
+<h2>Perdas</h2><p class="texto">${r.perdas}</p>
+<h2>Aprendizado</h2><p class="texto">${r.aprendizado}</p>
+${r.ponderacoes.length ? html`<h2>Ponderações</h2><ul>${r.ponderacoes.map((p) => html`<li><strong>${p.setor}</strong>: ${p.nota}</li>`)}</ul>` : ''}
+</details>
+</div>`;
 }
 
 const ROTULOS_CAUSA_LLM: Readonly<Record<string, string>> = {
@@ -225,7 +331,7 @@ export function paginaFila(a: {
   return html`<section class="hero">
 <div><p class="kicker">Centro operacional</p><h1>Demandas</h1><p>Acompanhe criação, execução, custo, entrega, relatório e dossiê num único lugar.</p></div>
 <div class="acoes">
-${botaoAcao('/demandas/nova', 'Nova demanda')}
+<a class="botao" href="/demandas/nova">Nova demanda</a>
 ${a.podeExecutar ? botaoAcao('/executar', 'Executar agora') : ''}
 ${a.pausado ? botaoAcao('/frota/retomar', 'Retomar frota') : botaoAcao('/frota/pausar', 'Pausar frota', true)}
 </div>
@@ -271,26 +377,6 @@ ${a.erros.length ? html`<ul class="erros" role="alert">${a.erros.map((e) => html
 </form>
 </section>
 ${blocoEstimativasCriacao()}`;
-}
-
-function blocoRelatorio(r: Relatorio | null): Bruto {
-  if (!r) return html`<p class="vazio">Ainda não há relatório para esta demanda.</p>`;
-  const m = r.metricas;
-  return html`<dl class="info">
-<dt>Executado por</dt><dd>${r.gerente}</dd>
-<dt>Complexidade</dt><dd>nível ${r.nivelComplexidade}</dd>
-<dt>Setores</dt><dd>${r.setoresEnvolvidos.join(', ') || '—'}</dd>
-<dt>Índice geral</dt><dd>${numero(m.indiceGeral)}</dd>
-<dt>Antipadrões auditados</dt><dd>${numero(m.antipadroesCount)}</dd>
-<dt>Regras cumpridas</dt><dd>${numero(m.regrasCumpridasPercent, '%')}</dd>
-<dt>Tempo</dt><dd>${m.tempoTotal}</dd>
-<dt>Ações</dt><dd>${m.acoesRealizadas}</dd>
-</dl>
-${m.auditoriaFalhou ? html`<p class="aviso">A auditoria automática não terminou: os números de conformidade não foram calculados.</p>` : ''}
-<h2>Ganhos</h2><p class="texto">${r.ganhos}</p>
-<h2>Perdas</h2><p class="texto">${r.perdas}</p>
-<h2>Aprendizado</h2><p class="texto">${r.aprendizado}</p>
-${r.ponderacoes.length ? html`<h2>Ponderações</h2><ul>${r.ponderacoes.map((p) => html`<li><strong>${p.setor}</strong>: ${p.nota}</li>`)}</ul>` : ''}`;
 }
 
 export function paginaDetalhe(a: {
@@ -376,7 +462,7 @@ ${linhas.length ? html`<ol class="linha-do-tempo">${linhas}</ol>` : html`<p clas
 </div>
 <div class="painel">
 <div class="secao-titulo"><h2>Relatório</h2><p>Resultado final quando a demanda for concluída.</p></div>
-${blocoRelatorio(a.relatorio)}
+${blocoRelatorioPrestacao(a.relatorio, d, a.custo, a.linkEntrega)}
 </div>
 </section>`;
 }
@@ -485,19 +571,78 @@ ${blocoRelatorioSeguro(a.relatorio)}
 </section>`;
 }
 
-export function paginaRelatorios(a: { relatorios: readonly Relatorio[]; links: ReadonlyMap<string, LinkEntrega | null> }): Bruto {
+function cartaoRelatorioPrestacao(
+  r: Relatorio,
+  demanda: Demanda | undefined,
+  custo: ResumoCustoDemanda | undefined,
+  link: LinkEntrega | null | undefined,
+): Bruto {
+  const c = custo ?? { chamadas: 0, tokensEntrada: 0, tokensSaida: 0, tokensCacheRead: 0, tokensCacheWrite: 0, tokensTotal: 0, custoUsd: '0.000000', porPapel: [] };
+  const estimativa = demanda?.estimativaUso ?? {
+    complexidade: 'MEDIUM' as const,
+    modoExecucao: 'controlado',
+    chamadasLlmMin: 0,
+    chamadasLlmMax: 0,
+    tokensEntradaEstimados: 0,
+    tokensSaidaEstimados: 0,
+    tokensTotaisEstimados: 0,
+    custoEstimadoUsd: '0.000000',
+    orcamentoSugeridoUsd: '0.000000',
+    modeloReferencia: 'indisponível',
+  };
+  const uso = resumoUsoApi(c, estimativa);
+  return html`<li class="card relatorio-card prestacao">
+<div class="prestacao-head">
+<div><h3><a href="/demandas/${r.demandaId}">${r.demandaTitulo}</a></h3><p class="resumo-humano">Prestação emitida por ${r.gerente}: resultado, consumo e aprendizado em um único retorno.</p></div>
+<span class="selo-retorno">${numero(r.metricas.indiceGeral)}</span>
+</div>
+<div class="indicadores-retorno">
+${indicadorRetorno('Custo API', usd(c.custoUsd), `${usd(estimativa.custoEstimadoUsd)} estimado`)}
+${indicadorRetorno('Uso', `${uso.percentual}%`, uso.texto)}
+${indicadorRetorno('Chamadas', c.chamadas, `${tokens(c.tokensTotal)} tokens`)}
+${indicadorRetorno('Regras', numero(r.metricas.regrasCumpridasPercent, '%'), `${numero(r.metricas.antipadroesCount)} antipadrões`)}
+</div>
+${blocoUsoApi(c, estimativa)}
+<div class="meta"><span>nível ${r.nivelComplexidade}</span><span>${formatarData(r.criadoEm)}</span>${linkDeEntrega(link)}</div>
+<details class="relatorio-detalhado">
+<summary>Ver prestação detalhada</summary>
+<div class="grade-detalhes">
+<dl class="info">
+<dt>Responsável</dt><dd>${r.gerente}</dd>
+<dt>Setores</dt><dd>${r.setoresEnvolvidos.join(', ') || '—'}</dd>
+<dt>Tempo</dt><dd>${r.metricas.tempoTotal}</dd>
+<dt>Ações</dt><dd>${r.metricas.acoesRealizadas}</dd>
+</dl>
+<dl class="info">
+<dt>Orçamento sugerido</dt><dd>${usd(estimativa.orcamentoSugeridoUsd)}</dd>
+<dt>Custo estimado</dt><dd>${usd(estimativa.custoEstimadoUsd)}</dd>
+<dt>Custo utilizado</dt><dd>${usd(c.custoUsd)}</dd>
+<dt>Modelo referência</dt><dd>${estimativa.modeloReferencia}</dd>
+</dl>
+</div>
+${linhasCustoPorPapel(c)}
+<h2>Ganhos</h2><p class="texto">${r.ganhos}</p>
+<h2>Perdas</h2><p class="texto">${r.perdas}</p>
+<h2>Aprendizado</h2><p class="texto">${r.aprendizado}</p>
+</details>
+</li>`;
+}
+
+export function paginaRelatorios(a: {
+  relatorios: readonly Relatorio[];
+  links: ReadonlyMap<string, LinkEntrega | null>;
+  demandas: ReadonlyMap<string, Demanda>;
+  custos: ReadonlyMap<string, ResumoCustoDemanda>;
+}): Bruto {
   const total = a.relatorios.length;
   const comIndice = a.relatorios.filter((r) => r.metricas.indiceGeral !== null);
   const media = comIndice.length
     ? Math.round(comIndice.reduce((s, r) => s + (r.metricas.indiceGeral ?? 0), 0) / comIndice.length)
     : null;
   const antipadroes = a.relatorios.reduce((s, r) => s + (r.metricas.antipadroesCount ?? 0), 0);
-  const cartoes = a.relatorios.map(
-    (r) => html`<li class="card relatorio-card">
-<div class="card-head"><div><h3><a href="/demandas/${r.demandaId}">${r.demandaTitulo}</a></h3><div class="meta"><span>nível ${r.nivelComplexidade}</span><span>${formatarData(r.criadoEm)}</span></div></div><strong>${numero(r.metricas.indiceGeral)}</strong></div>
-<div class="meta"><span>antipadrões ${numero(r.metricas.antipadroesCount)}</span><span>regras ${numero(r.metricas.regrasCumpridasPercent, '%')}</span><span>${r.gerente}</span>${linkDeEntrega(a.links.get(r.id))}</div>
-</li>`,
-  );
+  const custoTotal = a.relatorios.reduce((s, r) => s + Number(a.custos.get(r.demandaId)?.custoUsd ?? 0), 0);
+  const tokensTotal = a.relatorios.reduce((s, r) => s + (a.custos.get(r.demandaId)?.tokensTotal ?? 0), 0);
+  const cartoes = a.relatorios.map((r) => cartaoRelatorioPrestacao(r, a.demandas.get(r.demandaId), a.custos.get(r.demandaId), a.links.get(r.id)));
   return html`<section class="hero compacto">
 <div><p class="kicker">Aprendizado da operação</p><h1>Relatórios</h1><p>Auditoria, métricas e aprendizado derivados das demandas concluídas.</p></div>
 <div class="acoes"><a class="botao sec" href="/">Voltar para Demandas</a></div>
@@ -505,8 +650,8 @@ export function paginaRelatorios(a: { relatorios: readonly Relatorio[]; links: R
 <section class="metricas">
 ${metrica('Relatórios', total, 'encerramentos registrados')}
 ${metrica('Índice médio', media === null ? '—' : media, 'qualidade consolidada')}
+${metrica('Custo API', usd(custoTotal.toFixed(6)), `${tokens(tokensTotal)} tokens utilizados`)}
 ${metrica('Antipadrões', antipadroes, 'observados no total')}
-${metrica('Com índice', comIndice.length, `${pct(comIndice.length, total)}% medidos`)}
 </section>
 <section class="painel">
 <div class="secao-titulo"><h2>Histórico</h2><p>Lista de resultados finais com acesso à demanda, entrega e dossiê.</p></div>
