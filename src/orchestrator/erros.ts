@@ -1,5 +1,5 @@
 import type { CodigoErro } from '../db/eventos.ts';
-import { LlmError } from '../llm/llm.ts';
+import { LlmError, type CausaErroApiLlm } from '../llm/llm.ts';
 import { FrotaPausadaError, OrcamentoExcedidoError } from '../llm/orcamento.ts';
 import { PrazoRunExcedidoError } from './prazo-run.ts';
 
@@ -9,6 +9,11 @@ const STATUS_DE_SISTEMA = new Set([401, 402, 403, 404, 408, 429]);
 export interface Interrupcao {
   motivo: string;
   status: 'pausada' | 'erro';
+}
+
+export interface DetalheErroLlm {
+  causaLlm: CausaErroApiLlm;
+  statusHttp: number | null;
 }
 
 // Agente sem linha no catálogo, suspenso, ou só sob_demanda sem acionamento explícito. Determinístico
@@ -53,4 +58,11 @@ export function codigoDoErro(erro: unknown): CodigoErro {
     return 'llm_api';
   }
   return 'falha_inesperada';
+}
+
+export function detalheErroLlm(erro: unknown): DetalheErroLlm | null {
+  if (!(erro instanceof LlmError)) return null;
+  if (erro.tipo === 'api') return { causaLlm: erro.causa ?? 'desconhecida', statusHttp: erro.status };
+  if (erro.tipo === 'timeout') return { causaLlm: 'timeout', statusHttp: null };
+  return null;
 }
