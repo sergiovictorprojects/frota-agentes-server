@@ -16,7 +16,7 @@ import { LlmError, type Llm } from '../llm/llm.ts';
 import { paginaDeTexto } from '../util/html.ts';
 import { log, mensagemDeErro } from '../util/log.ts';
 import { calcularAuditoria, indiceGeral, regrasDosSetores, type MetricasAuditoria } from './auditoria.ts';
-import { AgenteNaoAutorizadoError, codigoDoErro, ehParadaSistemica, statusDaInterrupcao, type Interrupcao } from './erros.ts';
+import { AgenteNaoAutorizadoError, codigoDoErro, detalheErroLlm, ehParadaSistemica, statusDaInterrupcao, type Interrupcao } from './erros.ts';
 import {
   sistemaAuditoria,
   sistemaExecucao,
@@ -439,7 +439,7 @@ async function auditar(
       if (ehParadaSistemica(erro)) {
         const interrupcao = { motivo: mensagemDeErro(erro), status: statusDaInterrupcao(erro) };
         await checkpoint(`Auditoria interrompida: ${interrupcao.motivo}`, PAPEL_AUDITOR);
-        await emitir('auditoria_interrompida', PAPEL_AUDITOR, { codigoErro: codigoDoErro(erro) });
+        await emitir('auditoria_interrompida', PAPEL_AUDITOR, { codigoErro: codigoDoErro(erro), ...detalheErroLlm(erro) });
         return { resultado: null, chamadas, interrupcao };
       }
       if (!(erro instanceof LlmError)) throw erro;
@@ -450,7 +450,7 @@ async function auditar(
   // Esgotou as tentativas sem parada sistêmica: não é motivo para interromper a run (a demanda ainda
   // conclui, com métricas nulas), mas é uma falha real e precisa ficar no ledger — nunca com a mensagem
   // bruta do erro, só o código classificado.
-  await emitir('auditoria_interrompida', PAPEL_AUDITOR, { codigoErro: codigoDoErro(ultimoErro) });
+  await emitir('auditoria_interrompida', PAPEL_AUDITOR, { codigoErro: codigoDoErro(ultimoErro), ...detalheErroLlm(ultimoErro) });
   return { resultado: null, chamadas, interrupcao: null };
 }
 
@@ -575,7 +575,7 @@ export async function processarDemanda(d: DependenciasDemanda, demanda: Demanda,
   try {
     conversa = await conversaDaDemanda(d.pool, demanda.id);
   } catch (erro) {
-    await emitir('chamada_trabalho_falhou', setor.papel, { codigoErro: codigoDoErro(erro) });
+    await emitir('chamada_trabalho_falhou', setor.papel, { codigoErro: codigoDoErro(erro), ...detalheErroLlm(erro) });
     throw erro;
   }
 
@@ -684,7 +684,7 @@ export async function processarDemanda(d: DependenciasDemanda, demanda: Demanda,
     });
   } catch (erro) {
     // Registra o evento e repassa o erro sem alterar em nada o tratamento que processar-fila.ts já faz.
-    await emitir('chamada_trabalho_falhou', setor.papel, { codigoErro: codigoDoErro(erro) });
+    await emitir('chamada_trabalho_falhou', setor.papel, { codigoErro: codigoDoErro(erro), ...detalheErroLlm(erro) });
     throw erro;
   }
   await emitir('chamada_trabalho_concluida', setor.papel, {
