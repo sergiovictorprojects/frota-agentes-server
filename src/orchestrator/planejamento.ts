@@ -6,7 +6,7 @@ import { PlanoPropostoSchema, registrarPlanoRejeitado, registrarPlanoShadow, val
 import { SETORES } from '../domain/setores.ts';
 import type { Llm } from '../llm/llm.ts';
 import { log } from '../util/log.ts';
-import { AgenteNaoAutorizadoError, codigoDoErro } from './erros.ts';
+import { AgenteNaoAutorizadoError, codigoDoErro, detalheErroLlm } from './erros.ts';
 import { sistemaPlanejamento, usuarioExecucao, type FalaDaConversa } from './prompts.ts';
 import type { EmitirEvento } from './processar-demanda.ts';
 
@@ -72,6 +72,6 @@ export async function planejarEmShadow(c: ContextoPlanejamento): Promise<void> {
   } catch (erro) {
     const codigoErro = codigoDoErro(erro);
     log('erro', 'erro_planejamento', { demandaId: c.demanda.id, codigoErro });
-    await c.emitir('planejamento_falhou', PAPEL_COORDENADOR, { codigoErro });
+    await c.emitir('planejamento_falhou', PAPEL_COORDENADOR, { codigoErro, ...detalheErroLlm(erro) });
   }
 }
